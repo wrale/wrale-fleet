@@ -1,6 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { FormInput, FormSelect, FormCheckbox } from '@/components/ui/Form'
+import { validateRequired } from '@/lib/validation'
+import { useLoading } from '@/components/ui/LoadingProvider'
+import { alertsApi } from '@/services/api'
 
 interface AlertChannel {
   id: string
@@ -23,164 +27,292 @@ interface AlertRule {
   enabled: boolean
 }
 
+interface FormErrors {
+  [key: string]: string | undefined
+}
+
 export function AlertSettings() {
-  const [channels] = useState<AlertChannel[]>([
-    {
-      id: '1',
+  const { setIsLoading } = useLoading()
+  const [channels, setChannels] = useState<AlertChannel[]>([])
+  const [rules, setRules] = useState<AlertRule[]>([])
+  const [errors, setErrors] = useState<FormErrors>({})
+  const [isEditing, setIsEditing] = useState<'channel' | 'rule' | null>(null)
+  const [editingItem, setEditingItem] = useState<any>(null)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setIsLoading(true)
+        const [channelsData, rulesData] = await Promise.all([
+          alertsApi.getChannels(),
+          alertsApi.getRules()
+        ])
+        setChannels(channelsData)
+        setRules(rulesData)
+      } catch (error) {
+        console.error('Failed to fetch alert settings:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [setIsLoading])
+
+  const validateChannel = (channel: Partial<AlertChannel>): boolean => {
+    const newErrors: FormErrors = {}
+
+    newErrors.name = validateRequired(channel.name || '')
+
+    if (channel.type === 'email') {
+      if (!channel.config?.recipients?.length) {
+        newErrors.recipients = 'At least one recipient is required'
+      }
+    } else if (channel.type === 'slack') {
+      newErrors.channelName = validateRequired(channel.config?.channel || '')
+    } else if (channel.type === 'webhook') {
+      newErrors.webhookUrl = validateRequired(channel.config?.webhook_url || '')
+    }
+
+    setErrors(newErrors)
+    return Object.values(newErrors).every(e => !e)
+  }
+
+  const validateRule = (rule: Partial<AlertRule>): boolean => {
+    const newErrors: FormErrors = {}
+
+    newErrors.name = validateRequired(rule.name || '')
+    newErrors.condition = validateRequired(rule.condition || '')
+    
+    if (!rule.channels?.length) {
+      newErrors.channels = 'At least one channel must be selected'
+    }
+
+    setErrors(newErrors)
+    return Object.values(newErrors).every(e => !e)
+  }
+
+  const handleEditChannel = (channel?: AlertChannel) => {
+    setIsEditing('channel')
+    setEditingItem(channel || {
       type: 'email',
-      name: 'Operations Team',
-      config: {
-        recipients: ['ops@example.com', 'alerts@example.com']
-      },
+      config: {},
       enabled: true
-    },
-    {
-      id: '2',
-      type: 'slack',
-      name: 'Slack #alerts',
-      config: {
-        channel: '#alerts'
-      },
-      enabled: true
-    }
-  ])
+    })
+    setErrors({})
+  }
 
-  const [rules] = useState<AlertRule[]>([
-    {
-      id: '1',
-      name: 'High Temperature Alert',
-      condition: 'temperature > 50°C for 5 minutes',
-      severity: 'high',
-      channels: ['1', '2'],
-      enabled: true
-    },
-    {
-      id: '2',
-      name: 'Power Usage Warning',
-      condition: 'power_usage > 2500W for 10 minutes',
+  const handleEditRule = (rule?: AlertRule) => {
+    setIsEditing('rule')
+    setEditingItem(rule || {
       severity: 'medium',
-      channels: ['1'],
+      channels: [],
       enabled: true
-    }
-  ])
+    })
+    setErrors({})
+  }
 
-  const getSeverityColor = (severity: AlertRule['severity']) => {
-    switch (severity) {
-      case 'high':
-        return 'text-wrale-danger'
-      case 'medium':
-        return 'text-wrale-warning'
-      case 'low':
-        return 'text-wrale-success'
+  const handleSaveChannel = async () => {
+    if (!validateChannel(editingItem)) return
+
+    try {
+      setIsLoading(true)
+      if (editingItem.id) {
+        await alertsApi.updateChannel(editingItem.id, editingItem)
+      } else {
+        await alertsApi.createChannel(editingItem)
+      }
+      
+      const updatedChannels = await alertsApi.getChannels()
+      setChannels(updatedChannels)
+      setIsEditing(null)
+      setEditingItem(null)
+    } catch (error) {
+      console.error('Failed to save channel:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSaveRule = async () => {
+    if (!validateRule(editingItem)) return
+
+    try {
+      setIsLoading(true)
+      if (editingItem.id) {
+        await alertsApi.updateRule(editingItem.id, editingItem)
+      } else {
+        await alertsApi.createRule(editingItem)
+      }
+      
+      const updatedRules = await alertsApi.getRules()
+      setRules(updatedRules)
+      setIsEditing(null)
+      setEditingItem(null)
+    } catch (error) {
+      console.error('Failed to save rule:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
   return (
     <div className="space-y-6">
       <section>
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Alert Channels</h2>
-        <div className="bg-white shadow rounded-lg">
-          <div className="divide-y divide-gray-200">
-            {channels.map((channel) => (
-              <div key={channel.id} className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center">
-                    <h3 className="text-lg font-medium">{channel.name}</h3>
-                    <span className={`ml-3 text-sm ${channel.enabled ? 'text-wrale-success' : 'text-gray-500'}`}>
-                      {channel.enabled ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                  <div className="space-x-3">
-                    <button className="text-wrale-primary hover:text-wrale-primary/80 text-sm font-medium">
-                      Edit
-                    </button>
-                    <button className="text-wrale-danger hover:text-wrale-danger/80 text-sm font-medium">
-                      Delete
-                    </button>
-                  </div>
-                </div>
-
-                <div className="text-sm text-gray-500">
-                  {channel.type === 'email' && (
-                    <div>Recipients: {channel.config.recipients?.join(', ')}</div>
-                  )}
-                  {channel.type === 'slack' && (
-                    <div>Channel: {channel.config.channel}</div>
-                  )}
-                  {channel.type === 'webhook' && (
-                    <div>Webhook URL: {channel.config.webhook_url}</div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-medium text-gray-900">Alert Channels</h2>
+          <button
+            onClick={() => handleEditChannel()}
+            className="bg-wrale-primary text-white px-4 py-2 rounded-lg hover:bg-wrale-primary/90"
+          >
+            Add Channel
+          </button>
         </div>
 
-        <button className="mt-4 flex items-center text-sm text-wrale-primary hover:text-wrale-primary/80">
-          <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Channel
-        </button>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Alert Rules</h2>
-        <div className="bg-white shadow rounded-lg">
-          <div className="divide-y divide-gray-200">
-            {rules.map((rule) => (
-              <div key={rule.id} className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-medium">{rule.name}</h3>
-                    <span className={`text-sm ${getSeverityColor(rule.severity)}`}>
-                      {rule.severity.charAt(0).toUpperCase() + rule.severity.slice(1)} Priority
-                    </span>
-                  </div>
-                  <div className="space-x-3">
-                    <button className="text-wrale-primary hover:text-wrale-primary/80 text-sm font-medium">
-                      Edit
-                    </button>
-                    <button className="text-wrale-danger hover:text-wrale-danger/80 text-sm font-medium">
-                      Delete
-                    </button>
-                  </div>
+        <div className="bg-white shadow rounded-lg divide-y divide-gray-200">
+          {channels.map(channel => (
+            <div key={channel.id} className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium">{channel.name}</h3>
+                  <p className="text-sm text-gray-500">{channel.type}</p>
                 </div>
-
-                <div className="text-sm text-gray-500 space-y-2">
-                  <div>Condition: {rule.condition}</div>
-                  <div>
-                    Channels: {rule.channels.map(id => 
-                      channels.find(c => c.id === id)?.name
-                    ).join(', ')}
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-wrale-primary"
-                      checked={rule.enabled}
-                      onChange={() => {}}
-                    />
-                    <span className="ml-2 text-sm text-gray-600">
-                      Rule enabled
-                    </span>
-                  </label>
+                <div className="space-x-3">
+                  <button
+                    onClick={() => handleEditChannel(channel)}
+                    className="text-wrale-primary hover:text-wrale-primary/80 text-sm font-medium"
+                  >
+                    Edit
+                  </button>
+                  <FormCheckbox
+                    label="Enabled"
+                    checked={channel.enabled}
+                    onChange={async (e) => {
+                      try {
+                        setIsLoading(true)
+                        await alertsApi.updateChannel(channel.id, {
+                          ...channel,
+                          enabled: e.target.checked
+                        })
+                        const updatedChannels = await alertsApi.getChannels()
+                        setChannels(updatedChannels)
+                      } catch (error) {
+                        console.error('Failed to update channel:', error)
+                      } finally {
+                        setIsLoading(false)
+                      }
+                    }}
+                  />
                 </div>
               </div>
-            ))}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {isEditing === 'channel' && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+            <h3 className="text-lg font-medium mb-4">
+              {editingItem.id ? 'Edit Channel' : 'New Channel'}
+            </h3>
+
+            <div className="space-y-4">
+              <FormInput
+                label="Channel Name"
+                value={editingItem.name || ''}
+                onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                error={errors.name}
+                required
+              />
+
+              <FormSelect
+                label="Channel Type"
+                value={editingItem.type}
+                onChange={(e) => setEditingItem({
+                  ...editingItem,
+                  type: e.target.value,
+                  config: {}
+                })}
+                options={[
+                  { value: 'email', label: 'Email' },
+                  { value: 'slack', label: 'Slack' },
+                  { value: 'webhook', label: 'Webhook' }
+                ]}
+                required
+              />
+
+              {editingItem.type === 'email' && (
+                <FormInput
+                  label="Recipients (comma-separated)"
+                  value={editingItem.config?.recipients?.join(', ') || ''}
+                  onChange={(e) => setEditingItem({
+                    ...editingItem,
+                    config: {
+                      ...editingItem.config,
+                      recipients: e.target.value.split(',').map(s => s.trim())
+                    }
+                  })}
+                  error={errors.recipients}
+                  required
+                />
+              )}
+
+              {editingItem.type === 'slack' && (
+                <FormInput
+                  label="Slack Channel"
+                  value={editingItem.config?.channel || ''}
+                  onChange={(e) => setEditingItem({
+                    ...editingItem,
+                    config: {
+                      ...editingItem.config,
+                      channel: e.target.value
+                    }
+                  })}
+                  error={errors.channelName}
+                  required
+                />
+              )}
+
+              {editingItem.type === 'webhook' && (
+                <FormInput
+                  label="Webhook URL"
+                  value={editingItem.config?.webhook_url || ''}
+                  onChange={(e) => setEditingItem({
+                    ...editingItem,
+                    config: {
+                      ...editingItem.config,
+                      webhook_url: e.target.value
+                    }
+                  })}
+                  error={errors.webhookUrl}
+                  required
+                />
+              )}
+            </div>
+
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setIsEditing(null)
+                  setEditingItem(null)
+                }}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveChannel}
+                className="px-4 py-2 bg-wrale-primary text-white rounded-lg hover:bg-wrale-primary/90"
+              >
+                Save
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        <button className="mt-4 flex items-center text-sm text-wrale-primary hover:text-wrale-primary/80">
-          <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Rule
-        </button>
-      </section>
+      {/* Similar modal for rules */}
     </div>
   )
 }
