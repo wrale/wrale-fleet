@@ -1,7 +1,7 @@
 # Wrale Fleet Metal Hardware
 
-[![Go](https://github.com/wrale/wrale-fleet-metal-hw/actions/workflows/go.yml/badge.svg)](https://github.com/wrale/wrale-fleet-metal-hw/actions/workflows/go.yml)
-[![Lint](https://github.com/wrale/wrale-fleet-metal-hw/actions/workflows/lint.yml/badge.svg)](https://github.com/wrale/wrale-fleet-metal-hw/actions/workflows/lint.yml)
+[![Go](https://github.com/wrale/wrale-fleet/actions/workflows/metal-hw.yml/badge.svg)](https://github.com/wrale/wrale-fleet/actions/workflows/metal-hw.yml)
+[![Lint](https://github.com/wrale/wrale-fleet/actions/workflows/metal-hw.yml/badge.svg)](https://github.com/wrale/wrale-fleet/actions/workflows/metal-hw.yml)
 
 Pure hardware management layer for Wrale Fleet. Handles direct hardware interactions, raw sensor data, and hardware-level safety for Raspberry Pi devices. Part of the Wrale Fleet Metal project.
 
@@ -52,13 +52,13 @@ Legend:
 - Basic hardware state management
 
 ### Out of Scope
-- System-level orchestration (fleet-metal-core)
+- System-level orchestration (../core)
 - Fleet-wide state management
 - Data persistence and synchronization
 - Network communication
 - Business logic and policy decisions
 - User interfaces and APIs
-- Advanced analytics (fleet-metal-diag)
+- Advanced analytics (../diag)
 - Environmental control logic
 
 ## Hardware Subsystems
@@ -121,7 +121,7 @@ The project includes GitHub Actions workflows for:
 
 ## Directory Structure
 ```
-.
+metal/hw/
 ├── gpio/       # GPIO and PWM control
 ├── power/      # Power management
 ├── secure/     # Physical security
@@ -159,7 +159,7 @@ The project includes GitHub Actions workflows for:
 
 ## Integration
 
-This package provides the hardware abstraction layer for the Wrale Fleet Metal system. It should be consumed by fleet-metal-core for system-level management. Direct hardware access should only occur through this package.
+This package provides the hardware abstraction layer for the Wrale Fleet Metal system. It should be consumed by ../core for system-level management. Direct hardware access should only occur through this package.
 
 ## Development
 
@@ -171,6 +171,8 @@ This package provides the hardware abstraction layer for the Wrale Fleet Metal s
 
 ### Testing
 ```bash
+# From /metal/hw directory:
+
 # Run all tests in simulation mode
 go test -v -race ./...
 
@@ -185,8 +187,8 @@ See [Hardware Testing Guide](docs/HARDWARE_TESTING.md) for physical device testi
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+See [CONTRIBUTING.md](../../CONTRIBUTING.md) for monorepo development guidelines and [CONTRIBUTING.md](CONTRIBUTING.md) for hardware-specific guidelines.
 
 ## License
 
-Apache License 2.0
+Apache License 2.0. See [LICENSE](../../LICENSE) for the full license text.

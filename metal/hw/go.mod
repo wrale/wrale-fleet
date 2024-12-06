@@ -1,4 +1,4 @@
-module github.com/wrale/wrale-fleet-metal-hw
+module github.com/wrale/wrale-fleet/metal/hw
 
 go 1.21
 
