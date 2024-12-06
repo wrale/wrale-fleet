@@ -1,2 +1,3 @@
 # Wrale Fleet Global TODO
-[Content same as above...]
+
+[Insert global todo items here]
