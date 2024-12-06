@@ -6,21 +6,8 @@ import (
 	"github.com/wrale/wrale-fleet-metal-hw/gpio"
 )
 
-// Temperature thresholds in Celsius
-const (
-	// Warning thresholds
-	cpuTempWarning = 70.0
-	gpuTempWarning = 70.0
-	ambientWarning = 45.0
-
-	// Critical thresholds
-	cpuTempCritical = 80.0
-	gpuTempCritical = 80.0
-	ambientCritical = 50.0
-
-	// Default monitoring interval
-	defaultMonitorInterval = 1 * time.Second
-)
+// Default monitoring interval
+const defaultMonitorInterval = 1 * time.Second
 
 // ThermalState represents current thermal conditions
 type ThermalState struct {
@@ -29,24 +16,19 @@ type ThermalState struct {
 	AmbientTemp float64   // Ambient temperature in Celsius
 	FanSpeed    uint32    // Current fan speed percentage
 	Throttled   bool      // Whether system is throttled
-	Warnings    []string  // Active thermal warnings
 	UpdatedAt   time.Time // Last update timestamp
-}
-
-// addWarning adds a warning message to the thermal state
-func (s *ThermalState) addWarning(warning string) {
-	s.Warnings = append(s.Warnings, warning)
 }
 
 // Config holds thermal monitor configuration
 type Config struct {
 	GPIO            *gpio.Controller
 	MonitorInterval time.Duration
-	CPUTempPath     string             // sysfs path to CPU temperature
-	GPUTempPath     string             // sysfs path to GPU temperature
-	AmbientTempPath string             // sysfs path to ambient temperature sensor
-	FanControlPin   string             // GPIO pin for fan control
-	ThrottlePin     string             // GPIO pin for throttling control
-	OnWarning       func(ThermalState) // Callback for warning conditions
-	OnCritical      func(ThermalState) // Callback for critical conditions
+	CPUTempPath     string    // sysfs path to CPU temperature
+	GPUTempPath     string    // sysfs path to GPU temperature
+	AmbientTempPath string    // sysfs path to ambient temperature sensor
+	FanControlPin   string    // GPIO pin for fan control
+	ThrottlePin     string    // GPIO pin for throttling control
+	
+	// Simple callbacks for hardware events
+	OnStateChange   func(ThermalState)
 }

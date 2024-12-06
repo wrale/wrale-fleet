@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Monitor starts continuous security monitoring
+// Monitor starts continuous security monitoring of hardware
 func (m *Manager) Monitor(ctx context.Context) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -23,7 +23,7 @@ func (m *Manager) Monitor(ctx context.Context) error {
 	}
 }
 
-// checkSecurity performs a single security check
+// checkSecurity performs raw hardware security checks
 func (m *Manager) checkSecurity(ctx context.Context) error {
 	m.mux.Lock()
 	defer m.mux.Unlock()
@@ -47,41 +47,17 @@ func (m *Manager) checkSecurity(ctx context.Context) error {
 	}
 
 	// Update state
-	newState := TamperState{
+	m.state = TamperState{
 		CaseOpen:       caseOpen,
 		MotionDetected: motion,
 		VoltageNormal:  voltageOK,
 		LastCheck:      time.Now(),
 	}
 
-	// Check for tamper conditions
-	if caseOpen || motion || !voltageOK {
-		if m.onTamper != nil {
-			m.onTamper(newState)
-		}
-
-		// Log tamper event if store is available
-		if m.stateStore != nil {
-			eventDetails := map[string]interface{}{
-				"case_open":       caseOpen,
-				"motion_detected": motion,
-				"voltage_normal":  voltageOK,
-			}
-			if err := m.stateStore.LogEvent(ctx, m.deviceID, "tamper_detected", eventDetails); err != nil {
-				// Log but don't fail on event logging error
-				fmt.Printf("Failed to log tamper event: %v", err)
-			}
-		}
+	// Notify of raw state changes through callback
+	if m.onTamper != nil && (caseOpen || motion || !voltageOK) {
+		m.onTamper(m.state)
 	}
 
-	// Persist state if store is available
-	if m.stateStore != nil {
-		if err := m.stateStore.SaveState(ctx, m.deviceID, newState); err != nil {
-			// Log but don't fail on state persistence error
-			fmt.Printf("Failed to persist security state: %v", err)
-		}
-	}
-
-	m.state = newState
 	return nil
 }
