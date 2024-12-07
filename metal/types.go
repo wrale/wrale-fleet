@@ -2,6 +2,9 @@ package metal
 
 import "time"
 
+// Option configures a hardware component
+type Option func(interface{}) error
+
 // CommonState contains fields shared by all hardware states
 type CommonState struct {
     DeviceID  string    `json:"device_id"`
