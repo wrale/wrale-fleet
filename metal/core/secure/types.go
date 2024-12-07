@@ -54,6 +54,14 @@ type TamperEvent struct {
 	Details     interface{}
 }
 
+// Event represents a general security-related incident for logging
+type Event struct {
+	DeviceID  string      `json:"device_id"`
+	Type      string      `json:"type"`
+	Timestamp time.Time   `json:"timestamp"`
+	Details   interface{} `json:"details"`
+}
+
 // StateStore defines the interface for persisting security state
 type StateStore interface {
 	// SaveState persists the current security state
