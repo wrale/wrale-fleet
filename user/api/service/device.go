@@ -4,7 +4,9 @@ package service
 import (
     "context"
     "fmt"
+    "log"
     "time"
+    "google.golang.org/grpc"
 
     "github.com/wrale/wrale-fleet/fleet/brain/service"
     "github.com/wrale/wrale-fleet/fleet/brain/types"
@@ -14,13 +16,29 @@ import (
 // DeviceService implements device operations
 type DeviceService struct {
     brainSvc *service.Service
+    conn     *grpc.ClientConn
 }
 
 // NewDeviceService creates a new device service
-func NewDeviceService(brainSvc *service.Service) *DeviceService {
-    return &DeviceService{
-        brainSvc: brainSvc,
+func NewDeviceService(fleetEndpoint string) *DeviceService {
+    // Connect to fleet brain service
+    conn, err := grpc.Dial(fleetEndpoint, grpc.WithInsecure())
+    if err != nil {
+        log.Fatalf("Failed to connect to fleet brain: %v", err)
     }
+
+    return &DeviceService{
+        brainSvc: service.NewClient(conn),
+        conn:     conn,
+    }
+}
+
+// Close releases resources
+func (s *DeviceService) Close() error {
+    if s.conn != nil {
+        return s.conn.Close()
+    }
+    return nil
 }
 
 // CreateDevice registers a new device

@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/wrale/wrale-fleet/user/api/server"
+	"github.com/wrale/wrale-fleet/user/api/service"
 )
 
 func main() {
@@ -21,14 +22,19 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create server with config
-	srv, err := server.New(server.Config{
-		HTTPAddr:      *httpAddr,
-		FleetEndpoint: *fleetEndpoint,
-	})
-	if err != nil {
-		log.Fatalf("Failed to create server: %v", err)
-	}
+	// Initialize services
+	deviceSvc := service.NewDeviceService(*fleetEndpoint)
+	fleetSvc := service.NewFleetService(*fleetEndpoint)
+	wsSvc := service.NewWebSocketService(*fleetEndpoint)
+	authSvc := service.NewAuthService()
+
+	// Create server with services
+	srv := server.NewServer(
+		deviceSvc,
+		fleetSvc,
+		wsSvc,
+		authSvc,
+	)
 
 	// Handle shutdown gracefully
 	sigCh := make(chan os.Signal, 1)
@@ -40,8 +46,9 @@ func main() {
 		cancel()
 	}()
 
-	// Run server
-	if err := srv.Run(ctx); err != nil {
+	// Start server
+	log.Printf("Starting API server on %s", *httpAddr)
+	if err := srv.Start(*httpAddr); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }
