@@ -1,18 +1,20 @@
 package power
 
-import "time"
+import (
+	"time"
+
+	"github.com/wrale/wrale-fleet/metal/hw/gpio"
+)
 
 // PowerState represents the power state of a device
-type PowerState string
-
-const (
-	// PowerOn represents the powered on state
-	PowerOn PowerState = "on"
-	// PowerOff represents the powered off state
-	PowerOff PowerState = "off"
-	// PowerStandby represents the standby state
-	PowerStandby PowerState = "standby"
-)
+type PowerState struct {
+	State          string    `json:"state"`
+	AvailablePower float64   `json:"available_power"`
+	PowerSource    string    `json:"power_source"`
+	Voltage        float64   `json:"voltage"`
+	Current        float64   `json:"current"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
 
 // PowerSource represents the type of power source
 type PowerSource string
@@ -26,16 +28,20 @@ const (
 	BackupPower PowerSource = "backup"
 )
 
+const (
+	defaultMonitorInterval = 1 * time.Second
+)
+
 // Config represents power management configuration
 type Config struct {
-	Sources         []PowerSource     `json:"sources"`
-	MinVoltage      float64          `json:"min_voltage"`
-	MaxVoltage      float64          `json:"max_voltage"`
-	GPIO           string           `json:"gpio"`
-	PowerPins      []int            `json:"power_pins"`
-	BatteryADCPath string           `json:"battery_adc_path"`
-	VoltageADCPath string           `json:"voltage_adc_path"`
-	CurrentADCPath string           `json:"current_adc_path"`
-	MonitorInterval time.Duration    `json:"monitor_interval"`
-	OnPowerCritical func()          `json:"-"`
+	Sources         []PowerSource            `json:"sources"`
+	MinVoltage      float64                 `json:"min_voltage"`
+	MaxVoltage      float64                 `json:"max_voltage"`
+	GPIO            *gpio.Controller         `json:"gpio"`
+	PowerPins       map[PowerSource]string   `json:"power_pins"`
+	BatteryADCPath  string                  `json:"battery_adc_path"`
+	VoltageADCPath  string                  `json:"voltage_adc_path"`
+	CurrentADCPath  string                  `json:"current_adc_path"`
+	MonitorInterval time.Duration           `json:"monitor_interval"`
+	OnPowerChange   func(PowerState)        `json:"-"`
 }

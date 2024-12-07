@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/wrale/wrale-fleet/metal/hw/diag"
 	"github.com/wrale/wrale-fleet/metal/hw/power"
@@ -19,11 +20,11 @@ type MetalClient struct {
 
 // MetricsResponse represents system metrics from the metal layer
 type MetricsResponse struct {
-	Temperature float64 `json:"temperature"`
-	PowerUsage  float64 `json:"power_usage"`
-	CPULoad     float64 `json:"cpu_load"`
-	MemoryUsage float64 `json:"memory_usage"`
-	Timestamp   int64   `json:"timestamp"`
+	Temperature float64   `json:"temperature"`
+	PowerUsage  float64   `json:"power_usage"`
+	CPULoad     float64   `json:"cpu_load"`
+	MemoryUsage float64   `json:"memory_usage"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 // NewMetalClient creates a new metal client with the given base URL
@@ -50,16 +51,17 @@ func (c *MetalClient) GetMetrics() (*MetricsResponse, error) {
 }
 
 // UpdatePowerState updates the device power state
-func (c *MetalClient) UpdatePowerState(state power.PowerState) error {
+func (c *MetalClient) UpdatePowerState(powerState *power.PowerState) error {
+	payload, err := json.Marshal(powerState)
+	if err != nil {
+		return fmt.Errorf("failed to marshal power state: %v", err)
+	}
+
 	url := fmt.Sprintf("%s/power/state", c.baseURL)
-	req, err := http.NewRequest(http.MethodPut, url, nil)
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %v", err)
 	}
-
-	q := req.URL.Query()
-	q.Add("state", string(state))
-	req.URL.RawQuery = q.Encode()
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -103,14 +105,14 @@ func (c *MetalClient) RunDiagnostics() (*diag.TestResult, error) {
 }
 
 // GetThermalState retrieves the current thermal state
-func (c *MetalClient) GetThermalState() (*thermal.State, error) {
+func (c *MetalClient) GetThermalState() (*thermal.ThermalState, error) {
 	resp, err := c.httpClient.Get(fmt.Sprintf("%s/thermal/state", c.baseURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get thermal state: %v", err)
 	}
 	defer resp.Body.Close()
 
-	var state thermal.State
+	var state thermal.ThermalState
 	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
 		return nil, fmt.Errorf("failed to decode thermal state: %v", err)
 	}
@@ -119,6 +121,10 @@ func (c *MetalClient) GetThermalState() (*thermal.State, error) {
 
 // ExecuteOperation executes a generic metal operation
 func (c *MetalClient) ExecuteOperation(operation string, params map[string]interface{}) error {
+	if params == nil {
+		params = make(map[string]interface{})
+	}
+
 	payload, err := json.Marshal(params)
 	if err != nil {
 		return fmt.Errorf("failed to marshal operation parameters: %v", err)
