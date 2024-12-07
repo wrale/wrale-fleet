@@ -6,19 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/internal/types"
-)
-
-// Edge represents interrupt trigger edges
-type Edge string
-
-const (
-	Rising  Edge = "RISING"
-	Falling Edge = "FALLING"
-	Both    Edge = "BOTH"
-
-	// Default debounce time for hardware interrupts
-	defaultDebounceTime = 50 * time.Millisecond
+	"github.com/wrale/wrale-fleet/metal"
 )
 
 // InterruptHandler is called when an interrupt occurs
@@ -38,6 +26,18 @@ type interruptState struct {
 	enabled     bool
 	channel     chan bool
 }
+
+// Edge represents interrupt trigger edges
+type Edge string
+
+const (
+	Rising  Edge = "RISING"
+	Falling Edge = "FALLING"
+	Both    Edge = "BOTH"
+
+	// Default debounce time for hardware interrupts
+	defaultDebounceTime = 50 * time.Millisecond
+)
 
 func newInterruptState(cfg InterruptConfig) *interruptState {
 	if cfg.DebounceTime == 0 {
@@ -61,7 +61,7 @@ func (c *Controller) EnableInterrupt(name string, cfg InterruptConfig) error {
 	}
 
 	// Configure pin for input
-	pin.mode = types.ModeInput
+	pin.mode = metal.ModeInput
 
 	// Initialize interrupt tracking
 	if c.interrupts == nil {
@@ -170,7 +170,7 @@ func (c *Controller) startMonitoring(ctx context.Context) error {
 }
 
 // WatchPin creates a channel for monitoring pin state changes
-func (c *Controller) WatchPin(name string, mode types.PinMode) (<-chan bool, error) {
+func (c *Controller) WatchPin(name string) (<-chan bool, error) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 

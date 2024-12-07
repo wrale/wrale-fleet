@@ -7,14 +7,13 @@ import (
 	"time"
 
 	"github.com/wrale/wrale-fleet/metal"
-	"github.com/wrale/wrale-fleet/metal/internal/types"
 )
 
 // Controller manages GPIO pins and their states
 type Controller struct {
 	mux        sync.RWMutex
 	pins       map[string]*pin
-	interrupts map[string]chan bool
+	interrupts map[string]*interruptState
 	enabled    bool
 	simulation bool
 
@@ -26,7 +25,7 @@ type Controller struct {
 func New(opts ...metal.Option) (metal.GPIO, error) {
 	c := &Controller{
 		pins:       make(map[string]*pin),
-		interrupts: make(map[string]chan bool),
+		interrupts: make(map[string]*interruptState),
 		enabled:    true,
 		simPins:    make(map[string]*simPin),
 	}
@@ -42,7 +41,7 @@ func New(opts ...metal.Option) (metal.GPIO, error) {
 }
 
 // ConfigurePin sets up a GPIO pin
-func (c *Controller) ConfigurePin(name string, pinNum uint, mode types.PinMode) error {
+func (c *Controller) ConfigurePin(name string, pinNum uint, mode metal.PinMode) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
@@ -60,7 +59,7 @@ func (c *Controller) ConfigurePin(name string, pinNum uint, mode types.PinMode) 
 }
 
 // ConfigurePWM sets up a PWM output
-func (c *Controller) ConfigurePWM(name string, pinNum uint, config *types.PWMConfig) error {
+func (c *Controller) ConfigurePWM(name string, pinNum uint, config *metal.PWMConfig) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
@@ -70,7 +69,7 @@ func (c *Controller) ConfigurePWM(name string, pinNum uint, config *types.PWMCon
 
 	p := &pin{
 		name:      name,
-		mode:      types.ModePWM,
+		mode:      metal.ModePWM,
 		pwmConfig: config,
 	}
 
@@ -88,7 +87,7 @@ func (c *Controller) SetPinState(name string, state bool) error {
 		return fmt.Errorf("pin %s not found", name)
 	}
 
-	if p.mode != types.ModeOutput {
+	if p.mode != metal.ModeOutput {
 		return fmt.Errorf("pin %s not configured for output", name)
 	}
 
@@ -119,7 +118,7 @@ func (c *Controller) SetPWMDutyCycle(name string, duty uint32) error {
 		return fmt.Errorf("pin %s not found", name)
 	}
 
-	if p.mode != types.ModePWM {
+	if p.mode != metal.ModePWM {
 		return fmt.Errorf("pin %s not configured for PWM", name)
 	}
 
@@ -132,57 +131,6 @@ func (c *Controller) SetPWMDutyCycle(name string, duty uint32) error {
 	}
 
 	p.pwmConfig.DutyCycle = duty
-	return nil
-}
-
-// WatchPin sets up pin change monitoring
-func (c *Controller) WatchPin(name string, mode types.PinMode) (<-chan bool, error) {
-	c.mux.Lock()
-	defer c.mux.Unlock()
-
-	if _, exists := c.pins[name]; !exists {
-		return nil, fmt.Errorf("pin %s not found", name)
-	}
-
-	ch := make(chan bool, 1)
-	c.interrupts[name] = ch
-	return ch, nil
-}
-
-// UnwatchPin stops monitoring a pin
-func (c *Controller) UnwatchPin(name string) error {
-	c.mux.Lock()
-	defer c.mux.Unlock()
-
-	ch, exists := c.interrupts[name]
-	if !exists {
-		return nil
-	}
-
-	close(ch)
-	delete(c.interrupts, name)
-	return nil
-}
-
-// Close releases resources
-func (c *Controller) Close() error {
-	c.mux.Lock()
-	defer c.mux.Unlock()
-
-	// Close all interrupt channels
-	for name, ch := range c.interrupts {
-		close(ch)
-		delete(c.interrupts, name)
-	}
-
-	// Reset all pins to safe state
-	for _, p := range c.pins {
-		if p.mode == types.ModeOutput {
-			p.value = false
-		}
-	}
-
-	c.enabled = false
 	return nil
 }
 
@@ -205,7 +153,7 @@ func (c *Controller) GetGroupState(name string) ([]bool, error) {
 }
 
 // GetPinMode gets the mode of a pin
-func (c *Controller) GetPinMode(name string) (types.PinMode, error) {
+func (c *Controller) GetPinMode(name string) (metal.PinMode, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
 
@@ -218,7 +166,7 @@ func (c *Controller) GetPinMode(name string) (types.PinMode, error) {
 }
 
 // GetPinConfig gets the PWM config of a pin
-func (c *Controller) GetPinConfig(name string) (*types.PWMConfig, error) {
+func (c *Controller) GetPinConfig(name string) (*metal.PWMConfig, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
 
@@ -227,7 +175,7 @@ func (c *Controller) GetPinConfig(name string) (*types.PWMConfig, error) {
 		return nil, fmt.Errorf("pin %s not found", name)
 	}
 
-	if p.mode != types.ModePWM {
+	if p.mode != metal.ModePWM {
 		return nil, fmt.Errorf("pin %s not in PWM mode", name)
 	}
 
@@ -246,6 +194,65 @@ func (c *Controller) ListPins() []string {
 	return pins
 }
 
+// Monitor interface
+func (c *Controller) GetState() interface{} {
+	// Return current GPIO state
+	pins := make(map[string]bool)
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+	
+	for name, p := range c.pins {
+		if p.mode == metal.ModeInput || p.mode == metal.ModeOutput {
+			pins[name] = p.value
+		}
+	}
+	return pins
+}
+
+func (c *Controller) WatchEvents(ctx context.Context) (<-chan interface{}, error) {
+	ch := make(chan interface{}, 10)
+	go func() {
+		defer close(ch)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				state := c.GetState()
+				select {
+				case ch <- state:
+				default:
+				}
+			}
+		}
+	}()
+	return ch, nil
+}
+
+// Close releases resources
+func (c *Controller) Close() error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	// Close all interrupt channels
+	for _, state := range c.interrupts {
+		close(state.channel)
+	}
+
+	// Reset all pins to safe state
+	for _, p := range c.pins {
+		if p.mode == metal.ModeOutput {
+			p.value = false
+		}
+	}
+
+	c.enabled = false
+	return nil
+}
+
 // Simulation control
 func (c *Controller) SetSimulated(simulated bool) {
 	c.simulation = simulated
@@ -253,15 +260,4 @@ func (c *Controller) SetSimulated(simulated bool) {
 
 func (c *Controller) IsSimulated() bool {
 	return c.simulation
-}
-
-// Monitor interface
-func (c *Controller) GetState() interface{} {
-	// Return current GPIO state
-	return nil
-}
-
-func (c *Controller) WatchEvents(ctx context.Context) (<-chan interface{}, error) {
-	// Return GPIO event channel
-	return nil, nil
 }

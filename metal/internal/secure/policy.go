@@ -1,177 +1,62 @@
 package secure
 
 import (
-	"fmt"
-	"sync"
-	"time"
+    "context"
+    "time"
 
-	"github.com/wrale/wrale-fleet/metal/core/policy"
+    "github.com/wrale/wrale-fleet/metal"
 )
 
-// PolicyManager handles security policy enforcement and high-level management
-type PolicyManager struct {
-	sync.RWMutex
+// SecurityLevel defines security enforcement levels
+type SecurityLevel string
 
-	// Components
-	monitor    *Monitor
-	deviceID   string
-	policy     SecurityPolicy
-	metrics    SecurityMetrics
-	hwMonitor  *Manager
+const (
+    LevelLow    SecurityLevel = "LOW"
+    LevelMedium SecurityLevel = "MEDIUM"
+    LevelHigh   SecurityLevel = "HIGH"
+)
+
+// SecurityPolicy defines security enforcement rules
+type SecurityPolicy struct {
+    Level           SecurityLevel        `json:"level"`
+    QuietHours      []metal.TimeWindow  `json:"quiet_hours"`
+    MotionThreshold float64             `json:"motion_threshold"`
+    VoltageRange    [2]float64          `json:"voltage_range"`
+    AutoLock        bool                `json:"auto_lock"`
+    LockDelay       time.Duration       `json:"lock_delay"`
+    AlertChannels   []string            `json:"alert_channels"`
 }
 
-// NewPolicyManager creates a new policy manager instance
-func NewPolicyManager(deviceID string, hwMonitor *Manager, policy SecurityPolicy) *PolicyManager {
-	return &PolicyManager{
-		deviceID:  deviceID,
-		hwMonitor: hwMonitor,
-		policy:    policy,
-		metrics: SecurityMetrics{
-			Metrics: policy.Metrics{
-				DeviceID:  deviceID,
-				UpdatedAt: time.Now(),
-				Status:    "ACTIVE",
-			},
-			CurrentLevel: policy.Level,
-		},
-	}
+// SecurityMetrics captures security-related measurements
+type SecurityMetrics struct {
+    LastMotion      time.Time           `json:"last_motion"`
+    MotionCount     int                 `json:"motion_count"`
+    VoltageHistory  []float64           `json:"voltage_history"`
+    CaseOpenTime    time.Duration       `json:"case_open_time"`
+    AlertsTriggered int                 `json:"alerts_triggered"`
+    LastAlert       time.Time           `json:"last_alert"`
 }
 
-// DefaultPolicy returns a sensible default security policy
-func DefaultPolicy() SecurityPolicy {
-	return SecurityPolicy{
-		BasePolicy: policy.BasePolicy{
-			Enabled:      true,
-			MinDelay:     defaultMinDelay,
-			MaxDelay:     defaultMaxDelay,
-			AlertDelay:   defaultAlertDelay,
-			UpdatedAt:    time.Now(),
-		},
-		Level: SecurityMedium,
-		
-		// Detection settings
-		MotionSensitivity: 0.7, // 70% sensitivity
-		VoltageThreshold:  4.8, // Minimum 4.8V
-		
-		// Default quiet hours (if needed)
-		QuietHours: []TimeWindow{},
-	}
+// Monitor represents a component that can be monitored
+type Monitor interface {
+    // Start begins monitoring
+    Start(ctx context.Context) error
+    
+    // Stop halts monitoring
+    Stop() error
+    
+    // Close releases resources
+    Close() error
 }
 
-// Start begins policy enforcement
-func (p *PolicyManager) Start() error {
-	p.Lock()
-	defer p.Unlock()
-
-	// Start monitoring if not already running
-	if p.monitor != nil {
-		return fmt.Errorf("policy manager already running")
-	}
-
-	p.monitor = &Monitor{
-		hwManager:     p.hwMonitor,
-		policyManager: p,
-		deviceID:      p.deviceID,
-	}
-
-	return nil
+// validatePolicy checks policy settings
+func validatePolicy(policy SecurityPolicy) error {
+    // Implementation would validate policy settings
+    return nil
 }
 
-// Stop halts policy enforcement
-func (p *PolicyManager) Stop() error {
-	p.Lock()
-	defer p.Unlock()
-
-	if p.monitor == nil {
-		return nil
-	}
-
-	p.monitor = nil
-	return nil
-}
-
-// GetMetrics returns current security metrics
-func (p *PolicyManager) GetMetrics() interface{} {
-	p.RLock()
-	defer p.RUnlock()
-	return p.metrics
-}
-
-// GetPolicy returns the current security policy
-func (p *PolicyManager) GetPolicy() interface{} {
-	p.RLock()
-	defer p.RUnlock()
-	return p.policy
-}
-
-// UpdatePolicy updates the current security policy
-func (p *PolicyManager) UpdatePolicy(newPolicy interface{}) error {
-	policy, ok := newPolicy.(SecurityPolicy)
-	if !ok {
-		return fmt.Errorf("invalid policy type: expected SecurityPolicy")
-	}
-
-	p.Lock()
-	defer p.Unlock()
-
-	p.policy = policy
-	p.metrics.CurrentLevel = policy.Level
-	p.metrics.UpdatedAt = time.Now()
-
-	// Update monitor if it exists
-	if p.monitor != nil {
-		p.monitor.policyManager = p
-	}
-
-	return nil
-}
-
-// HandleStateUpdate processes a state update from hardware
-func (p *PolicyManager) HandleStateUpdate(state TamperState) error {
-	p.Lock()
-	defer p.Unlock()
-
-	event := TamperEvent{
-		DeviceID:  p.deviceID,
-		State:     state,
-		Timestamp: time.Now(),
-	}
-
-	// Process based on current state
-	if state.CaseOpen {
-		event.Type = "CASE_TAMPER"
-		event.Severity = SecurityHigh
-		p.metrics.Warnings = append(p.metrics.Warnings, "Case tamper detected")
-	}
-
-	if state.MotionDetected {
-		event.Type = "MOTION_DETECTED"
-		event.Severity = SecurityMedium
-		p.metrics.Warnings = append(p.metrics.Warnings, "Motion detected")
-	}
-
-	if !state.VoltageNormal {
-		event.Type = "VOLTAGE_TAMPER"
-		event.Severity = SecurityHigh
-		p.metrics.Warnings = append(p.metrics.Warnings, "Voltage tamper detected")
-	}
-
-	// Update metrics
-	if event.Type != "" {
-		p.metrics.DetectionEvents = append(p.metrics.DetectionEvents, event)
-		if len(p.metrics.DetectionEvents) > 100 {
-			p.metrics.DetectionEvents = p.metrics.DetectionEvents[1:]
-		}
-
-		if p.policy.OnTamperDetected != nil {
-			p.policy.OnTamperDetected(event)
-		}
-	}
-
-	// State change notification
-	if p.policy.OnStateChange != nil {
-		p.policy.OnStateChange(state)
-	}
-
-	return nil
+// applyPolicy applies security policy settings
+func (m *Manager) applyPolicy(policy SecurityPolicy) error {
+    // Implementation would configure security based on policy
+    return nil
 }
