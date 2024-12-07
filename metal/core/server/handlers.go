@@ -20,7 +20,7 @@ type SystemStatus struct {
 			CPUTemp     float64 `json:"cpu_temp"`
 			GPUTemp     float64 `json:"gpu_temp"`
 			AmbientTemp float64 `json:"ambient_temp"`
-			FanSpeed    int     `json:"fan_speed"`
+			FanSpeed    uint32  `json:"fan_speed"`
 			Throttled   bool    `json:"throttled"`
 		} `json:"thermal"`
 		Security struct {
