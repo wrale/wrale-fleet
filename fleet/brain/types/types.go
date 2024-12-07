@@ -30,6 +30,7 @@ const (
 	// Task types for operations
 	TaskUpdateThermalPolicy TaskType = "update_thermal_policy"
 	TaskSetThermalProfile  TaskType = "set_thermal_profile"
+	TaskSetFanSpeed        TaskType = "set_fan_speed"
 	TaskSetCoolingMode     TaskType = "set_cooling_mode"
 
 	// Thermal profiles

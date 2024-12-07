@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wrale/wrale-fleet/fleet/brain/coordinator"
 	"github.com/wrale/wrale-fleet/fleet/brain/types"
 )
 
@@ -25,6 +26,8 @@ type Inventory struct {
 	devices map[types.DeviceID]*DeviceInfo
 	mu      sync.RWMutex
 }
+
+var _ coordinator.StateManager = (*Inventory)(nil) // Verify interface implementation
 
 // DeviceInfo extends DeviceState with additional inventory information
 type DeviceInfo struct {

@@ -18,13 +18,13 @@ type MetalClient interface {
 // Orchestrator coordinates fleet-wide operations
 type Orchestrator struct {
 	scheduler    *Scheduler
-	stateManager *StateManager
+	stateManager StateManager
 	metalClient  MetalClient
 	mu           sync.RWMutex
 }
 
 // NewOrchestrator creates a new orchestrator instance
-func NewOrchestrator(scheduler *Scheduler, stateManager *StateManager, metalClient MetalClient) *Orchestrator {
+func NewOrchestrator(scheduler *Scheduler, stateManager StateManager, metalClient MetalClient) *Orchestrator {
 	return &Orchestrator{
 		scheduler:    scheduler,
 		stateManager: stateManager,
