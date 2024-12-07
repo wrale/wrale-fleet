@@ -51,3 +51,8 @@ func New(config Config) (*SyncManager, error) {
 		mu:     sync.RWMutex{},
 	}, nil
 }
+
+// GetConfig returns a copy of the current configuration
+func (s *SyncManager) GetConfig() Config {
+	return s.config
+}
