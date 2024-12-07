@@ -6,6 +6,11 @@ import (
 	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 )
 
+// Manager defines the interface for power management operations
+type Manager interface {
+	GetState() PowerState
+}
+
 // PowerState represents the power state of a device
 type PowerState struct {
 	State          string                `json:"state"`

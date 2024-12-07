@@ -1,30 +1,11 @@
 package manager
 
 import (
-	"fmt"
 	"sync"
-	"time"
 )
 
-// New creates a new sync manager instance
-func New(config Config) (*SyncManager, error) {
-	if config.StoragePath == "" {
-		return nil, fmt.Errorf("storage path required")
-	}
-
-	// Set defaults
-	if config.MaxRetries == 0 {
-		config.MaxRetries = 3
-	}
-	if config.Timeout == 0 {
-		config.Timeout = 30 * time.Second
-	}
-	if config.RetryInterval == 0 {
-		config.RetryInterval = time.Second
-	}
-
-	return &SyncManager{
-		config: config,
-		mu:     sync.RWMutex{},
-	}, nil
+// Ensure manager package has proper exports
+func init() {
+	// This file is kept for backwards compatibility
+	// All functionality has been moved to types.go
 }

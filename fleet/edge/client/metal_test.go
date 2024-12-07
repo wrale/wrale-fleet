@@ -12,6 +12,9 @@ type mockPowerManager struct {
 	state power.PowerState
 }
 
+// Verify interface compliance at compile time
+var _ power.Manager = (*mockPowerManager)(nil)
+
 func (m *mockPowerManager) GetState() power.PowerState {
 	return m.state
 }
@@ -49,7 +52,7 @@ func TestMetalClient_DirectHardware(t *testing.T) {
 			UpdatedAt: time.Now(),
 		},
 	}
-	
+
 	client := NewMetalClient("http://localhost:8080", mockPower)
 
 	state, err := client.GetPowerState()

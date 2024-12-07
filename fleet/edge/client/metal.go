@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/wrale/wrale-fleet/metal/hw/diag"
@@ -40,10 +41,22 @@ func NewMetalClient(baseURL string, powerMgr ...power.Manager) *MetalClient {
 	return client
 }
 
+// hasPowerManager safely checks if the client has a valid power manager
+func (c *MetalClient) hasPowerManager() bool {
+	if c.powerMgr == nil {
+		return false
+	}
+	v := reflect.ValueOf(c.powerMgr)
+	if !v.IsValid() {
+		return false
+	}
+	return !v.IsNil()
+}
+
 // GetPowerState retrieves current power system state
 func (c *MetalClient) GetPowerState() (*power.PowerState, error) {
-	// Check for direct hardware access using type assertion
-	if c.powerMgr != nil {
+	if c.hasPowerManager() {
+		// Direct hardware access
 		state := c.powerMgr.GetState()
 		return &state, nil
 	}
@@ -62,25 +75,10 @@ func (c *MetalClient) GetPowerState() (*power.PowerState, error) {
 	return &state, nil
 }
 
-// GetMetrics retrieves current system metrics
-func (c *MetalClient) GetMetrics() (*MetricsResponse, error) {
-	resp, err := c.httpClient.Get(fmt.Sprintf("%s/metrics", c.baseURL))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get metrics: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var metrics MetricsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&metrics); err != nil {
-		return nil, fmt.Errorf("failed to decode metrics response: %v", err)
-	}
-	return &metrics, nil
-}
-
 // UpdatePowerState updates the device power state
 func (c *MetalClient) UpdatePowerState(powerState *power.PowerState) error {
-	if c.powerMgr != nil {
-		// Direct hardware update if available
+	if c.hasPowerManager() {
+		// Direct hardware update not supported
 		return fmt.Errorf("direct power state updates not supported")
 	}
 
@@ -105,6 +103,21 @@ func (c *MetalClient) UpdatePowerState(powerState *power.PowerState) error {
 		return fmt.Errorf("failed to update power state: got status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// GetMetrics retrieves current system metrics
+func (c *MetalClient) GetMetrics() (*MetricsResponse, error) {
+	resp, err := c.httpClient.Get(fmt.Sprintf("%s/metrics", c.baseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metrics: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var metrics MetricsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&metrics); err != nil {
+		return nil, fmt.Errorf("failed to decode metrics response: %v", err)
+	}
+	return &metrics, nil
 }
 
 // GetHealthStatus retrieves the current health status of the device
