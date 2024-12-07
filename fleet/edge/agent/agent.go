@@ -7,7 +7,6 @@ import (
     "time"
 
     "github.com/wrale/wrale-fleet/fleet/brain/types"
-    "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Agent implements the edge agent functionality
@@ -24,7 +23,7 @@ type Agent struct {
     mu          sync.RWMutex
 
     // Thermal management
-    thermalState     *types.ThermalMetrics  // Updated to use ThermalMetrics
+    thermalState     *types.ThermalMetrics
     lastThermalSync  time.Time
     thermalUpdateMux sync.RWMutex
 }
@@ -248,7 +247,7 @@ func (a *Agent) executeCommand(ctx context.Context, cmd Command) CommandResult {
         } else {
             result.Success = true
             a.thermalUpdateMux.RLock()
-            result.Payload = a.thermalState  // Now properly using the Payload field
+            result.Payload = a.thermalState
             a.thermalUpdateMux.RUnlock()
         }
 

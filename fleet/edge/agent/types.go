@@ -4,7 +4,6 @@ import (
     "time"
 
     braintypes "github.com/wrale/wrale-fleet/fleet/brain/types"
-    "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Command types
@@ -60,16 +59,15 @@ type CommandResult struct {
     CommandID   string
     Success     bool
     Error       error
-    Payload     interface{}   // Added Payload field
+    Payload     interface{}   // Stores command-specific response data
     CompletedAt time.Time
-    Payload     interface{} // Stores command-specific response data
 }
 
 // MetalClient interface for metal layer communication
 type MetalClient interface {
-    GetMetrics() (types.DeviceMetrics, error)
-    GetThermalState() (*types.ThermalMetrics, error)  // Updated to use ThermalMetrics
-    UpdateThermalPolicy(policy types.ThermalPolicy) error
+    GetMetrics() (braintypes.DeviceMetrics, error)
+    GetThermalState() (*braintypes.ThermalMetrics, error)
+    UpdateThermalPolicy(policy braintypes.ThermalPolicy) error
     SetFanSpeed(speed uint32) error
     SetThrottling(enabled bool) error
     UpdatePowerState(state string) error
@@ -81,8 +79,8 @@ type MetalClient interface {
 // BrainClient interface for brain communication
 type BrainClient interface {
     GetCommands() ([]Command, error)
-    SyncState(state types.DeviceState) error
-    SyncThermalState(state *types.ThermalMetrics) error  // Updated to use ThermalMetrics
+    SyncState(state braintypes.DeviceState) error
+    SyncThermalState(state *braintypes.ThermalMetrics) error
     ReportCommandResult(result CommandResult) error
     ReportHealth(healthy bool, diagnostics map[string]interface{}) error
 }
