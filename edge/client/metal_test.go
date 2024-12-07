@@ -2,20 +2,21 @@ package client
 
 import (
 	"testing"
+
 	"github.com/wrale/wrale-fleet/metal/hw/power"
 )
 
 type mockPowerManager struct {
-	state power.State
+	state *power.State
 }
 
 func (m *mockPowerManager) GetState() *power.State {
-	return &m.state
+	return m.state
 }
 
 func TestGetPowerState(t *testing.T) {
 	mockPower := &mockPowerManager{
-		state: power.State{
+		state: &power.State{
 			Voltage: 5.0,
 			Current: 1.0,
 		},
