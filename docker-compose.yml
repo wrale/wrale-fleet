@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  # Metal service
+  metal:
+    build:
+      context: .
+      dockerfile: metal/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - METAL_PORT=8080
+      - METAL_LOG_LEVEL=info
+    volumes:
+      - metal_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Fleet services
+  fleet:
+    build:
+      context: .
+      dockerfile: fleet/Dockerfile
+    ports:
+      - "8081:8081"  # Brain service
+      - "8082:8082"  # Edge service
+    environment:
+      - BRAIN_PORT=8081
+      - EDGE_PORT=8082
+      - METAL_ENDPOINT=http://metal:8080
+      - BRAIN_LOG_LEVEL=info
+      - EDGE_LOG_LEVEL=info
+    depends_on:
+      metal:
+        condition: service_healthy
+    volumes:
+      - fleet_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # User API service
+  api:
+    build:
+      context: .
+      dockerfile: user/api/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      - API_PORT=8083
+      - BRAIN_ENDPOINT=http://fleet:8081
+      - EDGE_ENDPOINT=http://fleet:8082
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - API_LOG_LEVEL=info
+    depends_on:
+      fleet:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8083/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # UI Dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: user/ui/wrale-dashboard/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8083
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  metal_data:
+    driver: local
+  fleet_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
