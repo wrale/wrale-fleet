@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	hw "github.com/wrale/wrale-fleet/metal/secure"
+	"github.com/wrale/wrale-fleet/metal"
 )
 
 // FileStore implements StateStore using the filesystem
@@ -41,7 +41,7 @@ func (s *FileStore) eventPath(deviceID string) string {
 }
 
 // SaveState persists the current security state
-func (s *FileStore) SaveState(ctx context.Context, deviceID string, state hw.TamperState) error {
+func (s *FileStore) SaveState(ctx context.Context, deviceID string, state metal.TamperState) error {
 	s.Lock()
 	defer s.Unlock()
 
@@ -65,7 +65,7 @@ func (s *FileStore) SaveState(ctx context.Context, deviceID string, state hw.Tam
 }
 
 // LoadState retrieves the last known security state
-func (s *FileStore) LoadState(ctx context.Context, deviceID string) (hw.TamperState, error) {
+func (s *FileStore) LoadState(ctx context.Context, deviceID string) (metal.TamperState, error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -74,15 +74,15 @@ func (s *FileStore) LoadState(ctx context.Context, deviceID string) (hw.TamperSt
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Return empty state if file doesn't exist
-			return hw.TamperState{LastCheck: time.Now()}, nil
+			return metal.TamperState{LastCheck: time.Now()}, nil
 		}
-		return hw.TamperState{}, fmt.Errorf("failed to read state file: %w", err)
+		return metal.TamperState{}, fmt.Errorf("failed to read state file: %w", err)
 	}
 
 	// Unmarshal state
-	var state hw.TamperState
+	var state metal.TamperState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return hw.TamperState{}, fmt.Errorf("failed to unmarshal state: %w", err)
+		return metal.TamperState{}, fmt.Errorf("failed to unmarshal state: %w", err)
 	}
 
 	return state, nil
@@ -153,6 +153,14 @@ func (s *FileStore) GetEvents(ctx context.Context, deviceID string, since time.T
 	}
 
 	return events, nil
+}
+
+// Event represents a security event record
+type Event struct {
+	DeviceID  string                 `json:"device_id"`
+	Type      string                 `json:"type"`
+	Timestamp time.Time              `json:"timestamp"`
+	Details   interface{}            `json:"details,omitempty"`
 }
 
 // Helper to split byte slice into lines
