@@ -6,16 +6,13 @@ include $(MAKEFILES_DIR)/docker.mk
 NODE_ENV ?= production
 NPM ?= npm
 
-# Check if Docker is available
-DOCKER_AVAILABLE := $(shell which docker 2>/dev/null)
-
 .PHONY: all build clean test lint verify package deploy help
 
 all: clean verify build ## Build everything
-ifneq ($(DOCKER_AVAILABLE),)
+ifeq ($(CONTAINER_BUILD_AVAILABLE),true)
 	$(MAKE) docker-build
 else
-	@echo "Docker not found - skipping container build"
+	@echo "Skipping container build - no container engine available"
 endif
 
 build: ## Build the UI application
@@ -26,8 +23,8 @@ build: ## Build the UI application
 clean: ## Clean build artifacts
 	@echo "Cleaning..."
 	rm -rf .next out node_modules coverage
-ifneq ($(DOCKER_AVAILABLE),)
-	-docker rmi $(DOCKER_IMAGE):$(DOCKER_TAG) 2>/dev/null || true
+ifeq ($(CONTAINER_BUILD_AVAILABLE),true)
+	$(MAKE) docker-clean
 endif
 
 test: ## Run tests
@@ -43,7 +40,7 @@ lint: ## Run linters
 verify: lint test ## Run all verifications
 
 package: verify ## Create deployable package
-ifneq ($(DOCKER_AVAILABLE),)
+ifeq ($(CONTAINER_BUILD_AVAILABLE),true)
 	$(MAKE) docker-build
 endif
 	@echo "Creating distribution package..."
