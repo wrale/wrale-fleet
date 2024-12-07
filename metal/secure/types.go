@@ -4,16 +4,15 @@ package secure
 import (
 	"context"
 	"time"
-
-	hw "github.com/wrale/wrale-fleet/metal/secure"
 )
 
-// Default timing values
-const (
-	defaultMinDelay   = 100 * time.Millisecond
-	defaultMaxDelay   = 500 * time.Millisecond
-	defaultAlertDelay = 5 * time.Minute
-)
+// TamperState represents the current tamper detection status
+type TamperState struct {
+	CaseOpen       bool
+	MotionDetected bool
+	VoltageNormal  bool
+	LastCheck      time.Time
+}
 
 // SecurityLevel indicates the required security posture
 type SecurityLevel string
@@ -41,7 +40,7 @@ type SecurityPolicy struct {
 	
 	// Callbacks
 	OnTamperDetected func(TamperEvent)
-	OnStateChange    func(hw.TamperState)
+	OnStateChange    func(TamperState)
 }
 
 // TimeWindow represents a time period
@@ -52,14 +51,14 @@ type TimeWindow struct {
 
 // SecurityMetrics provides monitoring statistics
 type SecurityMetrics struct {
-	CurrentLevel     SecurityLevel        `json:"current_level"`
-	TamperState     hw.TamperState       `json:"tamper_state"`
-	DetectionEvents  []TamperEvent       `json:"detection_events"`
-	VoltageLevel     float64             `json:"voltage_level"`
-	MotionDetected   bool                `json:"motion_detected"`
-	LastTamperEvent  *TamperEvent        `json:"last_tamper_event,omitempty"`
-	PolicyViolations []string            `json:"policy_violations,omitempty"`
-	UpdatedAt        time.Time           `json:"updated_at"`
+	CurrentLevel     SecurityLevel     `json:"current_level"`
+	TamperState     TamperState       `json:"tamper_state"`
+	DetectionEvents  []TamperEvent    `json:"detection_events"`
+	VoltageLevel     float64         `json:"voltage_level"`
+	MotionDetected   bool           `json:"motion_detected"`
+	LastTamperEvent  *TamperEvent   `json:"last_tamper_event,omitempty"`
+	PolicyViolations []string       `json:"policy_violations,omitempty"`
+	UpdatedAt        time.Time      `json:"updated_at"`
 }
 
 // TamperEvent represents a security violation
@@ -68,7 +67,7 @@ type TamperEvent struct {
 	Type        string
 	Severity    SecurityLevel
 	Description string
-	State       hw.TamperState
+	State       TamperState
 	Timestamp   time.Time
 	Details     interface{}
 }
@@ -82,13 +81,12 @@ type Event struct {
 }
 
 // SecurityEvent represents a specific security-related occurrence
-// Used for detailed event tracking and analysis
 type SecurityEvent struct {
 	Timestamp time.Time
 	Type      string
 	Source    string
 	Severity  string
-	State     hw.TamperState
+	State     TamperState
 	Context   map[string]interface{}
 }
 
@@ -104,57 +102,10 @@ type TamperAttempt struct {
 // StateTransition records a change in the system's security state
 type StateTransition struct {
 	Timestamp time.Time
-	FromState hw.TamperState
-	ToState   hw.TamperState
+	FromState TamperState
+	ToState   TamperState
 	Trigger   string
 	Context   map[string]interface{}
-}
-
-// StateStore defines the interface for persisting security state
-type StateStore interface {
-	// SaveState persists the current security state
-	SaveState(ctx context.Context, deviceID string, state hw.TamperState) error
-
-	// LoadState retrieves the last known security state
-	LoadState(ctx context.Context, deviceID string) (hw.TamperState, error)
-
-	// LogEvent records a security event
-	LogEvent(ctx context.Context, deviceID string, eventType string, details interface{}) error
-}
-
-// HandleStateUpdate updates the security state with context
-func (pm *PolicyManager) HandleStateUpdate(ctx context.Context, state hw.TamperState) error {
-	// Implementation details would go here
-	return nil
-}//// The following was merged into this file from legacy secure/hw-types.go.. Please preserve it but fix the file.
-// TODO: Need to merge with core's types.go
-
-package secure
-
-import (
-	"context"
-	"time"
-
-	"github.com/wrale/wrale-fleet/metal/gpio"
-)
-
-// TamperState represents the current tamper detection status
-type TamperState struct {
-	CaseOpen       bool
-	MotionDetected bool
-	VoltageNormal  bool
-	LastCheck      time.Time
-}
-
-// Config holds the configuration for the security manager
-type Config struct {
-	GPIO          *gpio.Controller
-	CaseSensor    string
-	MotionSensor  string
-	VoltageSensor string
-	DeviceID      string
-	StateStore    StateStore
-	OnTamper      func(TamperState)
 }
 
 // StateStore defines the interface for persisting security state
@@ -169,10 +120,21 @@ type StateStore interface {
 	LogEvent(ctx context.Context, deviceID string, eventType string, details interface{}) error
 }
 
-// Event represents a security event
-type Event struct {
-	DeviceID  string
-	Type      string
-	Timestamp time.Time
-	Details   interface{}
+// Config holds the configuration for the security manager
+type Config struct {
+	GPIO          GPIOController
+	CaseSensor    string
+	MotionSensor  string
+	VoltageSensor string
+	DeviceID      string
+	StateStore    StateStore
+	OnTamper      func(TamperState)
+}
+
+// GPIOController defines the interface required for GPIO operations
+type GPIOController interface {
+	ConfigurePin(name string, pin uint, mode string) error
+	GetPinState(name string) (bool, error)
+	SetPinState(name string, state bool) error
+	MonitorPin(name string) (<-chan bool, error)
 }

@@ -3,8 +3,6 @@ package thermal
 import (
 	"fmt"
 	"time"
-
-	hw "github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 // Default timing values for thermal management
@@ -19,14 +17,14 @@ const (
 	defaultCriticalDelay = 1 * time.Second
 )
 
-// HardwareMonitor wraps the low-level hardware thermal monitor
+// HardwareMonitor handles low-level thermal monitoring
 type HardwareMonitor struct {
-	monitor *hw.Monitor
+	monitor *Monitor
 }
 
 // defaultConfig returns a default hardware configuration
-func defaultConfig() hw.Config {
-	return hw.Config{
+func defaultConfig() Config {
+	return Config{
 		MonitorInterval: minResponseDelay,
 		FanControlPin:  "fan_control",
 		ThrottlePin:    "cpu_throttle",
@@ -38,7 +36,7 @@ func defaultConfig() hw.Config {
 
 // NewHardwareMonitor creates a new hardware monitor instance
 func NewHardwareMonitor() (*HardwareMonitor, error) {
-	monitor, err := hw.New(defaultConfig())
+	monitor, err := NewMonitor(defaultConfig())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create hardware monitor: %w", err)
 	}
@@ -49,8 +47,17 @@ func NewHardwareMonitor() (*HardwareMonitor, error) {
 }
 
 // Monitor returns the underlying hardware monitor
-func (h *HardwareMonitor) Monitor() *hw.Monitor {
+func (h *HardwareMonitor) Monitor() *Monitor {
 	return h.monitor
+}
+
+// NewMonitor creates a new thermal monitor
+func NewMonitor(cfg Config) (*Monitor, error) {
+	return &Monitor{
+		config:     cfg,
+		fanControl: cfg.FanControlPin,
+		throttle:   cfg.ThrottlePin,
+	}, nil
 }
 
 // DefaultPolicy returns a sensible default thermal policy
@@ -78,11 +85,4 @@ func DefaultPolicy() ThermalPolicy {
 		// Throttling
 		ThrottleTemp: 80, // Begin throttling at 80°C
 	}
-}
-
-// GetPolicy returns the current thermal policy
-func (p *PolicyManager) GetPolicy() ThermalPolicy {
-	p.RLock()
-	defer p.RUnlock()
-	return p.policy
 }

@@ -3,9 +3,36 @@ package thermal
 
 import (
 	"time"
-
-	hw "github.com/wrale/wrale-fleet/metal/thermal"
 )
+
+// ThermalState represents the current thermal status
+type ThermalState struct {
+	CPUTemp      float64
+	GPUTemp      float64
+	AmbientTemp  float64
+	FanSpeed     uint32
+	Throttled    bool
+	Warnings     []string
+	UpdatedAt    time.Time
+}
+
+// Monitor handles hardware temperature monitoring and fan control
+type Monitor struct {
+	state      ThermalState
+	config     Config
+	fanControl string
+	throttle   string
+}
+
+// Config defines the monitor configuration
+type Config struct {
+	MonitorInterval time.Duration
+	FanControlPin   string
+	ThrottlePin     string
+	CPUTempPath     string
+	GPUTempPath     string
+	AmbientTempPath string
+}
 
 // ThermalProfile defines thermal behavior requirements
 type ThermalProfile string
@@ -54,7 +81,7 @@ type ThermalPolicy struct {
 	// Callbacks
 	OnWarning      func(ThermalEvent)
 	OnCritical     func(ThermalEvent)
-	OnStateChange  func(hw.ThermalState)
+	OnStateChange  func(ThermalState)
 }
 
 // ThermalZone defines a physical area with thermal requirements
@@ -73,7 +100,7 @@ type ThermalEvent struct {
 	Type        string
 	Temperature float64
 	Threshold   float64
-	State       hw.ThermalState
+	State       ThermalState
 	Timestamp   time.Time
 	Details     map[string]interface{}
 }
