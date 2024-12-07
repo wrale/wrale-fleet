@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -49,7 +50,7 @@ func (c *MetalClient) GetMetrics() (*MetricsResponse, error) {
 }
 
 // UpdatePowerState updates the device power state
-func (c *MetalClient) UpdatePowerState(state power.State) error {
+func (c *MetalClient) UpdatePowerState(state power.PowerState) error {
 	url := fmt.Sprintf("%s/power/state", c.baseURL)
 	req, err := http.NewRequest(http.MethodPut, url, nil)
 	if err != nil {
@@ -87,30 +88,58 @@ func (c *MetalClient) GetHealthStatus() (bool, error) {
 }
 
 // RunDiagnostics runs system diagnostics and returns results
-func (c *MetalClient) RunDiagnostics() (*diag.Results, error) {
+func (c *MetalClient) RunDiagnostics() (*diag.TestResult, error) {
 	resp, err := c.httpClient.Post(fmt.Sprintf("%s/diagnostics/run", c.baseURL), "application/json", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run diagnostics: %v", err)
 	}
 	defer resp.Body.Close()
 
-	var results diag.Results
+	var results diag.TestResult
 	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
 		return nil, fmt.Errorf("failed to decode diagnostics results: %v", err)
 	}
 	return &results, nil
 }
 
-func (c *MetalClient) GetThermalState() (thermal.ThermalState, error) {
-	var state thermal.ThermalState
+// GetThermalState retrieves the current thermal state
+func (c *MetalClient) GetThermalState() (*thermal.State, error) {
 	resp, err := c.httpClient.Get(fmt.Sprintf("%s/thermal/state", c.baseURL))
 	if err != nil {
-		return state, fmt.Errorf("failed to get thermal state: %v", err)
+		return nil, fmt.Errorf("failed to get thermal state: %v", err)
 	}
 	defer resp.Body.Close()
 
+	var state thermal.State
 	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
-		return state, fmt.Errorf("failed to decode thermal state: %v", err)
+		return nil, fmt.Errorf("failed to decode thermal state: %v", err)
 	}
-	return state, nil
+	return &state, nil
+}
+
+// ExecuteOperation executes a generic metal operation
+func (c *MetalClient) ExecuteOperation(operation string, params map[string]interface{}) error {
+	payload, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("failed to marshal operation parameters: %v", err)
+	}
+
+	url := fmt.Sprintf("%s/operations/%s", c.baseURL, operation)
+	resp, err := c.httpClient.Post(url, "application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		return fmt.Errorf("failed to execute operation %s: %v", operation, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+			return fmt.Errorf("operation %s failed with status %d", operation, resp.StatusCode)
+		}
+		return fmt.Errorf("operation %s failed: %s", operation, errResp.Error)
+	}
+
+	return nil
 }

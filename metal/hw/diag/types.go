@@ -1,5 +1,7 @@
 package diag
 
+import "time"
+
 // TestType represents the type of diagnostic test
 type TestType string
 
@@ -29,7 +31,13 @@ type Config struct {
 	EnabledTests  []TestType          `json:"enabled_tests"`
 	Thresholds    map[string]float64  `json:"thresholds,omitempty"`
 	RetryAttempts int                 `json:"retry_attempts"`
-	TestInterval  int                 `json:"test_interval"`
+	TestInterval  time.Duration       `json:"test_interval"`
+	GPIO          string             `json:"gpio"`
+	GPIOPins      []int              `json:"gpio_pins"`
+	Retries       int                `json:"retries"`
+	LoadTestTime  time.Duration      `json:"load_test_time"`
+	MinVoltage    float64            `json:"min_voltage"`
+	TempRange     [2]float64         `json:"temp_range"`
 }
 
 // TestResult represents the result of a diagnostic test

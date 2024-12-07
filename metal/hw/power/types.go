@@ -26,15 +26,16 @@ const (
 	BackupPower PowerSource = "backup"
 )
 
-// Default values for power monitoring
-const (
-	defaultMonitorInterval = 30 * time.Second
-)
-
 // Config represents power management configuration
 type Config struct {
-	Sources            []PowerSource      `json:"sources"`
-	MinVoltage         float64           `json:"min_voltage"`
-	MaxVoltage         float64           `json:"max_voltage"`
-	MonitoringInterval time.Duration     `json:"monitoring_interval"`
+	Sources         []PowerSource     `json:"sources"`
+	MinVoltage      float64          `json:"min_voltage"`
+	MaxVoltage      float64          `json:"max_voltage"`
+	GPIO           string           `json:"gpio"`
+	PowerPins      []int            `json:"power_pins"`
+	BatteryADCPath string           `json:"battery_adc_path"`
+	VoltageADCPath string           `json:"voltage_adc_path"`
+	CurrentADCPath string           `json:"current_adc_path"`
+	MonitorInterval time.Duration    `json:"monitor_interval"`
+	OnPowerCritical func()          `json:"-"`
 }
