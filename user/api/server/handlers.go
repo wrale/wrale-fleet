@@ -105,13 +105,14 @@ func (s *Server) handleFleetCommand(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    resp, err := s.fleetSvc.ExecuteFleetCommand(&req)
-    if err != nil {
+    if err := s.fleetSvc.ExecuteFleetCommand(&req); err != nil {
         s.sendError(w, http.StatusInternalServerError, "command_failed", err.Error())
         return
     }
 
-    s.sendJSON(w, http.StatusOK, resp)
+    s.sendJSON(w, http.StatusOK, map[string]string{
+        "status": "accepted",
+    })
 }
 
 func (s *Server) handleFleetMetrics(w http.ResponseWriter, r *http.Request) {
@@ -125,13 +126,13 @@ func (s *Server) handleFleetMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
-    var req apitypes.ConfigUpdateRequest
+    var req apitypes.ConfigRequest
     if err := s.parseJSON(r, &req); err != nil {
         s.sendError(w, http.StatusBadRequest, "invalid_request", err.Error())
         return
     }
 
-    if err := s.fleetSvc.UpdateConfig(&req); err != nil {
+    if err := s.fleetSvc.UpdateFleetConfig(req.Config); err != nil {
         s.sendError(w, http.StatusInternalServerError, "config_failed", err.Error())
         return
     }
@@ -140,21 +141,13 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
-    // Parse optional device IDs from query params
-    var deviceIDs []types.DeviceID
-    if devices := r.URL.Query()["device"]; len(devices) > 0 {
-        for _, d := range devices {
-            deviceIDs = append(deviceIDs, types.DeviceID(d))
-        }
-    }
-
-    configs, err := s.fleetSvc.GetConfig(deviceIDs)
+    config, err := s.fleetSvc.GetFleetConfig()
     if err != nil {
         s.sendError(w, http.StatusInternalServerError, "config_failed", err.Error())
         return
     }
 
-    s.sendJSON(w, http.StatusOK, configs)
+    s.sendJSON(w, http.StatusOK, config)
 }
 
 // WebSocket handler
@@ -168,59 +161,33 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
     }
     defer conn.Close()
 
-    // Create message channel for this connection
-    updates := make(chan *apitypes.WSMessage, 100)
-    defer close(updates)
+    // Add client to WebSocket service
+    s.wsSvc.AddClient(conn)
+    defer s.wsSvc.RemoveClient(conn)
 
-    // Parse device IDs from query params
-    var deviceIDs []types.DeviceID
-    if devices := r.URL.Query()["device"]; len(devices) > 0 {
-        for _, d := range devices {
-            deviceIDs = append(deviceIDs, types.DeviceID(d))
-        }
-    }
-
-    // Subscribe to updates
-    if err := s.wsSvc.Subscribe(deviceIDs, updates); err != nil {
-        conn.WriteJSON(&apitypes.WSMessage{
-            Type: "error",
-            Payload: apitypes.APIError{
-                Code:    "subscribe_failed",
-                Message: err.Error(),
-            },
-        })
-        return
-    }
-    defer s.wsSvc.Unsubscribe(updates)
-
-    // Handle connection
-    go s.handleWSRead(conn)
-    s.handleWSWrite(conn, updates)
-}
-
-func (s *Server) handleWSRead(conn *websocket.Conn) {
-    for {
-        // Read messages but ignore for now (v1.0 is read-only WebSocket)
-        if _, _, err := conn.ReadMessage(); err != nil {
+    // Parse device ID from query param
+    if deviceID := r.URL.Query().Get("device"); deviceID != "" {
+        updates, err := s.wsSvc.GetDeviceUpdates(types.DeviceID(deviceID))
+        if err != nil {
+            conn.WriteJSON(map[string]interface{}{
+                "type":  "error",
+                "error": err.Error(),
+            })
             return
         }
+
+        // Forward device updates to WebSocket
+        for update := range updates {
+            if err := conn.WriteJSON(update); err != nil {
+                return
+            }
+        }
     }
-}
 
-func (s *Server) handleWSWrite(conn *websocket.Conn, updates <-chan *apitypes.WSMessage) {
-    ticker := time.NewTicker(time.Second * 30) // Heartbeat
-    defer ticker.Stop()
-
+    // Keep connection alive
     for {
-        select {
-        case msg := <-updates:
-            if err := conn.WriteJSON(msg); err != nil {
-                return
-            }
-        case <-ticker.C:
-            if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(time.Second)); err != nil {
-                return
-            }
+        if _, _, err := conn.ReadMessage(); err != nil {
+            return
         }
     }
 }

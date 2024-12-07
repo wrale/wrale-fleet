@@ -13,7 +13,6 @@ import (
 	"github.com/wrale/wrale-fleet/metal/hw/power"
 	"github.com/wrale/wrale-fleet/metal/hw/secure"
 	"github.com/wrale/wrale-fleet/metal/hw/thermal"
-	"github.com/wrale/wrale-fleet/shared/config"
 )
 
 // Server represents the main fleet-metal server
@@ -53,7 +52,6 @@ func New(cfg Config) (*Server, error) {
 	// Initialize power management
 	powerMgr, err := power.New(power.Config{
 		GPIO: gpioCtrl,
-		DeviceID: cfg.DeviceID,
 		OnPowerCritical: func(state power.PowerState) {
 			log.Printf("CRITICAL: Power state critical - battery: %.1f%%, voltage: %.1fV",
 				state.BatteryLevel, state.Voltage)
@@ -66,14 +64,14 @@ func New(cfg Config) (*Server, error) {
 	// Initialize thermal management
 	thermalMgr, err := thermal.New(thermal.Config{
 		GPIO: gpioCtrl,
-		DeviceID: cfg.DeviceID,
-		OnWarning: func(state thermal.ThermalState) {
-			log.Printf("WARNING: High temperature - CPU: %.1f°C, GPU: %.1f°C",
-				state.CPUTemp, state.GPUTemp)
-		},
-		OnCritical: func(state thermal.ThermalState) {
-			log.Printf("CRITICAL: Temperature critical - CPU: %.1f°C, GPU: %.1f°C",
-				state.CPUTemp, state.GPUTemp)
+		OnStateChange: func(state thermal.ThermalState) {
+			if state.CPUTemp > 80 || state.GPUTemp > 80 {
+				log.Printf("CRITICAL: Temperature critical - CPU: %.1f°C, GPU: %.1f°C",
+					state.CPUTemp, state.GPUTemp)
+			} else if state.CPUTemp > 70 || state.GPUTemp > 70 {
+				log.Printf("WARNING: High temperature - CPU: %.1f°C, GPU: %.1f°C",
+					state.CPUTemp, state.GPUTemp)
+			}
 		},
 	})
 	if err != nil {

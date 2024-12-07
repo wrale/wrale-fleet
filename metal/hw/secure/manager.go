@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/wrale/wrale-fleet-metal-hw/gpio"
+	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 )
 
 // Manager handles physical security monitoring and response

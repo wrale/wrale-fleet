@@ -3,7 +3,7 @@ package thermal
 import (
 	"time"
 
-	"github.com/wrale/wrale-fleet-metal-hw/gpio"
+	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 )
 
 // Default monitoring interval

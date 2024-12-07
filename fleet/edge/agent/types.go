@@ -3,7 +3,8 @@ package agent
 import (
     "time"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    braintypes "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Command types
@@ -39,7 +40,7 @@ type AgentConfig struct {
 
 // AgentState holds current agent state
 type AgentState struct {
-    DeviceState types.DeviceState
+    DeviceState braintypes.DeviceState
     Mode        OperationMode
     IsHealthy   bool
     LastError   error
@@ -59,14 +60,15 @@ type CommandResult struct {
     CommandID   string
     Success     bool
     Error       error
+    Payload     interface{}   // Added Payload field
     CompletedAt time.Time
 }
 
 // MetalClient interface for metal layer communication
 type MetalClient interface {
-    GetMetrics() (types.DeviceMetrics, error)
-    GetThermalState() (types.ThermalState, error)
-    UpdateThermalPolicy(policy types.ThermalPolicy) error
+    GetMetrics() (braintypes.DeviceMetrics, error)
+    GetThermalState() (thermal.ThermalState, error)
+    UpdateThermalPolicy(policy braintypes.ThermalPolicy) error
     SetFanSpeed(speed uint32) error
     SetThrottling(enabled bool) error
     UpdatePowerState(state string) error
@@ -78,8 +80,8 @@ type MetalClient interface {
 // BrainClient interface for brain communication
 type BrainClient interface {
     GetCommands() ([]Command, error)
-    SyncState(state types.DeviceState) error
-    SyncThermalState(state types.ThermalState) error
+    SyncState(state braintypes.DeviceState) error
+    SyncThermalState(state thermal.ThermalState) error
     ReportCommandResult(result CommandResult) error
     ReportHealth(healthy bool, diagnostics map[string]interface{}) error
 }
