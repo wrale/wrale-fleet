@@ -2,35 +2,23 @@ package client
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/wrale/wrale-fleet/fleet/sync/types"
+	"github.com/wrale/wrale-fleet/fleet/types"
 )
 
-func TestSyncOperation(t *testing.T) {
-	// Create test operation
-	op := types.SyncOperation{
-		ID:        "test-op",
-		Type:      types.OpStateSync,
-		DeviceIDs: []types.DeviceID{"device-1"},
-		Payload:   map[string]interface{}{"key": "value"},
-		Priority:  1,
-		Status:    "pending",
-		CreatedAt: time.Now(),
-	}
+func TestBrainClient(t *testing.T) {
+	t.Run("test device registration", func(t *testing.T) {
+		client := NewBrainClient("http://localhost:8080")
+		devices := []types.DeviceID{"device-1"}
+		err := client.RegisterDevices(devices)
+		assert.NoError(t, err)
+	})
 
-	// Test operation with higher priority
-	opHigh := types.SyncOperation{
-		ID:        "test-op-high",
-		Type:      types.OpStateSync,
-		DeviceIDs: []types.DeviceID{"device-1"},
-		Payload:   map[string]interface{}{"key": "value"},
-		Priority:  2,
-		Status:    "pending",
-		CreatedAt: time.Now(),
-	}
-
-	// Verify priority is respected
-	assert.True(t, opHigh.Priority > op.Priority)
+	t.Run("test device sync", func(t *testing.T) {
+		client := NewBrainClient("http://localhost:8080")
+		devices := []types.DeviceID{"device-1"}
+		err := client.SyncDevices(devices)
+		assert.NoError(t, err)
+	})
 }
