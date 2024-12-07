@@ -1,26 +1,36 @@
+# Daemon-specific template
+include $(MAKEFILES_DIR)/templates/go.mk
+
+# Define the daemon template
 define DAEMON_TEMPLATE
-include $(MAKEFILES_DIR)/common.mk
-include $(MAKEFILES_DIR)/golang.mk
-include $(MAKEFILES_DIR)/verify.mk
+$(GO_TEMPLATE)
 
-.PHONY: all build clean test package install help
+.PHONY: test-hw test-sim sim-start sim-stop install uninstall
 
-all: clean verify-all build ## Build everything
+test-hw: ## Run hardware tests
+	$(GOTEST) $(TESTFLAGS) $(HWFLAGS) ./hardware/...
 
-build: go-build ## Build the daemon
-	@echo "Additional daemon-specific build steps..."
+test-sim: sim-start ## Run simulation tests
+	$(GOTEST) $(TESTFLAGS) $(SIMFLAGS) ./...
+	@make sim-stop
 
-package: verify-all ## Create daemon package
-	@echo "Creating daemon package..."
-	mkdir -p $(DIST_DIR)
-	cp $(BUILD_DIR)/$(COMPONENT_NAME) $(DIST_DIR)/
-	cp scripts/daemon-install.sh $(DIST_DIR)/
-	tar -czf $(DIST_DIR)/$(COMPONENT_NAME)-$(VERSION).tar.gz -C $(DIST_DIR) .
+sim-start: ## Start simulation environment
+	mkdir -p $(SIM_DIR)/{gpio,power,thermal,secure}
+	@echo "Simulation environment created at $(SIM_DIR)"
 
-install: package ## Install the daemon
-	@echo "Installing daemon..."
-	sudo ./scripts/daemon-install.sh $(DIST_DIR)/$(COMPONENT_NAME)-$(VERSION).tar.gz
+sim-stop: ## Stop simulation environment
+	rm -rf $(SIM_DIR)
+	@echo "Simulation environment cleaned up"
 
-help: ## Show this help
-	$(call HELP_FUNCTION)
+install: build ## Install daemon
+	sudo cp $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/
+	sudo cp ./init/$(BINARY_NAME).service /etc/systemd/system/
+	sudo systemctl daemon-reload
+
+uninstall: ## Uninstall daemon
+	sudo systemctl stop $(BINARY_NAME)
+	sudo rm -f /usr/local/bin/$(BINARY_NAME)
+	sudo rm -f /etc/systemd/system/$(BINARY_NAME).service
+	sudo systemctl daemon-reload
+
 endef

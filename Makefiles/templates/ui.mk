@@ -1,56 +1,43 @@
+# UI-specific template (Next.js)
+include $(MAKEFILES_DIR)/templates/base.mk
+
+# Define the UI template
 define UI_TEMPLATE
-include $(MAKEFILES_DIR)/common.mk
-include $(MAKEFILES_DIR)/docker.mk
+$(BASE_TEMPLATE)
 
-# Node/NPM settings
-NODE_ENV ?= production
+# Node/NPM configuration
+NODE ?= node
 NPM ?= npm
+NEXT ?= $(NPM) run
+BUILD_DIR ?= .next
+DIST_DIR ?= dist
 
-.PHONY: all build clean test lint verify package deploy help
+.PHONY: build dev test lint clean deploy
 
-all: clean verify build ## Build everything
-ifeq ($(CONTAINER_BUILD_AVAILABLE),true)
-	$(MAKE) docker-build
-else
-	@echo "Skipping container build - no container engine available"
-endif
+build: ## Build the Next.js application
+	$(NPM) install
+	$(NEXT) build
 
-build: ## Build the UI application
-	@echo "Building $(COMPONENT_NAME)..."
-	$(NPM) ci
-	$(NPM) run build
-
-clean: ## Clean build artifacts
-	@echo "Cleaning..."
-	rm -rf .next out node_modules coverage
-ifeq ($(CONTAINER_BUILD_AVAILABLE),true)
-	$(MAKE) docker-clean
-endif
+dev: ## Run development server
+	$(NPM) install
+	$(NEXT) dev
 
 test: ## Run tests
-	@echo "Running tests..."
-	$(NPM) run test
-	$(NPM) run test:coverage
+	$(NPM) test
 
-lint: ## Run linters
-	@echo "Running linters..."
+test-e2e: ## Run end-to-end tests
+	$(NPM) run test:e2e
+
+lint: ## Run linter
 	$(NPM) run lint
-	$(NPM) run type-check
 
-verify: lint test ## Run all verifications
+clean: ## Clean build artifacts
+	rm -rf $(BUILD_DIR) $(DIST_DIR) node_modules/.cache
 
-package: verify ## Create deployable package
-ifeq ($(CONTAINER_BUILD_AVAILABLE),true)
-	$(MAKE) docker-build
-endif
-	@echo "Creating distribution package..."
-	mkdir -p $(DIST_DIR)
-	tar -czf $(DIST_DIR)/$(COMPONENT_NAME)-$(VERSION).tar.gz .next
+deploy: build ## Deploy to production
+	$(NEXT) deploy
 
-deploy: package ## Deploy the application
-	@echo "Deploying $(COMPONENT_NAME)..."
-	./scripts/deploy.sh $(DIST_DIR)/$(COMPONENT_NAME)-$(VERSION).tar.gz
+analyze: build ## Analyze bundle size
+	$(NEXT) analyze
 
-help: ## Show this help
-	$(call HELP_FUNCTION)
 endef

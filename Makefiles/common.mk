@@ -1,25 +1,77 @@
-# Common variables and utilities
-SHELL := /bin/bash
-MAKEFILES_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+# Common make configurations and targets
+# This file is included by all component Makefiles
+
+# Go parameters
+GOCMD ?= go
+GOBUILD ?= $(GOCMD) build
+GOTEST ?= $(GOCMD) test
+GOGET ?= $(GOCMD) get
+GOMOD ?= $(GOCMD) mod
+GOFMT ?= $(GOCMD) fmt
+
+# Build parameters
+BUILD_DIR ?= build
+DIST_DIR ?= dist
+BINARY_NAME ?= $(COMPONENT_NAME)
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty)
+COMMIT ?= $(shell git rev-parse --short HEAD)
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-GIT_COMMIT ?= $(shell git rev-parse HEAD)
 
-# Directory structure
-BUILD_DIR ?= build
-DIST_DIR ?= dist
+# Test flags
+TESTFLAGS ?= -v -race
+COVERFLAGS ?= -coverprofile=coverage.out
+BENCHFLAGS ?= -bench=. -benchmem
 
-# Build settings
-MAIN_PACKAGE ?= ./cmd/$(COMPONENT_NAME)  # Default for backward compatibility
+# Tag-based test categories
+SIMFLAGS ?= -tags=simulation
+HWFLAGS ?= -tags=hardware
+INTFLAGS ?= -tags=integration
 
-# Docker registry settings
-DOCKER_REGISTRY ?= wrale
+# Linting
+GOLINT ?= golangci-lint
+LINTFLAGS ?= run --timeout=5m
+
+# Docker
+DOCKER ?= docker
+DOCKER_IMAGE ?= wrale/$(COMPONENT_NAME)
 DOCKER_TAG ?= $(VERSION)
 
-# Help function
+# Default build flags
+LDFLAGS ?= -X main.version=$(VERSION) \
+           -X main.commit=$(COMMIT) \
+           -X main.buildTime=$(BUILD_TIME)
+
+# Simulation environment
+SIM_DIR ?= /tmp/wrale-sim
+
+# Common targets
+.PHONY: clean fmt lint deps verify help
+
+clean: ## Clean build artifacts
+	rm -rf $(BUILD_DIR) $(DIST_DIR)
+	rm -f coverage.out
+
+fmt: ## Format Go code
+	$(GOFMT) ./...
+
+lint: ## Run linter
+	$(GOLINT) $(LINTFLAGS)
+
+deps: ## Download and tidy dependencies
+	$(GOMOD) download
+	$(GOMOD) tidy
+
+verify: fmt lint test coverage ## Run all verifications
+
+# Helper function to generate help output
 define HELP_FUNCTION
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
-		/^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+    @grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 endef
+
+# Version information target
+version:
+	@echo "Version:    $(VERSION)"
+	@echo "Commit:     $(COMMIT)"
+	@echo "Build Time: $(BUILD_TIME)"
