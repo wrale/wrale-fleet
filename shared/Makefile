@@ -5,21 +5,21 @@ COMPONENT_NAME := wrale-shared
 COMPONENT_DESCRIPTION := Shared Library Layer
 MAKEFILES_DIR := ../Makefiles
 
-# Simple build setup for library
-.PHONY: build test verify
+include $(MAKEFILES_DIR)/templates/go/service.mk
+$(eval $(GO_SERVICE_TEMPLATE))
 
+# Override the default build since this is a library
 build: ## Build and verify library
-	$(call show_progress,"Building shared library...")
-	go build ./...
+	@go build ./...
 
 test: ## Run tests
-	$(call show_progress,"Testing shared library...")
-	go test -v -race ./...
+	@go test -race ./...
 
 verify: ## Run verification
-	$(call show_progress,"Verifying shared library...")
-	go vet ./...
-	golangci-lint run --timeout=5m
+	@go vet ./...
+	@golangci-lint run --timeout=5m
 
 clean: ## Clean build artifacts
 	@rm -f coverage.out
+
+all: verify build test
