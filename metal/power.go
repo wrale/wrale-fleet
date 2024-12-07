@@ -80,8 +80,3 @@ type PowerManagerConfig struct {
 	OnCritical      func(PowerState)
 	OnWarning       func(PowerState)
 }
-
-// NewPowerManager creates a new power manager
-func NewPowerManager(config PowerManagerConfig, opts ...Option) (PowerManager, error) {
-	return internal.NewPowerManager(config, opts...)
-}

@@ -64,8 +64,3 @@ type GPIOEvent struct {
 	Mode      PinMode   `json:"mode"`
 	Timestamp time.Time `json:"timestamp"`
 }
-
-// NewGPIO creates a new GPIO controller
-func NewGPIO(opts ...Option) (GPIO, error) {
-	return internal.NewGPIO(opts...)
-}

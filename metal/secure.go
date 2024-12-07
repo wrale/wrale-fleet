@@ -89,8 +89,3 @@ type SecurityManagerConfig struct {
 	OnTamper        func(TamperEvent)
 	OnViolation     func(TamperEvent)
 }
-
-// NewSecurityManager creates a new security manager
-func NewSecurityManager(config SecurityManagerConfig, opts ...Option) (SecurityManager, error) {
-	return internal.NewSecurityManager(config, opts...)
-}

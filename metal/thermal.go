@@ -98,8 +98,3 @@ type ThermalManagerConfig struct {
 	OnWarning       func(ThermalEvent)
 	OnCritical      func(ThermalEvent)
 }
-
-// NewThermalManager creates a new thermal manager
-func NewThermalManager(config ThermalManagerConfig, opts ...Option) (ThermalManager, error) {
-	return internal.NewThermalManager(config, opts...)
-}

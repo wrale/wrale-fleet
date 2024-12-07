@@ -94,11 +94,6 @@ type DiagnosticOptions struct {
 	Thresholds  map[string]float64
 }
 
-// NewDiagnosticManager creates a new diagnostic manager
-func NewDiagnosticManager(config DiagnosticManagerConfig, opts ...Option) (DiagnosticManager, error) {
-	return internal.NewDiagnosticManager(config, opts...)
-}
-
 // Common test-related functions
 var (
 	// WithRetries sets the retry count for tests
