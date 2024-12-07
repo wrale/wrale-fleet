@@ -20,13 +20,16 @@ const (
 )
 
 // Inventory manages device registration and tracking.
-// It implements types.StateManager interface.
 type Inventory struct {
 	devices map[types.DeviceID]*DeviceInfo
 	mu      sync.RWMutex
 }
 
-var _ types.StateManager = (*Inventory)(nil) // Verify interface implementation
+// Verify interface implementations
+var (
+	_ types.StateManager  = (*Inventory)(nil)
+	_ types.DeviceManager = (*Inventory)(nil)
+)
 
 // DeviceInfo extends DeviceState with additional inventory information
 type DeviceInfo struct {
@@ -63,6 +66,43 @@ func (i *Inventory) RemoveDevice(ctx context.Context, deviceID types.DeviceID) e
 	return i.UnregisterDevice(ctx, deviceID)
 }
 
+// GetDevice implements DeviceManager.GetDevice
+func (i *Inventory) GetDevice(ctx context.Context, deviceID types.DeviceID) (*types.DeviceState, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if info, exists := i.devices[deviceID]; exists {
+		return &info.State, nil
+	}
+	return nil, fmt.Errorf("device not found: %s", deviceID)
+}
+
+// ListDevices implements both StateManager.ListDevices and DeviceManager.ListDevices
+func (i *Inventory) ListDevices(ctx context.Context) ([]types.DeviceState, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	devices := make([]types.DeviceState, 0, len(i.devices))
+	for _, info := range i.devices {
+		devices = append(devices, info.State)
+	}
+	return devices, nil
+}
+
+// GetDevicesInZone implements DeviceManager.GetDevicesInZone
+func (i *Inventory) GetDevicesInZone(ctx context.Context, zone string) ([]types.DeviceState, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	devices := make([]types.DeviceState, 0)
+	for _, info := range i.devices {
+		if info.State.Location.Zone == zone {
+			devices = append(devices, info.State)
+		}
+	}
+	return devices, nil
+}
+
 // RegisterDevice adds a new device to the inventory (deprecated: use AddDevice)
 func (i *Inventory) RegisterDevice(ctx context.Context, state types.DeviceState) error {
 	i.mu.Lock()
@@ -93,17 +133,6 @@ func (i *Inventory) UnregisterDevice(ctx context.Context, deviceID types.DeviceI
 	return nil
 }
 
-// GetDevice retrieves device information (prefer GetDeviceState for new code)
-func (i *Inventory) GetDevice(ctx context.Context, deviceID types.DeviceID) (*types.DeviceState, error) {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-
-	if info, exists := i.devices[deviceID]; exists {
-		return &info.State, nil
-	}
-	return nil, fmt.Errorf("device not found: %s", deviceID)
-}
-
 // UpdateState updates a device's state and health information
 func (i *Inventory) UpdateState(ctx context.Context, state types.DeviceState) error {
 	i.mu.Lock()
@@ -119,36 +148,6 @@ func (i *Inventory) UpdateState(ctx context.Context, state types.DeviceState) er
 	info.Health = determineHealth(state)
 
 	return nil
-}
-
-// ListDevices returns all registered devices
-func (i *Inventory) ListDevices(ctx context.Context) ([]types.DeviceState, error) {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-
-	devices := make([]types.DeviceState, 0, len(i.devices))
-	for _, info := range i.devices {
-		devices = append(devices, info.State)
-	}
-	return devices, nil
-}
-
-// determineHealth evaluates device health based on metrics and thermal state
-func determineHealth(state types.DeviceState) HealthStatus {
-	if state.Metrics.CPULoad > 90 {
-		return HealthStatusDegraded
-	}
-	if state.Metrics.MemoryUsage > 95 {
-		return HealthStatusDegraded
-	}
-	if state.Metrics.Temperature > 80 {
-		return HealthStatusUnhealthy
-	}
-	if state.Metrics.Throttled {
-		return HealthStatusDegraded
-	}
-	
-	return HealthStatusHealthy
 }
 
 // GetHealthReport returns health status for all devices
@@ -168,4 +167,22 @@ func (i *Inventory) GetHealthReport(ctx context.Context) map[HealthStatus]int {
 	}
 
 	return report
+}
+
+// determineHealth evaluates device health based on metrics
+func determineHealth(state types.DeviceState) HealthStatus {
+	if state.Metrics.CPULoad > 90 {
+		return HealthStatusDegraded
+	}
+	if state.Metrics.MemoryUsage > 95 {
+		return HealthStatusDegraded
+	}
+	if state.Metrics.Temperature > 80 {
+		return HealthStatusUnhealthy
+	}
+	if state.Metrics.Throttled {
+		return HealthStatusDegraded
+	}
+	
+	return HealthStatusHealthy
 }

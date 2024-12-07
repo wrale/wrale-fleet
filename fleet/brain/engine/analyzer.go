@@ -5,28 +5,27 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/device"
 	"github.com/wrale/wrale-fleet/fleet/brain/types"
 )
 
 // Analyzer implements fleet analysis and decision making
 type Analyzer struct {
-	inventory *device.Inventory
-	topology  *device.TopologyManager
+	deviceManager types.DeviceManager
+	stateManager  types.StateManager
 }
 
 // NewAnalyzer creates a new analyzer instance
-func NewAnalyzer(inventory *device.Inventory, topology *device.TopologyManager) *Analyzer {
+func NewAnalyzer(deviceManager types.DeviceManager, stateManager types.StateManager) *Analyzer {
 	return &Analyzer{
-		inventory: inventory,
-		topology:  topology,
+		deviceManager: deviceManager,
+		stateManager: stateManager,
 	}
 }
 
 // AnalyzeState analyzes current fleet state
 func (a *Analyzer) AnalyzeState(ctx context.Context) (*types.FleetAnalysis, error) {
 	// Get all devices
-	devices, err := a.inventory.ListDevices(ctx)
+	devices, err := a.deviceManager.ListDevices(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list devices: %w", err)
 	}
@@ -79,7 +78,6 @@ func (a *Analyzer) AnalyzeState(ctx context.Context) (*types.FleetAnalysis, erro
 
 // isHealthy determines if a device is healthy
 func (a *Analyzer) isHealthy(device types.DeviceState) bool {
-	// Basic health checks for v1.0
 	if device.Metrics.Temperature > 80 {
 		return false
 	}
@@ -137,7 +135,7 @@ func (a *Analyzer) checkDeviceAlerts(device types.DeviceState) []types.Alert {
 		})
 	}
 
-	if device.Metrics.PowerUsage > 800 { // Example threshold
+	if device.Metrics.PowerUsage > 800 {
 		alerts = append(alerts, types.Alert{
 			ID:        fmt.Sprintf("power-high-%s", device.ID),
 			Severity:  "warning",
@@ -192,22 +190,4 @@ func (a *Analyzer) generateDeviceRecommendations(device types.DeviceState) []typ
 	}
 
 	return recommendations
-}
-
-// GetAlerts returns current alerts
-func (a *Analyzer) GetAlerts(ctx context.Context) ([]types.Alert, error) {
-	analysis, err := a.AnalyzeState(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return analysis.Alerts, nil
-}
-
-// GetRecommendations returns current recommendations
-func (a *Analyzer) GetRecommendations(ctx context.Context) ([]types.Recommendation, error) {
-	analysis, err := a.AnalyzeState(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return analysis.Recommendations, nil
 }
