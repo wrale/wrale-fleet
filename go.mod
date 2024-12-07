@@ -14,3 +14,10 @@ require (
 	periph.io/x/conn/v3 v3.7.0 // indirect
 	periph.io/x/host/v3 v3.8.2 // indirect
 )
+
+replace (
+	github.com/wrale/wrale-fleet/fleet => ./fleet
+	github.com/wrale/wrale-fleet/metal => ./metal
+	github.com/wrale/wrale-fleet/metal/hw => ./metal/hw
+	github.com/wrale/wrale-fleet/sync => ./sync
+)

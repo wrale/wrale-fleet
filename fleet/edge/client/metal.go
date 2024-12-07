@@ -16,6 +16,7 @@ import (
 type MetalClient struct {
 	baseURL    string
 	httpClient *http.Client
+	powerMgr   power.Manager // For direct hardware access
 }
 
 // MetricsResponse represents system metrics from the metal layer
@@ -27,12 +28,35 @@ type MetricsResponse struct {
 	Timestamp   time.Time `json:"timestamp"`
 }
 
-// NewMetalClient creates a new metal client with the given base URL
-func NewMetalClient(baseURL string) *MetalClient {
+// NewMetalClient creates a new metal client with the given base URL and optional power manager
+func NewMetalClient(baseURL string, powerMgr power.Manager) *MetalClient {
 	return &MetalClient{
 		baseURL:    baseURL,
 		httpClient: &http.Client{},
+		powerMgr:   powerMgr,
 	}
+}
+
+// GetPowerState retrieves current power system state
+func (c *MetalClient) GetPowerState() (*power.PowerState, error) {
+	if c.powerMgr != nil {
+		// Direct hardware access
+		state := c.powerMgr.GetState()
+		return &state, nil
+	}
+
+	// HTTP fallback
+	resp, err := c.httpClient.Get(fmt.Sprintf("%s/power/state", c.baseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get power state: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var state power.PowerState
+	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+		return nil, fmt.Errorf("failed to decode power state: %v", err)
+	}
+	return &state, nil
 }
 
 // GetMetrics retrieves current system metrics
