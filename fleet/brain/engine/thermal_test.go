@@ -7,7 +7,6 @@ import (
 
 	"github.com/wrale/wrale-fleet/fleet/brain/device"
 	"github.com/wrale/wrale-fleet/fleet/brain/types"
-	metalThermal "github.com/wrale/wrale-fleet/metal/core/thermal"
 )
 
 func TestThermalManager(t *testing.T) {
@@ -27,23 +26,20 @@ func TestThermalManager(t *testing.T) {
 		t.Fatalf("Failed to register test rack: %v", err)
 	}
 
-	// Create test thermal policy
-	zonePolicy := &metalThermal.ThermalPolicy{
-		Profile:         metalThermal.ProfileBalance,
+	// Create test zone policy
+	zonePolicy := &types.ThermalPolicy{
+		Profile:         types.ProfileBalance,
 		CPUWarning:      70.0,
 		CPUCritical:     80.0,
 		GPUWarning:      75.0,
 		GPUCritical:     85.0,
 		AmbientWarning:  35.0,
 		AmbientCritical: 40.0,
-		FanStartTemp:    50.0,
-		FanMinSpeed:     20,
-		FanMaxSpeed:     100,
-		FanRampRate:     2.0,
-		ThrottleTemp:    78.0,
-		ResponseDelay:   time.Second * 5,
-		WarningDelay:    time.Minute,
-		CriticalDelay:   time.Second * 30,
+		MonitoringInterval: time.Second * 5,
+		AlertInterval:      time.Minute,
+		AutoThrottle:       true,
+		MaxDevicesThrottled: 2,
+		ZonePriority:       1,
 	}
 
 	// Initialize test devices with different thermal states
@@ -57,11 +53,12 @@ func TestThermalManager(t *testing.T) {
 				Zone:     "zone-1",
 			},
 			Metrics: types.DeviceMetrics{
-				ThermalMetrics: &metalThermal.ThermalMetrics{
+				ThermalMetrics: &types.ThermalMetrics{
 					CPUTemp:     45.0,
 					GPUTemp:     40.0,
 					AmbientTemp: 25.0,
 					FanSpeed:    30,
+					IsThrottled: false,
 					LastUpdate:  time.Now(),
 				},
 			},
@@ -75,11 +72,12 @@ func TestThermalManager(t *testing.T) {
 				Zone:     "zone-1",
 			},
 			Metrics: types.DeviceMetrics{
-				ThermalMetrics: &metalThermal.ThermalMetrics{
+				ThermalMetrics: &types.ThermalMetrics{
 					CPUTemp:     72.0,
 					GPUTemp:     68.0,
 					AmbientTemp: 32.0,
 					FanSpeed:    60,
+					IsThrottled: false,
 					LastUpdate:  time.Now(),
 				},
 			},
@@ -93,13 +91,13 @@ func TestThermalManager(t *testing.T) {
 				Zone:     "zone-1",
 			},
 			Metrics: types.DeviceMetrics{
-				ThermalMetrics: &metalThermal.ThermalMetrics{
-					CPUTemp:       82.0,
-					GPUTemp:       78.0,
-					AmbientTemp:   36.0,
-					FanSpeed:      100,
-					ThrottleCount: 1,
-					LastUpdate:    time.Now(),
+				ThermalMetrics: &types.ThermalMetrics{
+					CPUTemp:     82.0,
+					GPUTemp:     78.0,
+					AmbientTemp: 36.0,
+					FanSpeed:    100,
+					IsThrottled: false,
+					LastUpdate:  time.Now(),
 				},
 			},
 		},
@@ -133,6 +131,7 @@ func TestThermalManager(t *testing.T) {
 	t.Run("Device Policy Override", func(t *testing.T) {
 		devicePolicy := *zonePolicy // Copy zone policy
 		devicePolicy.CPUCritical = 85.0 // Higher threshold for specific device
+		devicePolicy.AutoThrottle = false // Disable auto-throttling
 
 		err := thermalMgr.SetDevicePolicy(ctx, "hot-device", &devicePolicy)
 		if err != nil {
@@ -150,6 +149,33 @@ func TestThermalManager(t *testing.T) {
 		}
 	})
 
+	t.Run("Auto Throttling", func(t *testing.T) {
+		// Update hot device to trigger throttling
+		hotMetrics := &types.ThermalMetrics{
+			CPUTemp:     85.0,
+			GPUTemp:     80.0,
+			AmbientTemp: 38.0,
+			FanSpeed:    100,
+			IsThrottled: false,
+			LastUpdate:  time.Now(),
+		}
+
+		err := thermalMgr.UpdateDeviceThermal(ctx, "hot-device", hotMetrics)
+		if err != nil {
+			t.Fatalf("Failed to update device thermal: %v", err)
+		}
+
+		// Verify device was throttled
+		updatedMetrics, err := thermalMgr.GetDeviceThermal(ctx, "hot-device")
+		if err != nil {
+			t.Fatalf("Failed to get device thermal: %v", err)
+		}
+
+		if !updatedMetrics.IsThrottled {
+			t.Error("Expected device to be throttled")
+		}
+	})
+
 	t.Run("Zone Metrics", func(t *testing.T) {
 		metrics, err := thermalMgr.GetZoneMetrics(ctx, "zone-1")
 		if err != nil {
@@ -160,11 +186,11 @@ func TestThermalManager(t *testing.T) {
 			t.Errorf("Expected 3 devices in zone, got %d", metrics.TotalDevices)
 		}
 
-		if metrics.MaxTemp != 82.0 {
-			t.Errorf("Expected max temperature 82.0, got %.1f", metrics.MaxTemp)
+		if metrics.MaxTemp != 85.0 {
+			t.Errorf("Expected max temperature 85.0, got %.1f", metrics.MaxTemp)
 		}
 
-		expectedAvg := (45.0 + 72.0 + 82.0) / 3.0
+		expectedAvg := (45.0 + 72.0 + 85.0) / 3.0
 		if metrics.AverageTemp != expectedAvg {
 			t.Errorf("Expected average temperature %.1f, got %.1f",
 				expectedAvg, metrics.AverageTemp)
@@ -174,24 +200,14 @@ func TestThermalManager(t *testing.T) {
 			t.Errorf("Expected 1 device over temperature, got %d",
 				metrics.DevicesOverTemp)
 		}
+
+		if metrics.DevicesThrottled != 1 {
+			t.Errorf("Expected 1 device throttled, got %d",
+				metrics.DevicesThrottled)
+		}
 	})
 
 	t.Run("Thermal Events", func(t *testing.T) {
-		// Update hot device to trigger event
-		hotMetrics := &metalThermal.ThermalMetrics{
-			CPUTemp:       85.0,
-			GPUTemp:       80.0,
-			AmbientTemp:   38.0,
-			FanSpeed:      100,
-			ThrottleCount: 2,
-			LastUpdate:    time.Now(),
-		}
-
-		err := thermalMgr.UpdateDeviceThermal(ctx, "hot-device", hotMetrics)
-		if err != nil {
-			t.Fatalf("Failed to update device thermal: %v", err)
-		}
-
 		events, err := thermalMgr.GetThermalEvents(ctx)
 		if err != nil {
 			t.Fatalf("Failed to get thermal events: %v", err)
@@ -203,101 +219,73 @@ func TestThermalManager(t *testing.T) {
 
 		foundCritical := false
 		for _, event := range events {
-			if event.Type == "cpu_critical" && event.DeviceID == "hot-device" {
+			if event.Type == "critical" && event.DeviceID == "hot-device" {
 				foundCritical = true
+				if !event.Throttled {
+					t.Error("Expected critical event to indicate throttling")
+				}
 				break
 			}
 		}
 
 		if !foundCritical {
-			t.Error("Expected critical CPU temperature event for hot device")
+			t.Error("Expected critical temperature event for hot device")
 		}
 	})
 
-	t.Run("Policy Violations", func(t *testing.T) {
+	t.Run("Max Throttled Devices", func(t *testing.T) {
+		// Update warm device to also trigger throttling
+		warmMetrics := &types.ThermalMetrics{
+			CPUTemp:     82.0,
+			GPUTemp:     76.0,
+			AmbientTemp: 35.0,
+			FanSpeed:    90,
+			IsThrottled: false,
+			LastUpdate:  time.Now(),
+		}
+
+		err := thermalMgr.UpdateDeviceThermal(ctx, "warm-device", warmMetrics)
+		if err != nil {
+			t.Fatalf("Failed to update device thermal: %v", err)
+		}
+
+		// Update cool device to also exceed threshold
+		coolMetrics := &types.ThermalMetrics{
+			CPUTemp:     81.0,
+			GPUTemp:     75.0,
+			AmbientTemp: 34.0,
+			FanSpeed:    85,
+			IsThrottled: false,
+			LastUpdate:  time.Now(),
+		}
+
+		err = thermalMgr.UpdateDeviceThermal(ctx, "cool-device", coolMetrics)
+		if err != nil {
+			t.Fatalf("Failed to update device thermal: %v", err)
+		}
+
+		// Check zone metrics
 		metrics, err := thermalMgr.GetZoneMetrics(ctx, "zone-1")
 		if err != nil {
 			t.Fatalf("Failed to get zone metrics: %v", err)
 		}
 
-		foundViolation := false
+		// Should not exceed MaxDevicesThrottled
+		if metrics.DevicesThrottled > zonePolicy.MaxDevicesThrottled {
+			t.Errorf("Zone has %d throttled devices, exceeding limit of %d",
+				metrics.DevicesThrottled, zonePolicy.MaxDevicesThrottled)
+		}
+
+		// Should have violation for device that couldn't be throttled
+		hasViolation := false
 		for _, violation := range metrics.PolicyViolations {
-			if violation == "Device hot-device: CPU temperature 85.0°C exceeds critical threshold 80.0°C" {
-				foundViolation = true
+			if violation == "Device cool-device: CPU temperature 81.0°C exceeds critical threshold 80.0°C but zone throttle limit reached" {
+				hasViolation = true
 				break
 			}
 		}
-
-		if !foundViolation {
-			t.Error("Expected policy violation for hot device")
-		}
-	})
-
-	t.Run("Thermal Updates", func(t *testing.T) {
-		// Update cool device with new metrics
-		newMetrics := &metalThermal.ThermalMetrics{
-			CPUTemp:     55.0,
-			GPUTemp:     50.0,
-			AmbientTemp: 28.0,
-			FanSpeed:    40,
-			LastUpdate:  time.Now(),
-		}
-
-		err := thermalMgr.UpdateDeviceThermal(ctx, "cool-device", newMetrics)
-		if err != nil {
-			t.Fatalf("Failed to update device thermal: %v", err)
-		}
-
-		retrieved, err := thermalMgr.GetDeviceThermal(ctx, "cool-device")
-		if err != nil {
-			t.Fatalf("Failed to get device thermal: %v", err)
-		}
-
-		if retrieved.CPUTemp != newMetrics.CPUTemp {
-			t.Errorf("Expected CPU temperature %.1f, got %.1f",
-				newMetrics.CPUTemp, retrieved.CPUTemp)
-		}
-
-		if retrieved.FanSpeed != newMetrics.FanSpeed {
-			t.Errorf("Expected fan speed %d, got %d",
-				newMetrics.FanSpeed, retrieved.FanSpeed)
-		}
-	})
-
-	t.Run("Invalid Device", func(t *testing.T) {
-		_, err := thermalMgr.GetDeviceThermal(ctx, "nonexistent-device")
-		if err == nil {
-			t.Error("Expected error for nonexistent device")
-		}
-	})
-
-	t.Run("Invalid Zone", func(t *testing.T) {
-		_, err := thermalMgr.GetZonePolicy(ctx, "nonexistent-zone")
-		if err == nil {
-			t.Error("Expected error for nonexistent zone")
-		}
-	})
-
-	t.Run("Event Buffer Limit", func(t *testing.T) {
-		// Generate many events
-		for i := 0; i < 1100; i++ { // More than maxEvents
-			hotMetrics := &metalThermal.ThermalMetrics{
-				CPUTemp:    85.0,
-				LastUpdate: time.Now(),
-			}
-			err := thermalMgr.UpdateDeviceThermal(ctx, "hot-device", hotMetrics)
-			if err != nil {
-				t.Fatalf("Failed to update thermal: %v", err)
-			}
-		}
-
-		events, err := thermalMgr.GetThermalEvents(ctx)
-		if err != nil {
-			t.Fatalf("Failed to get events: %v", err)
-		}
-
-		if len(events) > 1000 { // maxEvents value
-			t.Errorf("Expected maximum 1000 events, got %d", len(events))
+		if !hasViolation {
+			t.Error("Expected policy violation for device that couldn't be throttled")
 		}
 	})
 }

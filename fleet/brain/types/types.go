@@ -4,8 +4,6 @@ package types
 import (
 	"context"
 	"time"
-
-	metalThermal "github.com/wrale/wrale-fleet/metal/core/thermal"
 )
 
 // DeviceID uniquely identifies a device in the fleet
@@ -20,6 +18,9 @@ type TaskType string
 // ResourceType represents different types of resources that can be managed
 type ResourceType string
 
+// ThermalProfile defines thermal behavior requirements
+type ThermalProfile string
+
 const (
 	ResourceCPU    ResourceType = "cpu"
 	ResourceMemory ResourceType = "memory"
@@ -30,6 +31,12 @@ const (
 	TaskUpdateThermalPolicy TaskType = "update_thermal_policy"
 	TaskSetThermalProfile  TaskType = "set_thermal_profile"
 	TaskSetCoolingMode     TaskType = "set_cooling_mode"
+
+	// Thermal profiles
+	ProfileQuiet   ThermalProfile = "QUIET"   // Prioritize noise reduction
+	ProfileBalance ThermalProfile = "BALANCE" // Balance noise and cooling
+	ProfileCool    ThermalProfile = "COOL"    // Prioritize cooling
+	ProfileMax     ThermalProfile = "MAX"     // Maximum cooling
 )
 
 // DeviceState represents the current state of a device
@@ -56,8 +63,55 @@ type DeviceMetrics struct {
 	CPULoad     float64
 	MemoryUsage float64
 	
-	// Thermal metrics from metal layer
-	ThermalMetrics *metalThermal.ThermalMetrics
+	// Thermal metrics
+	ThermalMetrics *ThermalMetrics
+}
+
+// ThermalMetrics contains device-level thermal information
+type ThermalMetrics struct {
+	// Core temperatures
+	CPUTemp     float64
+	GPUTemp     float64 // Optional: not all devices have GPUs
+	AmbientTemp float64
+	
+	// Status
+	FanSpeed    uint32  // Percentage of max speed
+	IsThrottled bool    // Whether device is thermally throttled
+	LastUpdate  time.Time
+}
+
+// ThermalPolicy defines fleet-level thermal management policy
+type ThermalPolicy struct {
+	// Management profile
+	Profile ThermalProfile
+	
+	// Temperature thresholds (Celsius)
+	CPUWarning     float64 // Alert threshold
+	CPUCritical    float64 // Action required
+	GPUWarning     float64 // Optional GPU thresholds
+	GPUCritical    float64
+	AmbientWarning float64 // Environmental threshold
+	AmbientCritical float64
+	
+	// Policy behavior
+	MonitoringInterval time.Duration // How often to check temperatures
+	AlertInterval      time.Duration // Minimum time between alerts
+	AutoThrottle       bool         // Whether to auto-throttle at critical temps
+	
+	// Fleet-wide settings
+	ZonePriority      int     // Higher priority zones throttle later
+	MaxDevicesThrottled int   // Max devices that can be throttled per zone
+}
+
+// ThermalEvent represents a significant thermal incident
+type ThermalEvent struct {
+	DeviceID    DeviceID
+	Zone        string
+	Type        string        // "warning" or "critical"
+	Temperature float64
+	Threshold   float64       // Which threshold was exceeded
+	Throttled   bool         // Whether throttling was applied
+	Timestamp   time.Time
 }
 
 // Task represents a scheduled operation on one or more devices
@@ -125,32 +179,33 @@ type SituationAnalyzer interface {
 // ThermalManager coordinates thermal management across the fleet
 type ThermalManager interface {
 	// State management
-	UpdateDeviceThermal(ctx context.Context, deviceID DeviceID, metrics *metalThermal.ThermalMetrics) error
-	GetDeviceThermal(ctx context.Context, deviceID DeviceID) (*metalThermal.ThermalMetrics, error)
+	UpdateDeviceThermal(ctx context.Context, deviceID DeviceID, metrics *ThermalMetrics) error
+	GetDeviceThermal(ctx context.Context, deviceID DeviceID) (*ThermalMetrics, error)
 	
 	// Policy management
-	SetDevicePolicy(ctx context.Context, deviceID DeviceID, policy *metalThermal.ThermalPolicy) error
-	GetDevicePolicy(ctx context.Context, deviceID DeviceID) (*metalThermal.ThermalPolicy, error)
+	SetDevicePolicy(ctx context.Context, deviceID DeviceID, policy *ThermalPolicy) error
+	GetDevicePolicy(ctx context.Context, deviceID DeviceID) (*ThermalPolicy, error)
 	
 	// Zone management
-	SetZonePolicy(ctx context.Context, zone string, policy *metalThermal.ThermalPolicy) error
-	GetZonePolicy(ctx context.Context, zone string) (*metalThermal.ThermalPolicy, error)
+	SetZonePolicy(ctx context.Context, zone string, policy *ThermalPolicy) error
+	GetZonePolicy(ctx context.Context, zone string) (*ThermalPolicy, error)
 	
 	// Monitoring and analysis
 	GetZoneMetrics(ctx context.Context, zone string) (*ZoneThermalMetrics, error)
-	GetThermalEvents(ctx context.Context) ([]metalThermal.ThermalEvent, error)
+	GetThermalEvents(ctx context.Context) ([]ThermalEvent, error)
 }
 
 // ZoneThermalMetrics provides thermal analysis for a zone
 type ZoneThermalMetrics struct {
-	Zone            string
-	AverageTemp     float64
-	MaxTemp         float64
-	MinTemp         float64
-	DevicesOverTemp int
+	Zone             string
+	AverageTemp      float64
+	MaxTemp          float64
+	MinTemp          float64
+	DevicesOverTemp  int
+	DevicesThrottled int
 	PolicyViolations []string
-	TotalDevices    int
-	UpdatedAt       time.Time
+	TotalDevices     int
+	UpdatedAt        time.Time
 }
 
 // FleetAnalysis contains analysis results of fleet state
@@ -164,7 +219,7 @@ type FleetAnalysis struct {
 	
 	// Thermal analysis
 	ZoneMetrics      map[string]*ZoneThermalMetrics
-	ThermalEvents    []metalThermal.ThermalEvent
+	ThermalEvents    []ThermalEvent
 }
 
 // Alert represents a warning or notification about fleet state

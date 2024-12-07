@@ -8,7 +8,6 @@ import (
 
 	"github.com/wrale/wrale-fleet/fleet/brain/device"
 	"github.com/wrale/wrale-fleet/fleet/brain/types"
-	metalThermal "github.com/wrale/wrale-fleet/metal/core/thermal"
 )
 
 // ThermalManager implements fleet-wide thermal management
@@ -18,12 +17,12 @@ type ThermalManager struct {
 	analyzer  *Analyzer
 
 	// Cache thermal policies
-	policyCache     map[types.DeviceID]*metalThermal.ThermalPolicy
-	zonePolicyCache map[string]*metalThermal.ThermalPolicy
+	policyCache     map[types.DeviceID]*types.ThermalPolicy
+	zonePolicyCache map[string]*types.ThermalPolicy
 	cacheMutex      sync.RWMutex
 
 	// Track thermal events
-	recentEvents []metalThermal.ThermalEvent
+	recentEvents []types.ThermalEvent
 	eventsMutex  sync.RWMutex
 	maxEvents    int
 }
@@ -34,14 +33,14 @@ func NewThermalManager(inventory *device.Inventory, topology *device.TopologyMan
 		inventory:       inventory,
 		topology:       topology,
 		analyzer:       analyzer,
-		policyCache:    make(map[types.DeviceID]*metalThermal.ThermalPolicy),
-		zonePolicyCache: make(map[string]*metalThermal.ThermalPolicy),
+		policyCache:    make(map[types.DeviceID]*types.ThermalPolicy),
+		zonePolicyCache: make(map[string]*types.ThermalPolicy),
 		maxEvents:      1000, // Keep last 1000 events
 	}
 }
 
 // UpdateDeviceThermal processes updated thermal metrics from a device
-func (tm *ThermalManager) UpdateDeviceThermal(ctx context.Context, deviceID types.DeviceID, metrics *metalThermal.ThermalMetrics) error {
+func (tm *ThermalManager) UpdateDeviceThermal(ctx context.Context, deviceID types.DeviceID, metrics *types.ThermalMetrics) error {
 	// Get device state
 	device, err := tm.inventory.GetDevice(ctx, deviceID)
 	if err != nil {
@@ -65,7 +64,7 @@ func (tm *ThermalManager) UpdateDeviceThermal(ctx context.Context, deviceID type
 }
 
 // GetDeviceThermal retrieves current thermal metrics for a device
-func (tm *ThermalManager) GetDeviceThermal(ctx context.Context, deviceID types.DeviceID) (*metalThermal.ThermalMetrics, error) {
+func (tm *ThermalManager) GetDeviceThermal(ctx context.Context, deviceID types.DeviceID) (*types.ThermalMetrics, error) {
 	device, err := tm.inventory.GetDevice(ctx, deviceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device: %w", err)
@@ -74,7 +73,7 @@ func (tm *ThermalManager) GetDeviceThermal(ctx context.Context, deviceID types.D
 }
 
 // SetDevicePolicy updates thermal policy for a specific device
-func (tm *ThermalManager) SetDevicePolicy(ctx context.Context, deviceID types.DeviceID, policy *metalThermal.ThermalPolicy) error {
+func (tm *ThermalManager) SetDevicePolicy(ctx context.Context, deviceID types.DeviceID, policy *types.ThermalPolicy) error {
 	tm.cacheMutex.Lock()
 	tm.policyCache[deviceID] = policy
 	tm.cacheMutex.Unlock()
@@ -89,7 +88,7 @@ func (tm *ThermalManager) SetDevicePolicy(ctx context.Context, deviceID types.De
 }
 
 // GetDevicePolicy retrieves thermal policy for a device
-func (tm *ThermalManager) GetDevicePolicy(ctx context.Context, deviceID types.DeviceID) (*metalThermal.ThermalPolicy, error) {
+func (tm *ThermalManager) GetDevicePolicy(ctx context.Context, deviceID types.DeviceID) (*types.ThermalPolicy, error) {
 	tm.cacheMutex.RLock()
 	policy, ok := tm.policyCache[deviceID]
 	tm.cacheMutex.RUnlock()
@@ -101,7 +100,7 @@ func (tm *ThermalManager) GetDevicePolicy(ctx context.Context, deviceID types.De
 }
 
 // SetZonePolicy updates thermal policy for all devices in a zone
-func (tm *ThermalManager) SetZonePolicy(ctx context.Context, zone string, policy *metalThermal.ThermalPolicy) error {
+func (tm *ThermalManager) SetZonePolicy(ctx context.Context, zone string, policy *types.ThermalPolicy) error {
 	tm.cacheMutex.Lock()
 	tm.zonePolicyCache[zone] = policy
 	tm.cacheMutex.Unlock()
@@ -122,7 +121,7 @@ func (tm *ThermalManager) SetZonePolicy(ctx context.Context, zone string, policy
 }
 
 // GetZonePolicy retrieves thermal policy for a zone
-func (tm *ThermalManager) GetZonePolicy(ctx context.Context, zone string) (*metalThermal.ThermalPolicy, error) {
+func (tm *ThermalManager) GetZonePolicy(ctx context.Context, zone string) (*types.ThermalPolicy, error) {
 	tm.cacheMutex.RLock()
 	policy, ok := tm.zonePolicyCache[zone]
 	tm.cacheMutex.RUnlock()
@@ -180,6 +179,11 @@ func (tm *ThermalManager) GetZoneMetrics(ctx context.Context, zone string) (*typ
 		if temp > device.Metrics.ThermalMetrics.CPUTemp {
 			metrics.DevicesOverTemp++
 		}
+
+		// Count throttled devices
+		if device.Metrics.ThermalMetrics.IsThrottled {
+			metrics.DevicesThrottled++
+		}
 	}
 
 	metrics.AverageTemp = totalTemp / float64(metrics.TotalDevices)
@@ -187,9 +191,9 @@ func (tm *ThermalManager) GetZoneMetrics(ctx context.Context, zone string) (*typ
 }
 
 // GetThermalEvents returns recent thermal events
-func (tm *ThermalManager) GetThermalEvents(ctx context.Context) ([]metalThermal.ThermalEvent, error) {
+func (tm *ThermalManager) GetThermalEvents(ctx context.Context) ([]types.ThermalEvent, error) {
 	tm.eventsMutex.RLock()
-	events := make([]metalThermal.ThermalEvent, len(tm.recentEvents))
+	events := make([]types.ThermalEvent, len(tm.recentEvents))
 	copy(events, tm.recentEvents)
 	tm.eventsMutex.RUnlock()
 	return events, nil
@@ -215,27 +219,33 @@ func (tm *ThermalManager) applyDevicePolicy(ctx context.Context, device *types.D
 
 	metrics := device.Metrics.ThermalMetrics
 
-	// Check thresholds and generate events
+	// Check thresholds and take action
 	if metrics.CPUTemp > policy.CPUCritical {
-		tm.addThermalEvent(metalThermal.ThermalEvent{
-			DeviceID:    string(device.ID),
+		if policy.AutoThrottle {
+			metrics.IsThrottled = true
+		}
+		tm.addThermalEvent(types.ThermalEvent{
+			DeviceID:    device.ID,
 			Zone:        device.Location.Zone,
-			Type:        "cpu_critical",
+			Type:        "critical",
 			Temperature: metrics.CPUTemp,
 			Threshold:   policy.CPUCritical,
-			State:       tm.getHWState(metrics),
+			Throttled:   metrics.IsThrottled,
 			Timestamp:   time.Now(),
 		})
 	} else if metrics.CPUTemp > policy.CPUWarning {
-		tm.addThermalEvent(metalThermal.ThermalEvent{
-			DeviceID:    string(device.ID),
+		tm.addThermalEvent(types.ThermalEvent{
+			DeviceID:    device.ID,
 			Zone:        device.Location.Zone,
-			Type:        "cpu_warning",
+			Type:        "warning",
 			Temperature: metrics.CPUTemp,
 			Threshold:   policy.CPUWarning,
-			State:       tm.getHWState(metrics),
+			Throttled:   metrics.IsThrottled,
 			Timestamp:   time.Now(),
 		})
+	} else if metrics.CPUTemp < policy.CPUWarning && metrics.IsThrottled {
+		// Temperature back to normal, remove throttling
+		metrics.IsThrottled = false
 	}
 
 	return nil
@@ -257,7 +267,17 @@ func (tm *ThermalManager) checkZonePolicy(ctx context.Context, zone string, devi
 
 	metrics := device.Metrics.ThermalMetrics
 
+	// Check violation counts
+	zoneMetrics, err := tm.GetZoneMetrics(ctx, zone)
+	if err != nil {
+		return err
+	}
+
 	if metrics.CPUTemp > policy.CPUCritical {
+		if metrics.IsThrottled && zoneMetrics.DevicesThrottled >= policy.MaxDevicesThrottled {
+			return fmt.Errorf("CPU temperature %.1f°C exceeds critical threshold %.1f°C but zone throttle limit reached",
+				metrics.CPUTemp, policy.CPUCritical)
+		}
 		return fmt.Errorf("CPU temperature %.1f°C exceeds critical threshold %.1f°C",
 			metrics.CPUTemp, policy.CPUCritical)
 	}
@@ -266,7 +286,7 @@ func (tm *ThermalManager) checkZonePolicy(ctx context.Context, zone string, devi
 }
 
 // addThermalEvent adds a new thermal event to the history
-func (tm *ThermalManager) addThermalEvent(event metalThermal.ThermalEvent) {
+func (tm *ThermalManager) addThermalEvent(event types.ThermalEvent) {
 	tm.eventsMutex.Lock()
 	defer tm.eventsMutex.Unlock()
 
@@ -274,17 +294,5 @@ func (tm *ThermalManager) addThermalEvent(event metalThermal.ThermalEvent) {
 	if len(tm.recentEvents) > tm.maxEvents {
 		// Remove oldest events when limit reached
 		tm.recentEvents = tm.recentEvents[len(tm.recentEvents)-tm.maxEvents:]
-	}
-}
-
-// getHWState converts metrics to hardware state
-func (tm *ThermalManager) getHWState(metrics *metalThermal.ThermalMetrics) metalThermal.ThermalState {
-	return metalThermal.ThermalState{
-		CPUTemp:     metrics.CPUTemp,
-		GPUTemp:     metrics.GPUTemp,
-		AmbientTemp: metrics.AmbientTemp,
-		FanSpeed:    metrics.FanSpeed,
-		Throttled:   metrics.ThrottleCount > 0,
-		UpdatedAt:   metrics.LastUpdate,
 	}
 }
