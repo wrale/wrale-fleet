@@ -9,6 +9,8 @@ import (
 	"syscall"
 
 	"github.com/wrale/wrale-fleet/metal/internal/server"
+	"github.com/wrale/wrale-fleet/metal/secure"
+	"github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 func main() {
@@ -25,10 +27,27 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create server with config
+	// Initialize hardware monitors
+	thermalMonitor, err := thermal.NewHardwareMonitor()
+	if err != nil {
+		log.Fatalf("Failed to create thermal monitor: %v", err)
+	}
+
+	securityMonitor, err := secure.NewHardwareMonitor()
+	if err != nil {
+		log.Fatalf("Failed to create security monitor: %v", err)
+	}
+
+	// Create policy managers
+	thermalMgr := thermal.NewPolicyManager(*deviceID, thermalMonitor, thermal.DefaultPolicy())
+	securityMgr := secure.NewPolicyManager(*deviceID, securityMonitor, secure.DefaultPolicy())
+
+	// Create server with managers
 	srv, err := server.New(server.Config{
-		DeviceID: *deviceID,
-		HTTPAddr: *httpAddr,
+		DeviceID:    *deviceID,
+		HTTPAddr:    *httpAddr,
+		ThermalMgr:  thermalMgr,
+		SecurityMgr: securityMgr,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)

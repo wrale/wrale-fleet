@@ -8,24 +8,25 @@ import (
 	"net/http"
 	"sync"
 
-	core_secure "github.com/wrale/wrale-fleet/metal/secure"
-	core_thermal "github.com/wrale/wrale-fleet/metal/thermal"
+	"github.com/wrale/wrale-fleet/metal/core/policy"
 )
 
 // Config contains server configuration options
 type Config struct {
-	DeviceID string // Unique identifier for this device
-	HTTPAddr string // HTTP API listen address
+	DeviceID     string // Unique identifier for this device
+	HTTPAddr     string // HTTP API listen address
+	ThermalMgr   policy.Manager
+	SecurityMgr  policy.Manager
 }
 
 // Server implements the metal daemon's HTTP API
 type Server struct {
-	config Config
-	srv    *http.Server
+	config     Config
+	srv        *http.Server
 	
 	// Core managers
-	thermalMgr  *core_thermal.PolicyManager
-	securityMgr *core_secure.PolicyManager
+	thermalMgr  policy.Manager
+	securityMgr policy.Manager
 	
 	// State
 	mu       sync.RWMutex
@@ -38,25 +39,18 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("device ID is required")
 	}
 
-	// Initialize hardware level components
-	hwThermal, err := core_thermal.NewHardwareMonitor()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create thermal monitor: %w", err)
+	if cfg.ThermalMgr == nil {
+		return nil, fmt.Errorf("thermal manager is required")
 	}
 
-	hwSecurity, err := core_secure.NewHardwareMonitor()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create security monitor: %w", err)
+	if cfg.SecurityMgr == nil {
+		return nil, fmt.Errorf("security manager is required")
 	}
-
-	// Initialize core policy managers
-	thermalMgr := core_thermal.NewPolicyManager(cfg.DeviceID, hwThermal.Monitor(), core_thermal.DefaultPolicy())
-	securityMgr := core_secure.NewPolicyManager(cfg.DeviceID, hwSecurity, core_secure.DefaultPolicy())
 
 	s := &Server{
-		config:     cfg,
-		thermalMgr: thermalMgr,
-		securityMgr: securityMgr,
+		config:      cfg,
+		thermalMgr:  cfg.ThermalMgr,
+		securityMgr: cfg.SecurityMgr,
 	}
 
 	// Set up HTTP server
@@ -83,6 +77,17 @@ func New(cfg Config) (*Server, error) {
 
 // Run starts the server and blocks until context cancellation
 func (s *Server) Run(ctx context.Context) error {
+	// Start policy managers
+	if err := s.thermalMgr.Start(); err != nil {
+		return fmt.Errorf("failed to start thermal manager: %w", err)
+	}
+	defer s.thermalMgr.Stop()
+
+	if err := s.securityMgr.Start(); err != nil {
+		return fmt.Errorf("failed to start security manager: %w", err)
+	}
+	defer s.securityMgr.Stop()
+
 	// Start HTTP server
 	errCh := make(chan error, 1)
 	go func() {
