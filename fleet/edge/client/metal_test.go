@@ -7,13 +7,13 @@ import (
 	"github.com/wrale/wrale-fleet/metal/hw/power"
 )
 
-// mockPowerManager implements power.Manager interface for testing
+// mockPowerManager implements power.Interface for testing
 type mockPowerManager struct {
 	state power.PowerState
 }
 
 // Verify interface compliance at compile time
-var _ power.Manager = (*mockPowerManager)(nil)
+var _ power.Interface = (*mockPowerManager)(nil)
 
 func (m *mockPowerManager) GetState() power.PowerState {
 	return m.state

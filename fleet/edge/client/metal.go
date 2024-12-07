@@ -17,7 +17,7 @@ import (
 type MetalClient struct {
 	baseURL    string
 	httpClient *http.Client
-	powerMgr   power.Manager // For direct hardware access
+	powerMgr   power.Interface // For direct hardware access
 }
 
 // MetricsResponse represents system metrics from the metal layer
@@ -30,7 +30,7 @@ type MetricsResponse struct {
 }
 
 // NewMetalClient creates a new metal client with the given base URL and optional power manager
-func NewMetalClient(baseURL string, powerMgr ...power.Manager) *MetalClient {
+func NewMetalClient(baseURL string, powerMgr ...power.Interface) *MetalClient {
 	client := &MetalClient{
 		baseURL:    baseURL,
 		httpClient: &http.Client{},

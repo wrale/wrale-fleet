@@ -5,13 +5,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/wrale/wrale-fleet/sync/manager"
 )
 
 func setupTestSyncManager(t *testing.T) *manager.SyncManager {
 	t.Helper()
-	
+
 	config := manager.Config{
 		StoragePath:   "/tmp/test-sync",
 		MaxRetries:    3,
@@ -20,18 +19,18 @@ func setupTestSyncManager(t *testing.T) *manager.SyncManager {
 	}
 
 	syncManager, err := manager.New(config)
-	require.NoError(t, err, "failed to create sync manager")
-	require.NotNil(t, syncManager, "sync manager should not be nil")
-	
+	assert.NoError(t, err, "failed to create sync manager")
+	assert.NotNil(t, syncManager, "sync manager should not be nil")
+
 	return syncManager
 }
 
-func TestSyncManager(t *testing.T) {
+func TestSyncManager_Creation(t *testing.T) {
 	sm := setupTestSyncManager(t)
 	assert.NotNil(t, sm, "sync manager should be created successfully")
 }
 
-func TestSyncManagerValidation(t *testing.T) {
+func TestSyncManager_Configuration(t *testing.T) {
 	tests := []struct {
 		name        string
 		config      manager.Config
@@ -64,7 +63,7 @@ func TestSyncManagerValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sm, err := manager.New(tt.config)
-			
+
 			if tt.expectError {
 				assert.Error(t, err, "should error with invalid config")
 				assert.Nil(t, sm, "sync manager should be nil with invalid config")

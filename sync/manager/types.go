@@ -1,3 +1,4 @@
+// Package manager provides synchronized state management across fleet components.
 package manager
 
 import (
@@ -6,7 +7,7 @@ import (
 	"time"
 )
 
-// Config holds sync manager configuration
+// Config holds sync manager configuration options
 type Config struct {
 	StoragePath   string        `json:"storage_path"`
 	MaxRetries    int           `json:"max_retries"`
@@ -28,7 +29,7 @@ type SyncManager struct {
 	mu     sync.RWMutex
 }
 
-// New creates a new sync manager instance
+// New creates a new sync manager instance with the given configuration
 func New(config Config) (*SyncManager, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %v", err)

@@ -6,8 +6,8 @@ import (
 	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 )
 
-// Manager defines the interface for power management operations
-type Manager interface {
+// Interface defines the required methods for power management
+type Interface interface {
 	GetState() PowerState
 }
 
