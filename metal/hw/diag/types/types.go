@@ -3,15 +3,22 @@ package types
 import (
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 	"github.com/wrale/wrale-fleet/metal/hw/power"
 	"github.com/wrale/wrale-fleet/metal/hw/thermal"
 	"github.com/wrale/wrale-fleet/metal/hw/secure"
 )
 
+// GPIOController defines interface for GPIO operations
+type GPIOController interface {
+	Initialize() error
+	SetMode(pin int, mode string) error
+	Write(pin int, value bool) error
+	Read(pin int) (bool, error)
+}
+
 // Config defines hardware diagnostics configuration
 type Config struct {
-	GPIO          gpio.Controller
+	GPIO          GPIOController
 	Power         power.Manager
 	Thermal       thermal.Monitor
 	Security      secure.Manager

@@ -5,24 +5,25 @@ import (
 	"time"
 
 	"github.com/wrale/wrale-fleet/sync/manager"
+	"github.com/stretchr/testify/assert"
 )
 
-func setupTestSyncManager() (*manager.SyncManager, error) {
+func setupTestSyncManager() *manager.SyncManager {
 	config := manager.Config{
 		StoragePath:   "/tmp/test-sync",
 		MaxRetries:    3,
 		Timeout:       5 * time.Second,
 		RetryInterval: time.Second,
 	}
-	return manager.New(config)
+
+	syncManager, err := manager.New(config)
+	if err != nil {
+		panic(err)
+	}
+	return syncManager
 }
 
 func TestSyncManager(t *testing.T) {
-	syncManager, err := setupTestSyncManager()
-	if err != nil {
-		t.Fatalf("failed to create sync manager: %v", err)
-	}
-	if syncManager == nil {
-		t.Fatal("sync manager is nil")
-	}
+	sm := setupTestSyncManager()
+	assert.NotNil(t, sm)
 }

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/wrale/wrale-fleet/metal/hw/diag/types"
-	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 )
 
 // Manager handles hardware diagnostics and testing
@@ -20,8 +19,8 @@ type Manager struct {
 
 // New creates a new hardware diagnostics manager
 func New(cfg types.Config) (*Manager, error) {
-	if _, ok := cfg.GPIO.(gpio.Controller); !ok {
-		return nil, fmt.Errorf("valid GPIO controller required")
+	if cfg.GPIO == nil {
+		return nil, fmt.Errorf("GPIO controller required")
 	}
 
 	// Set defaults
