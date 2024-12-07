@@ -23,7 +23,7 @@ type Agent struct {
 	mu          sync.RWMutex
 
 	// Thermal management
-	thermalState     *types.ThermalMetrics
+	thermalState     *types.DeviceMetrics
 	lastThermalSync  time.Time
 	thermalUpdateMux sync.RWMutex
 }
@@ -137,46 +137,23 @@ func (a *Agent) commandLoop(ctx context.Context) {
 			return
 		case <-a.stopChan:
 			return
-		default:
-			// Get commands from brain if in normal mode
+		case <-time.After(time.Second):
+			// Process commands
 			if a.getMode() == ModeNormal {
+				// Get commands from brain
 				commands, err := a.brainClient.GetCommands()
 				if err != nil {
 					a.handleError("get_commands", err)
-					time.Sleep(time.Second) // Backoff on error
 					continue
 				}
 
 				// Process commands
 				for _, cmd := range commands {
-					select {
-					case a.commandChan <- cmd:
-					default:
-						// Command buffer full, log warning
-					}
-				}
-			}
-
-			// Process command from channel
-			select {
-			case cmd := <-a.commandChan:
-				result := a.executeCommand(ctx, cmd)
-
-				// Report result if in normal mode
-				if a.getMode() == ModeNormal {
+					result := a.executeCommand(ctx, cmd)
 					if err := a.brainClient.ReportCommandResult(result); err != nil {
 						a.handleError("report_result", err)
 					}
 				}
-
-				// Store result locally
-				if err := a.stateStore.AddCommandResult(result); err != nil {
-					a.handleError("store_result", err)
-				}
-
-			case <-time.After(time.Second):
-				// No commands to process
-				continue
 			}
 		}
 	}
