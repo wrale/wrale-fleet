@@ -1,0 +1,123 @@
+```mermaid
+graph TB
+    %% API Layer Overview
+    subgraph APILayer["User API Layer (user/api)"]
+        direction TB
+        
+        %% Core API
+        subgraph Core["Core API"]
+            router["API Router"]
+            middleware["Middleware Chain"]
+            validator["Request Validator"]
+            responder["Response Handler"]
+            
+            router --> middleware
+            middleware --> validator
+            validator --> responder
+        end
+
+        %% Authentication & Authorization
+        subgraph Auth["Auth System"]
+            authN["Authentication"]
+            authZ["Authorization"]
+            rbac["RBAC System"]
+            audit["Audit Logger"]
+            
+            authN --> authZ
+            authZ --> rbac
+            rbac --> audit
+        end
+
+        %% Physical Operations API
+        subgraph PhysicalAPI["Physical Operations"]
+            deviceOps["Device Operations"]
+            powerMgmt["Power Management"]
+            thermalOps["Thermal Operations"]
+            locationMgmt["Location Management"]
+            safetyChecks["Safety Validation"]
+            
+            deviceOps --> safetyChecks
+            powerMgmt --> safetyChecks
+            thermalOps --> safetyChecks
+            locationMgmt --> safetyChecks
+        end
+
+        %% Real-time Systems
+        subgraph Realtime["Real-time Systems"]
+            wsManager["WebSocket Manager"]
+            eventStream["Event Stream"]
+            metricStream["Metric Stream"]
+            stateSync["State Sync"]
+            
+            wsManager --> eventStream
+            eventStream --> metricStream
+            metricStream --> stateSync
+        end
+
+        %% Fleet Management API
+        subgraph FleetAPI["Fleet Management"]
+            fleetOps["Fleet Operations"]
+            configMgmt["Configuration"]
+            deployment["Deployment"]
+            monitoring["Monitoring"]
+            
+            fleetOps --> configMgmt
+            configMgmt --> deployment
+            deployment --> monitoring
+        end
+    end
+
+    %% External Systems
+    subgraph ExternalSystems["External Systems"]
+        ui["user/ui Layer"]
+        fleet["fleet/ Layer"]
+        metal["metal/ Layer"]
+    end
+
+    %% Integration Points
+    subgraph Integration["Integration Layer"]
+        fleetClient["Fleet Client"]
+        metalClient["Metal Client"]
+        eventBridge["Event Bridge"]
+    end
+
+    %% Data Flow
+    ui <--> router
+    ui <--> wsManager
+    
+    fleet <--> fleetClient
+    metal <--> metalClient
+    
+    fleetClient --> fleetOps
+    metalClient --> deviceOps
+    eventBridge --> eventStream
+
+    %% Style Definitions
+    classDef core fill:#f9f,stroke:#333,stroke-width:2px
+    classDef physical fill:#fbb,stroke:#333,stroke-width:2px
+    classDef realtime fill:#bbf,stroke:#333,stroke-width:1px
+    classDef integration fill:#bfb,stroke:#333,stroke-width:1px
+
+    class router,middleware,validator core
+    class deviceOps,powerMgmt,safetyChecks physical
+    class wsManager,eventStream realtime
+    class fleetClient,metalClient,eventBridge integration
+
+    %% Notes
+    subgraph APIPrinciples["API Principles"]
+        note1["1. Physical Safety First"]
+        note2["2. Real-time Updates"]
+        note3["3. Secure Operations"]
+        note4["4. Audit Trail"]
+    end
+
+    %% Error Handling
+    subgraph ErrorHandling["Error Management"]
+        errorHandler["Error Handler"]
+        recovery["Recovery Actions"]
+        notification["Error Notification"]
+        
+        errorHandler --> recovery
+        recovery --> notification
+    end
+```
