@@ -13,11 +13,19 @@ import (
     "github.com/gorilla/websocket"
     
     "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/user/api/service"
     apitypes "github.com/wrale/wrale-fleet/user/api/types"
 )
 
+// Config contains server configuration
+type Config struct {
+    HTTPAddr string // HTTP listen address
+}
+
 // Server represents the API server
 type Server struct {
+    config     Config
+    srv        *http.Server
     router     *mux.Router
     upgrader   websocket.Upgrader
     
@@ -28,19 +36,15 @@ type Server struct {
     authSvc    apitypes.AuthService
 }
 
-// NewServer creates a new API server instance
-func NewServer(
-    deviceSvc apitypes.DeviceService,
-    fleetSvc apitypes.FleetService,
-    wsSvc apitypes.WebSocketService,
-    authSvc apitypes.AuthService,
-) *Server {
+// New creates a new server instance
+func New(cfg Config) (*Server, error) {
     s := &Server{
+        config:    cfg,
         router:    mux.NewRouter(),
-        deviceSvc: deviceSvc,
-        fleetSvc:  fleetSvc,
-        wsSvc:     wsSvc,
-        authSvc:   authSvc,
+        deviceSvc: service.NewDeviceService(),
+        fleetSvc:  service.NewFleetService(),
+        wsSvc:     service.NewWebSocketService(),
+        authSvc:   service.NewAuthService(),
         upgrader: websocket.Upgrader{
             ReadBufferSize:  1024,
             WriteBufferSize: 1024,
@@ -52,20 +56,42 @@ func NewServer(
     }
 
     s.setupRoutes()
-    return s
-}
 
-// Start starts the API server
-func (s *Server) Start(addr string) error {
-    srv := &http.Server{
+    s.srv = &http.Server{
         Handler:      s.router,
-        Addr:         addr,
+        Addr:         cfg.HTTPAddr,
         WriteTimeout: 15 * time.Second,
         ReadTimeout:  15 * time.Second,
     }
 
-    log.Printf("Starting API server on %s", addr)
-    return srv.ListenAndServe()
+    return s, nil
+}
+
+// Run starts the server and blocks until context cancellation
+func (s *Server) Run(ctx context.Context) error {
+    // Start server in goroutine
+    errCh := make(chan error, 1)
+    go func() {
+        log.Printf("Starting API server on %s", s.config.HTTPAddr)
+        if err := s.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            errCh <- fmt.Errorf("server error: %w", err)
+        }
+    }()
+
+    // Wait for shutdown signal or error
+    select {
+    case err := <-errCh:
+        return err
+    case <-ctx.Done():
+        // Shutdown with 5 second timeout
+        shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+
+        if err := s.srv.Shutdown(shutdownCtx); err != nil {
+            return fmt.Errorf("error during shutdown: %w", err)
+        }
+        return nil
+    }
 }
 
 // setupRoutes configures API routes
