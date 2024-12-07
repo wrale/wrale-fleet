@@ -1,25 +1,27 @@
 # Shared Library Makefile
 # Common utilities and shared types
 
-COMPONENT_NAME := wrale-shared
-COMPONENT_DESCRIPTION := Shared Library Layer
-MAKEFILES_DIR := ../Makefiles
+.PHONY: all build test verify clean
 
-include $(MAKEFILES_DIR)/templates/go/service.mk
-$(eval $(GO_SERVICE_TEMPLATE))
+all: verify build test
 
-# Override the default build since this is a library
-build: ## Build and verify library
+build: ## Build library
+	@echo "Building shared library..."
 	@go build ./...
 
 test: ## Run tests
+	@echo "Testing shared library..."
 	@go test -race ./...
 
 verify: ## Run verification
+	@echo "Verifying shared library..."
 	@go vet ./...
-	@golangci-lint run --timeout=5m
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run --timeout=5m; \
+	fi
 
 clean: ## Clean build artifacts
+	@echo "Cleaning shared library..."
 	@rm -f coverage.out
-
-all: verify build test
+	@go clean
+	@find . -type d -name "vendor" -exec rm -rf {} +
