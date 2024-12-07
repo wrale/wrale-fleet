@@ -3,6 +3,7 @@ package types
 import (
     "time"
 
+    "github.com/gorilla/websocket"
     "github.com/wrale/wrale-fleet/fleet/brain/types"
 )
 
@@ -25,8 +26,8 @@ type FleetService interface {
 }
 
 type WebSocketService interface {
-    AddClient(*WebSocket.Conn)
-    RemoveClient(*WebSocket.Conn)
+    AddClient(*websocket.Conn)
+    RemoveClient(*websocket.Conn)
     GetDeviceUpdates(types.DeviceID) (<-chan interface{}, error)
 }
 
@@ -49,36 +50,37 @@ type APIError struct {
 }
 
 type DeviceCreateRequest struct {
-    ID       types.DeviceID        `json:"id"`
-    Location string               `json:"location"`
+    ID       types.DeviceID           `json:"id"`
+    Location types.PhysicalLocation   `json:"location"`
     Config   map[string]interface{} `json:"config,omitempty"`
 }
 
 type DeviceUpdateRequest struct {
-    Status   string               `json:"status,omitempty"`
-    Location *string             `json:"location,omitempty"`
+    Status   string                 `json:"status,omitempty"`
+    Location *types.PhysicalLocation `json:"location,omitempty"`
     Config   map[string]interface{} `json:"config,omitempty"`
 }
 
 type DeviceResponse struct {
-    ID         types.DeviceID        `json:"id"`
-    Status     string               `json:"status"`
-    Location   string               `json:"location"`
-    Metrics    map[string]float64    `json:"metrics"`
+    ID         types.DeviceID           `json:"id"`
+    Status     string                  `json:"status"`
+    Location   types.PhysicalLocation   `json:"location"`
+    Metrics    *types.DeviceMetrics    `json:"metrics"`
     Config     map[string]interface{} `json:"config"`
-    LastUpdate time.Time            `json:"last_update"`
+    LastUpdate time.Time              `json:"last_update"`
 }
 
 type DeviceCommandRequest struct {
-    Operation string `json:"operation"`
+    Operation string                 `json:"operation"`
+    Payload   map[string]interface{} `json:"payload,omitempty"`
 }
 
 type CommandResponse struct {
-    ID        string     `json:"id"`
-    Status    string     `json:"status"`
-    StartTime time.Time  `json:"start_time"`
-    EndTime   *time.Time `json:"end_time,omitempty"`
-    Error     string     `json:"error,omitempty"`
+    ID        types.TaskID `json:"id"`
+    Status    string      `json:"status"`
+    StartTime time.Time   `json:"start_time"`
+    EndTime   *time.Time  `json:"end_time,omitempty"`
+    Error     string      `json:"error,omitempty"`
 }
 
 type FleetMetrics struct {
@@ -97,11 +99,22 @@ type FleetCommandRequest struct {
 
 type DeviceSelector struct {
     Status   []string          `json:"status,omitempty"`
-    Location string           `json:"location,omitempty"`
-    Metrics  map[string]Range `json:"metrics,omitempty"`
+    Location string            `json:"location,omitempty"`
+    Metrics  map[string]Range  `json:"metrics,omitempty"`
 }
 
 type Range struct {
     Min float64 `json:"min"`
     Max float64 `json:"max"`
+}
+
+type ConfigRequest struct {
+    Config map[string]interface{} `json:"config"`
+}
+
+type WSMessage struct {
+    Type     string      `json:"type"`
+    DeviceID string      `json:"device_id,omitempty"`
+    Data     interface{} `json:"data,omitempty"`
+    Error    string      `json:"error,omitempty"`
 }

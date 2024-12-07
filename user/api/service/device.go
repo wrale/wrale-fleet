@@ -4,9 +4,7 @@ package service
 import (
     "context"
     "fmt"
-    "log"
     "time"
-    "google.golang.org/grpc"
 
     "github.com/wrale/wrale-fleet/fleet/brain/service"
     "github.com/wrale/wrale-fleet/fleet/brain/types"
@@ -15,30 +13,14 @@ import (
 
 // DeviceService implements device operations
 type DeviceService struct {
-    brainSvc *service.Service
-    conn     *grpc.ClientConn
+    brain *service.Service
 }
 
 // NewDeviceService creates a new device service
-func NewDeviceService(fleetEndpoint string) *DeviceService {
-    // Connect to fleet brain service
-    conn, err := grpc.Dial(fleetEndpoint, grpc.WithInsecure())
-    if err != nil {
-        log.Fatalf("Failed to connect to fleet brain: %v", err)
-    }
-
+func NewDeviceService(brain *service.Service) *DeviceService {
     return &DeviceService{
-        brainSvc: service.NewClient(conn),
-        conn:     conn,
+        brain: brain,
     }
-}
-
-// Close releases resources
-func (s *DeviceService) Close() error {
-    if s.conn != nil {
-        return s.conn.Close()
-    }
-    return nil
 }
 
 // CreateDevice registers a new device
@@ -57,17 +39,11 @@ func (s *DeviceService) CreateDevice(req *apitypes.DeviceCreateRequest) (*apityp
     }
 
     // Register with brain
-    if err := s.brainSvc.RegisterDevice(ctx, state); err != nil {
+    if err := s.brain.RegisterDevice(ctx, state); err != nil {
         return nil, fmt.Errorf("failed to register device: %w", err)
     }
 
-    // Update initial config if provided
-    if len(req.Config) > 0 {
-        if err := s.brainSvc.UpdateDeviceConfig(ctx, req.ID, req.Config); err != nil {
-            return nil, fmt.Errorf("failed to set initial config: %w", err)
-        }
-    }
-
+    // Get device response which includes full state
     return s.getDeviceResponse(ctx, req.ID)
 }
 
@@ -81,7 +57,7 @@ func (s *DeviceService) UpdateDevice(id types.DeviceID, req *apitypes.DeviceUpda
     ctx := context.Background()
 
     // Get current state
-    state, err := s.brainSvc.GetDeviceState(ctx, id)
+    state, err := s.brain.GetDeviceState(ctx, id)
     if err != nil {
         return nil, fmt.Errorf("failed to get device state: %w", err)
     }
@@ -95,17 +71,11 @@ func (s *DeviceService) UpdateDevice(id types.DeviceID, req *apitypes.DeviceUpda
     }
 
     // Update state
-    if err := s.brainSvc.UpdateDeviceState(ctx, id, *state); err != nil {
+    if err := s.brain.UpdateDeviceState(ctx, *state); err != nil {
         return nil, fmt.Errorf("failed to update device state: %w", err)
     }
 
-    // Update config if provided
-    if len(req.Config) > 0 {
-        if err := s.brainSvc.UpdateDeviceConfig(ctx, id, req.Config); err != nil {
-            return nil, fmt.Errorf("failed to update config: %w", err)
-        }
-    }
-
+    // Get updated device state
     return s.getDeviceResponse(ctx, id)
 }
 
@@ -114,7 +84,7 @@ func (s *DeviceService) ListDevices() ([]*apitypes.DeviceResponse, error) {
     ctx := context.Background()
 
     // Get all devices from brain
-    states, err := s.brainSvc.ListDevices(ctx)
+    states, err := s.brain.ListDevices(ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to list devices: %w", err)
     }
@@ -136,7 +106,7 @@ func (s *DeviceService) ListDevices() ([]*apitypes.DeviceResponse, error) {
 func (s *DeviceService) DeleteDevice(id types.DeviceID) error {
     ctx := context.Background()
 
-    if err := s.brainSvc.UnregisterDevice(ctx, id); err != nil {
+    if err := s.brain.UnregisterDevice(ctx, id); err != nil {
         return fmt.Errorf("failed to unregister device: %w", err)
     }
 
@@ -149,41 +119,41 @@ func (s *DeviceService) ExecuteCommand(id types.DeviceID, req *apitypes.DeviceCo
 
     // Create task
     task := types.Task{
-        ID:        fmt.Sprintf("cmd-%d", time.Now().UnixNano()),
+        Type:      types.TaskType(req.Operation),
         DeviceIDs: []types.DeviceID{id},
         Operation: req.Operation,
         Priority:  1,
         CreatedAt: time.Now(),
+        Payload:   req.Payload,
     }
 
-    // Schedule task
-    if err := s.brainSvc.ScheduleTask(ctx, task); err != nil {
+    // Schedule and execute task
+    if err := s.brain.ScheduleTask(ctx, task); err != nil {
         return nil, fmt.Errorf("failed to schedule task: %w", err)
     }
 
-    // Execute task
-    if err := s.brainSvc.ExecuteTask(ctx, task); err != nil {
+    if err := s.brain.ExecuteTask(ctx, task); err != nil {
         return nil, fmt.Errorf("failed to execute task: %w", err)
     }
 
-    // Get task result
-    taskEntry, err := s.brainSvc.GetTask(ctx, task.ID)
+    // Get result task
+    entry, err := s.brain.GetTask(ctx, task.ID)
     if err != nil {
         return nil, fmt.Errorf("failed to get task result: %w", err)
     }
 
     // Convert to API response
     resp := &apitypes.CommandResponse{
-        ID:        task.ID,
-        Status:    taskEntry.Status,
-        StartTime: taskEntry.StartedAt.Time(),
+        ID:        string(task.ID),
+        Status:    entry.Status,
+        StartTime: entry.StartedAt.Time(),
     }
-    if taskEntry.EndedAt != nil {
-        endTime := taskEntry.EndedAt.Time()
+    if entry.EndedAt != nil {
+        endTime := entry.EndedAt.Time()
         resp.EndTime = &endTime
     }
-    if taskEntry.Error != nil {
-        resp.Error = taskEntry.Error.Error()
+    if entry.Error != nil {
+        resp.Error = entry.Error.Error()
     }
 
     return resp, nil
@@ -193,7 +163,7 @@ func (s *DeviceService) ExecuteCommand(id types.DeviceID, req *apitypes.DeviceCo
 
 func (s *DeviceService) getDeviceResponse(ctx context.Context, id types.DeviceID) (*apitypes.DeviceResponse, error) {
     // Get device state
-    state, err := s.brainSvc.GetDeviceState(ctx, id)
+    state, err := s.brain.GetDeviceState(ctx, id)
     if err != nil {
         return nil, fmt.Errorf("failed to get device state: %w", err)
     }
@@ -202,18 +172,12 @@ func (s *DeviceService) getDeviceResponse(ctx context.Context, id types.DeviceID
 }
 
 func (s *DeviceService) deviceStateToResponse(ctx context.Context, state types.DeviceState) (*apitypes.DeviceResponse, error) {
-    // Get device config
-    config, err := s.brainSvc.GetDeviceConfig(ctx, state.ID)
-    if err != nil {
-        return nil, fmt.Errorf("failed to get device config: %w", err)
-    }
-
     return &apitypes.DeviceResponse{
         ID:         state.ID,
         Status:     state.Status,
         Location:   state.Location,
-        Metrics:    state.Metrics,
-        Config:     config,
+        Metrics:    &state.Metrics,
+        Config:     nil, // TODO: Implement config retrieval
         LastUpdate: state.LastUpdated,
     }, nil
 }
