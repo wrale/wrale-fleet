@@ -9,7 +9,7 @@ import (
 
 // Resolver handles state conflicts and versioning
 type Resolver struct {
-	mu sync.RWMutex
+	mu      sync.RWMutex
 	timeout time.Duration
 }
 

@@ -6,8 +6,8 @@ import (
 
 // Store represents a thread-safe key-value store
 type Store struct {
-	mu    sync.RWMutex
-	data  map[string]interface{}
+	mu   sync.RWMutex
+	data map[string]interface{}
 }
 
 // NewStore creates a new store instance
