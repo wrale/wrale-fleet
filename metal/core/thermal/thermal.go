@@ -24,9 +24,21 @@ type HardwareMonitor struct {
 	monitor *hw.Monitor
 }
 
+// defaultConfig returns a default hardware configuration
+func defaultConfig() hw.Config {
+	return hw.Config{
+		MonitorInterval: minResponseDelay,
+		FanControlPin:  "fan_control",
+		ThrottlePin:    "cpu_throttle",
+		CPUTempPath:    "/sys/class/thermal/thermal_zone0/temp",
+		GPUTempPath:    "/sys/class/thermal/thermal_zone1/temp",
+		AmbientTempPath: "/sys/class/thermal/thermal_zone2/temp",
+	}
+}
+
 // NewHardwareMonitor creates a new hardware monitor instance
 func NewHardwareMonitor() (*HardwareMonitor, error) {
-	monitor, err := hw.New(hw.DefaultConfig())
+	monitor, err := hw.New(defaultConfig())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create hardware monitor: %w", err)
 	}

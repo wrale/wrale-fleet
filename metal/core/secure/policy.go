@@ -29,9 +29,9 @@ type HardwareMonitor struct {
 func NewHardwareMonitor() (*HardwareMonitor, error) {
 	monitor, err := hw.New(hw.Config{
 		// Configure with default settings
-		CaseSensor:   "case_tamper",
-		MotionSensor: "motion_detect",
-		VoltSensor:   "voltage_mon",
+		CaseSensor:     "case_tamper",
+		MotionSensor:   "motion_detect",
+		VoltageSensor:  "voltage_mon",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create hardware monitor: %w", err)
