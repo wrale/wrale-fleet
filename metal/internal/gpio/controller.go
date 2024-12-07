@@ -1,26 +1,27 @@
 package gpio
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
-	"periph.io/x/conn/v3/gpio"
-	"periph.io/x/host/v3"
+	"github.com/wrale/wrale-fleet/metal"
 )
 
 // simPin tracks simulated pin state
 type simPin struct {
 	value bool
-	pull  gpio.Pull
+	mode  metal.PinMode
+	pull  metal.PullMode
 }
 
 // Controller manages GPIO pins and their states
 type Controller struct {
 	mux        sync.RWMutex
-	pins       map[string]gpio.PinIO
-	interrupts map[string]*interruptState
-	pwmPins    map[string]*pwmState
+	pins       map[string]*pin
+	groups     map[string][]string
+	interrupts map[string]chan bool
 	enabled    bool
 	simulation bool
 
@@ -28,403 +29,351 @@ type Controller struct {
 	simPins map[string]*simPin
 }
 
+type pin struct {
+	name      string
+	mode      metal.PinMode
+	pull      metal.PullMode
+	pwmConfig *metal.PWMConfig
+	value     bool
+}
+
 // New creates a new GPIO controller
-func New(opts ...Option) (*Controller, error) {
-	// Process options
-	options := &Options{}
-	for _, opt := range opts {
-		opt(options)
-	}
-
-	// Initialize host for GPIO access if not in simulation mode
-	if !options.SimulationMode {
-		if _, err := host.Init(); err != nil {
-			return nil, fmt.Errorf("failed to initialize GPIO host: %w", err)
-		}
-	}
-
-	return &Controller{
-		pins:       make(map[string]gpio.PinIO),
-		interrupts: make(map[string]*interruptState),
-		pwmPins:    make(map[string]*pwmState),
+func New(opts ...metal.Option) (metal.GPIO, error) {
+	c := &Controller{
+		pins:       make(map[string]*pin),
+		groups:     make(map[string][]string),
+		interrupts: make(map[string]chan bool),
 		enabled:    true,
-		simulation: options.SimulationMode,
 		simPins:    make(map[string]*simPin),
-	}, nil
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		if err := opt(c); err != nil {
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
-// ConfigurePin sets up a GPIO pin for use with optional pull-up/down
-func (c *Controller) ConfigurePin(name string, pin gpio.PinIO, pull gpio.Pull) error {
-	c.mux.Lock()
-	defer c.mux.Unlock()
-
-	if !c.enabled {
-		return fmt.Errorf("GPIO controller is disabled")
-	}
-
-	if c.simulation {
-		c.pins[name] = pin // Allow nil pin in simulation mode
-		c.simPins[name] = &simPin{
-			value: false,
-			pull:  pull,
-		}
-		// Even in simulation mode, configure the pin if one was provided
-		if pin != nil {
-			if err := pin.In(pull, gpio.NoEdge); err != nil {
-				return fmt.Errorf("failed to configure pin: %w", err)
-			}
-		}
-		return nil
-	}
-
-	if pin == nil {
-		return fmt.Errorf("pin cannot be nil in non-simulation mode")
-	}
-
-	// Configure pin for input with pull setting
-	if err := pin.In(pull, gpio.NoEdge); err != nil {
-		return fmt.Errorf("failed to configure pin: %w", err)
-	}
-
-	c.pins[name] = pin
-	return nil
-}
-
-// SetPinState sets the state of a GPIO pin
-func (c *Controller) SetPinState(name string, high bool) error {
-	c.mux.Lock()
-	defer c.mux.Unlock()
-
-	if c.simulation {
-		simPin, exists := c.simPins[name]
-		if !exists {
-			return fmt.Errorf("pin %s not found", name)
-		}
-		simPin.value = high
-		// Also set physical pin if one exists
-		if pin := c.pins[name]; pin != nil {
-			if high {
-				return pin.Out(gpio.High)
-			}
-			return pin.Out(gpio.Low)
-		}
-		return nil
-	}
-
-	pin, exists := c.pins[name]
-	if !exists {
-		return fmt.Errorf("pin %s not found", name)
-	}
-
-	if pin == nil {
-		return fmt.Errorf("pin %s is nil", name)
-	}
-
-	if high {
-		return pin.Out(gpio.High)
-	}
-	return pin.Out(gpio.Low)
-}
-
-// GetPinState reads the current state of a GPIO pin
-func (c *Controller) GetPinState(name string) (bool, error) {
-	c.mux.RLock()
-	defer c.mux.RUnlock()
-
-	if c.simulation {
-		simPin, exists := c.simPins[name]
-		if !exists {
-			return false, fmt.Errorf("pin %s not found", name)
-		}
-		// Also read physical pin if one exists
-		if pin := c.pins[name]; pin != nil {
-			return pin.Read() == gpio.High, nil
-		}
-		return simPin.value, nil
-	}
-
-	pin, exists := c.pins[name]
-	if !exists {
-		return false, fmt.Errorf("pin %s not found", name)
-	}
-
-	if pin == nil {
-		return false, fmt.Errorf("pin %s is nil", name)
-	}
-
-	return pin.Read() == gpio.High, nil
-}
-
-// GetPinPull reads the current pull-up/down configuration of a GPIO pin
-func (c *Controller) GetPinPull(name string) (gpio.Pull, error) {
-	c.mux.RLock()
-	defer c.mux.RUnlock()
-
-	if c.simulation {
-		simPin, exists := c.simPins[name]
-		if !exists {
-			return gpio.Float, fmt.Errorf("pin %s not found", name)
-		}
-		return simPin.pull, nil
-	}
-
-	pin, exists := c.pins[name]
-	if !exists {
-		return gpio.Float, fmt.Errorf("pin %s not found", name)
-	}
-
-	if pin == nil {
-		return gpio.Float, fmt.Errorf("pin %s is nil", name)
-	}
-
-	return pin.Pull(), nil
-}
-
-// ConfigurePWM sets up a pin for PWM operation
-func (c *Controller) ConfigurePWM(name string, pin gpio.PinIO, cfg PWMConfig) error {
-	c.mux.Lock()
-	defer c.mux.Unlock()
-
-	if !c.enabled {
-		return fmt.Errorf("GPIO controller is disabled")
-	}
-
-	// Validate config
-	if cfg.Frequency == 0 {
-		cfg.Frequency = 25000 // Default to 25kHz
-	}
-	if cfg.DutyCycle > 100 {
-		return fmt.Errorf("duty cycle must be 0-100")
-	}
-
-	if c.simulation {
-		// In simulation mode, allow nil pin and just track state
-		c.pwmPins[name] = &pwmState{
-			pin:       pin,
-			config:    cfg,
-			enabled:   false,
-			dutyCycle: cfg.DutyCycle,
-			done:      make(chan struct{}),
-		}
-		// Store pull configuration in simulated state
-		c.simPins[name] = &simPin{
-			value: false,
-			pull:  cfg.Pull,
-		}
-		return nil
-	}
-
-	if pin == nil {
-		return fmt.Errorf("pin cannot be nil in non-simulation mode")
-	}
-
-	// Configure pin for output with pull setting
-	if err := pin.In(cfg.Pull, gpio.NoEdge); err != nil {
-		return fmt.Errorf("failed to configure pin pull: %w", err)
-	}
-	if err := pin.Out(gpio.Low); err != nil {
-		return fmt.Errorf("failed to configure pin as output: %w", err)
-	}
-
-	// Create PWM state
-	c.pwmPins[name] = &pwmState{
-		pin:       pin,
-		config:    cfg,
-		enabled:   false,
-		dutyCycle: cfg.DutyCycle,
-		done:      make(chan struct{}),
-	}
-
-	return nil
-}
-
-// EnablePWM starts PWM output on a pin
-func (c *Controller) EnablePWM(name string) error {
-	c.mux.RLock()
-	state, exists := c.pwmPins[name]
-	c.mux.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("PWM pin %s not found", name)
-	}
-
-	state.mux.Lock()
-	defer state.mux.Unlock()
-
-	if state.enabled {
-		return nil // Already enabled
-	}
-
-	state.enabled = true
-	state.done = make(chan struct{})
-
+func (c *Controller) Start(ctx context.Context) error {
+	// Initialize hardware access if not in simulation mode
 	if !c.simulation {
-		state.wg.Add(1)
-		go c.pwmLoop(state)
+		// Hardware initialization would go here
 	}
-
 	return nil
 }
 
-// DisablePWM stops PWM output on a pin
-func (c *Controller) DisablePWM(name string) error {
-	c.mux.RLock()
-	state, exists := c.pwmPins[name]
-	c.mux.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("PWM pin %s not found", name)
-	}
-
-	state.mux.Lock()
-	if !state.enabled {
-		state.mux.Unlock()
-		return nil // Already disabled
-	}
-
-	state.enabled = false
-	close(state.done)
-	state.mux.Unlock()
-
-	if !c.simulation {
-		// Wait for PWM loop to exit
-		state.wg.Wait()
-
-		if state.pin != nil {
-			// Set pin low after goroutine exits
-			if err := state.pin.Out(gpio.Low); err != nil {
-				return fmt.Errorf("failed to set pin low: %w", err)
-			}
-		}
-	}
-
-	return nil
-}
-
-// SetPWMDutyCycle updates the PWM duty cycle (0-100)
-func (c *Controller) SetPWMDutyCycle(name string, dutyCycle uint32) error {
-	c.mux.RLock()
-	state, exists := c.pwmPins[name]
-	c.mux.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("PWM pin %s not found", name)
-	}
-
-	state.mux.Lock()
-	defer state.mux.Unlock()
-
-	if dutyCycle > 100 {
-		return fmt.Errorf("duty cycle must be 0-100")
-	}
-
-	state.dutyCycle = dutyCycle
-
-	// Update PWM if enabled
-	if state.enabled && !c.simulation {
-		if state.pin != nil {
-			if dutyCycle == 0 {
-				if err := state.pin.Out(gpio.Low); err != nil {
-					return fmt.Errorf("failed to set pin low: %w", err)
-				}
-			}
-			if dutyCycle == 100 {
-				if err := state.pin.Out(gpio.High); err != nil {
-					return fmt.Errorf("failed to set pin high: %w", err)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// pwmLoop handles the PWM signal generation
-func (c *Controller) pwmLoop(state *pwmState) {
-	defer state.wg.Done()
-	period := time.Duration(1000000000/state.config.Frequency) * time.Nanosecond
-
-	timer := time.NewTimer(period)
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-state.done:
-			return
-		case <-timer.C:
-			state.mux.Lock()
-			if !state.enabled {
-				state.mux.Unlock()
-				return
-			}
-
-			dutyCycle := state.dutyCycle
-			pin := state.pin
-			state.mux.Unlock()
-
-			if pin == nil {
-				continue
-			}
-
-			if dutyCycle == 0 {
-				if err := pin.Out(gpio.Low); err != nil {
-					// Log error but continue - PWM is best-effort
-					continue
-				}
-				timer.Reset(period)
-				continue
-			}
-			if dutyCycle == 100 {
-				if err := pin.Out(gpio.High); err != nil {
-					// Log error but continue - PWM is best-effort
-					continue
-				}
-				timer.Reset(period)
-				continue
-			}
-
-			onTime := period * time.Duration(dutyCycle) / 100
-			offTime := period - onTime
-
-			if err := pin.Out(gpio.High); err != nil {
-				// Log error but continue - PWM is best-effort
-				continue
-			}
-			time.Sleep(onTime)
-			if err := pin.Out(gpio.Low); err != nil {
-				// Log error but continue - PWM is best-effort
-				continue
-			}
-			timer.Reset(offTime)
-		}
-	}
-}
-
-// Close releases all GPIO resources
-func (c *Controller) Close() error {
+func (c *Controller) Stop() error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
-	var lastErr error
+	// Close all interrupt channels
+	for _, ch := range c.interrupts {
+		close(ch)
+	}
+	c.interrupts = make(map[string]chan bool)
 
-	if !c.simulation {
-		// Disable all PWM outputs
-		for name := range c.pwmPins {
-			if err := c.DisablePWM(name); err != nil {
-				lastErr = err
-			}
-		}
-
-		// Set all pins to safe state
-		for _, pin := range c.pins {
-			if pin != nil {
-				if err := pin.Out(gpio.Low); err != nil {
-					lastErr = err
-				}
-			}
+	// Set all pins to safe state
+	for _, p := range c.pins {
+		if p.mode == metal.ModeOutput {
+			c.setPinValue(p, false)
 		}
 	}
 
 	c.enabled = false
-	return lastErr
+	return nil
+}
+
+// ConfigurePin sets up a GPIO pin
+func (c *Controller) ConfigurePin(name string, pinNum uint, mode metal.PinMode) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	if !c.enabled {
+		return fmt.Errorf("GPIO controller is disabled")
+	}
+
+	// Create pin
+	p := &pin{
+		name: name,
+		mode: mode,
+	}
+
+	if c.simulation {
+		c.simPins[name] = &simPin{
+			mode: mode,
+			pull: metal.PullNone,
+		}
+	} else {
+		// Real hardware pin setup would go here
+	}
+
+	c.pins[name] = p
+	return nil
+}
+
+// ConfigurePWM sets up a PWM output
+func (c *Controller) ConfigurePWM(name string, pinNum uint, config metal.PWMConfig) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	p, exists := c.pins[name]
+	if !exists {
+		return fmt.Errorf("pin %s not configured", name)
+	}
+
+	if p.mode != metal.ModePWM {
+		return fmt.Errorf("pin %s not in PWM mode", name)
+	}
+
+	p.pwmConfig = &config
+	return nil
+}
+
+// ConfigurePull sets pin pull-up/down
+func (c *Controller) ConfigurePull(name string, pinNum uint, pull metal.PullMode) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	p, exists := c.pins[name]
+	if !exists {
+		return fmt.Errorf("pin %s not configured", name)
+	}
+
+	p.pull = pull
+	if c.simulation {
+		if sim, ok := c.simPins[name]; ok {
+			sim.pull = pull
+		}
+	}
+	return nil
+}
+
+// SetPinState sets output pin state
+func (c *Controller) SetPinState(name string, state bool) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	p, exists := c.pins[name]
+	if !exists {
+		return fmt.Errorf("pin %s not found", name)
+	}
+
+	if p.mode != metal.ModeOutput {
+		return fmt.Errorf("pin %s not configured for output", name)
+	}
+
+	return c.setPinValue(p, state)
+}
+
+// GetPinState reads pin state
+func (c *Controller) GetPinState(name string) (bool, error) {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	p, exists := c.pins[name]
+	if !exists {
+		return false, fmt.Errorf("pin %s not found", name)
+	}
+
+	if c.simulation {
+		if sim, ok := c.simPins[name]; ok {
+			return sim.value, nil
+		}
+	}
+
+	return p.value, nil
+}
+
+// SetPWMDutyCycle updates PWM duty cycle
+func (c *Controller) SetPWMDutyCycle(name string, duty uint32) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	p, exists := c.pins[name]
+	if !exists {
+		return fmt.Errorf("pin %s not found", name)
+	}
+
+	if p.mode != metal.ModePWM {
+		return fmt.Errorf("pin %s not configured for PWM", name)
+	}
+
+	if p.pwmConfig == nil {
+		return fmt.Errorf("pin %s PWM not configured", name)
+	}
+
+	if duty > 100 {
+		return fmt.Errorf("duty cycle must be 0-100")
+	}
+
+	p.pwmConfig.DutyCycle = duty
+	return nil
+}
+
+// CreatePinGroup creates a named group of pins
+func (c *Controller) CreatePinGroup(name string, pins []uint) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	if _, exists := c.groups[name]; exists {
+		return fmt.Errorf("group %s already exists", name)
+	}
+
+	pinNames := make([]string, len(pins))
+	for i, pinNum := range pins {
+		pinName := fmt.Sprintf("%s_%d", name, i)
+		if err := c.ConfigurePin(pinName, pinNum, metal.ModeOutput); err != nil {
+			return err
+		}
+		pinNames[i] = pinName
+	}
+
+	c.groups[name] = pinNames
+	return nil
+}
+
+// SetGroupState sets all pins in a group
+func (c *Controller) SetGroupState(name string, states []bool) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	pins, exists := c.groups[name]
+	if !exists {
+		return fmt.Errorf("group %s not found", name)
+	}
+
+	if len(states) != len(pins) {
+		return fmt.Errorf("state count mismatch")
+	}
+
+	for i, pinName := range pins {
+		if err := c.SetPinState(pinName, states[i]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// GetGroupState reads all pins in a group
+func (c *Controller) GetGroupState(name string) ([]bool, error) {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	pins, exists := c.groups[name]
+	if !exists {
+		return nil, fmt.Errorf("group %s not found", name)
+	}
+
+	states := make([]bool, len(pins))
+	for i, pinName := range pins {
+		state, err := c.GetPinState(pinName)
+		if err != nil {
+			return nil, err
+		}
+		states[i] = state
+	}
+
+	return states, nil
+}
+
+// WatchPin sets up pin change monitoring
+func (c *Controller) WatchPin(name string, edge string) (<-chan bool, error) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	if _, exists := c.pins[name]; !exists {
+		return nil, fmt.Errorf("pin %s not found", name)
+	}
+
+	ch := make(chan bool, 1)
+	c.interrupts[name] = ch
+	return ch, nil
+}
+
+// UnwatchPin stops monitoring a pin
+func (c *Controller) UnwatchPin(name string) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+
+	ch, exists := c.interrupts[name]
+	if !exists {
+		return nil // Already not watching
+	}
+
+	close(ch)
+	delete(c.interrupts, name)
+	return nil
+}
+
+// GetPinMode returns pin mode
+func (c *Controller) GetPinMode(name string) (metal.PinMode, error) {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	p, exists := c.pins[name]
+	if !exists {
+		return "", fmt.Errorf("pin %s not found", name)
+	}
+
+	return p.mode, nil
+}
+
+// GetPinConfig returns PWM configuration
+func (c *Controller) GetPinConfig(name string) (metal.PWMConfig, error) {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	p, exists := c.pins[name]
+	if !exists {
+		return metal.PWMConfig{}, fmt.Errorf("pin %s not found", name)
+	}
+
+	if p.pwmConfig == nil {
+		return metal.PWMConfig{}, fmt.Errorf("pin %s not configured for PWM", name)
+	}
+
+	return *p.pwmConfig, nil
+}
+
+// ListPins returns all configured pin names
+func (c *Controller) ListPins() []string {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	pins := make([]string, 0, len(c.pins))
+	for name := range c.pins {
+		pins = append(pins, name)
+	}
+	return pins
+}
+
+// Simulation control
+func (c *Controller) SetSimulated(simulated bool) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	c.simulation = simulated
+}
+
+func (c *Controller) IsSimulated() bool {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+	return c.simulation
+}
+
+// Internal helpers
+
+func (c *Controller) setPinValue(p *pin, value bool) error {
+	p.value = value
+	if c.simulation {
+		if sim, ok := c.simPins[p.name]; ok {
+			sim.value = value
+		}
+		return nil
+	}
+	// Real hardware pin control would go here
+	return nil
 }
