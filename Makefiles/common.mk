@@ -65,16 +65,20 @@ deps: ## Download and tidy dependencies
 
 verify: fmt lint test coverage ## Run all verifications
 
+# Helper function to process help targets
+define help_single_mk
+$(shell grep -h -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(1) 2>/dev/null | sort -u | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}')
+endef
+
 # Helper function to generate help output
-# This version properly handles duplicates and template includes
 define HELP_FUNCTION
-    @echo "$(shell basename $(CURDIR)) - Available targets:"
-    @echo
-    @echo "Standard targets:"
-    @grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILES_DIR)/templates/*.mk | sed 's/^[^:]*://g' | sort -u | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
-    @echo
-    @echo "Component targets:"
-    @grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -v "$(MAKEFILES_DIR)" | sort -u | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@echo "$(COMPONENT_NAME) - Available targets:"
+	@echo
+	@echo "Standard targets:"
+	@$(foreach mk,$(MAKEFILES_DIR)/templates/*.mk,$(call help_single_mk,$(mk)))
+	@echo
+	@echo "Component targets:"
+	@$(call help_single_mk,$(MAKEFILE_LIST))
 endef
 
 # Version information target
