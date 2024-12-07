@@ -8,10 +8,6 @@ require (
 	periph.io/x/host/v3 v3.8.2
 )
 
-replace github.com/wrale/wrale-fleet => ../
-
-replace github.com/wrale/wrale-fleet/metal => ../metal
-
 replace github.com/wrale/wrale-fleet/shared => ../shared
 
 replace github.com/wrale/wrale-fleet/sync => ../sync

@@ -4,7 +4,6 @@ go 1.21
 
 require (
 	github.com/stretchr/testify v1.10.0
-	github.com/wrale/wrale-fleet/metal/hw v0.0.0-20241207135012-e1c2691d2580
 )
 
 require (
@@ -18,6 +17,5 @@ require (
 replace (
 	github.com/wrale/wrale-fleet/fleet => ./fleet
 	github.com/wrale/wrale-fleet/metal => ./metal
-	github.com/wrale/wrale-fleet/metal/hw => ./metal/hw
 	github.com/wrale/wrale-fleet/sync => ./sync
 )
