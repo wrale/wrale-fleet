@@ -41,13 +41,11 @@ func NewManager(
 
 // GetState retrieves versioned device state
 func (m *Manager) GetState(deviceID types.DeviceID) (*synctypes.VersionedState, error) {
-	// Get latest version for device
 	versions, err := m.store.ListVersions()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list versions: %w", err)
 	}
 
-	// Find latest version for device
 	var latest synctypes.StateVersion
 	for _, version := range versions {
 		state, err := m.store.GetState(version)
@@ -68,12 +66,10 @@ func (m *Manager) GetState(deviceID types.DeviceID) (*synctypes.VersionedState, 
 
 // UpdateState updates device state with version tracking
 func (m *Manager) UpdateState(deviceID types.DeviceID, state *synctypes.VersionedState) error {
-	// Validate state
 	if state.State.ID != deviceID {
 		return fmt.Errorf("state device ID mismatch")
 	}
 
-	// Check for conflicts
 	current, err := m.GetState(deviceID)
 	if err == nil {
 		states := []*synctypes.VersionedState{current, state}
@@ -90,12 +86,10 @@ func (m *Manager) UpdateState(deviceID types.DeviceID, state *synctypes.Versione
 		}
 	}
 
-	// Store updated state
 	if err := m.store.SaveState(state); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
-	// Initialize consensus tracking
 	m.consLock.Lock()
 	m.consensus[state.Version] = &synctypes.ConsensusStatus{
 		Version:    state.Version,
@@ -109,13 +103,11 @@ func (m *Manager) UpdateState(deviceID types.DeviceID, state *synctypes.Versione
 
 // ValidateState validates a state version
 func (m *Manager) ValidateState(version synctypes.StateVersion) error {
-	// Get state for validation
 	state, err := m.store.GetState(version)
 	if err != nil {
 		return fmt.Errorf("failed to get state: %w", err)
 	}
 
-	// Validate with resolver
 	if err := m.resolver.ValidateResolution(state); err != nil {
 		return fmt.Errorf("state validation failed: %w", err)
 	}
@@ -123,17 +115,40 @@ func (m *Manager) ValidateState(version synctypes.StateVersion) error {
 	return nil
 }
 
+// UpdateConfig updates configuration
+func (m *Manager) UpdateConfig(config *synctypes.ConfigData) error {
+	if err := m.config.UpdateConfig(config); err != nil {
+		return fmt.Errorf("failed to update config: %w", err)
+	}
+	return nil
+}
+
+// DistributeConfig distributes configuration to devices
+func (m *Manager) DistributeConfig(config *synctypes.ConfigData, devices []types.DeviceID) error {
+	if err := m.config.DistributeConfig(config, devices); err != nil {
+		return fmt.Errorf("failed to distribute config: %w", err)
+	}
+	return nil
+}
+
+// GetDeviceConfig gets configuration for a specific device
+func (m *Manager) GetDeviceConfig(deviceID types.DeviceID) (*synctypes.ConfigData, error) {
+	config, err := m.config.GetDeviceConfig(deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device config: %w", err)
+	}
+	return config, nil
+}
+
 // CreateOperation creates a new sync operation
 func (m *Manager) CreateOperation(op *synctypes.SyncOperation) error {
 	m.opLock.Lock()
 	defer m.opLock.Unlock()
 
-	// Validate operation
 	if op.ID == "" || op.Type == "" {
 		return fmt.Errorf("invalid operation")
 	}
 
-	// Store operation
 	op.CreatedAt = time.Now()
 	op.Status = "pending"
 	m.operations[op.ID] = op
@@ -190,18 +205,15 @@ func (m *Manager) AddValidation(version synctypes.StateVersion, validator string
 		return fmt.Errorf("no consensus tracking for version %s", version)
 	}
 
-	// Check if already validated
 	for _, v := range status.Validators {
 		if v == validator {
 			return nil
 		}
 	}
 
-	// Add validation
 	status.Validators = append(status.Validators, validator)
 	status.Confirmations++
 
-	// Check if consensus reached
 	if status.Confirmations >= status.Threshold {
 		now := time.Now()
 		status.ReachedAt = &now
