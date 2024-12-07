@@ -7,11 +7,11 @@ import (
 
 // MetalClient provides interface to metal layer functionality
 type MetalClient struct {
-	powerManager *power.Manager
+	powerManager power.Manager
 }
 
 // NewMetalClient creates a new metal layer client
-func NewMetalClient(powerMgr *power.Manager) *MetalClient {
+func NewMetalClient(powerMgr power.Manager) *MetalClient {
 	return &MetalClient{
 		powerManager: powerMgr,
 	}

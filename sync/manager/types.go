@@ -13,11 +13,5 @@ type Config struct {
 // SyncManager handles state synchronization between components
 type SyncManager struct {
 	config Config
-}
-
-// New creates a new sync manager instance
-func New(cfg Config) (*SyncManager, error) {
-	return &SyncManager{
-		config: cfg,
-	}, nil
+	mu     sync.RWMutex
 }
