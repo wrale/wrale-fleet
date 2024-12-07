@@ -154,39 +154,155 @@ graph TB
     Resolver --> Storage
 ```
 
-## User Layer Architecture
+## Critical Flow Diagrams
 
+### State Synchronization Flow
 ```mermaid
-graph TB
-    subgraph UserSystem["User Layer"]
-        direction TB
-        
-        %% UI Components
-        subgraph UI["Dashboard"]
-            pages["Next.js Pages"]
-            components["React Components"]
-            services["API Services"]
-        end
+sequenceDiagram
+    participant H as Hardware
+    participant M as Metal
+    participant E as Edge
+    participant B as Brain
+    participant S as Sync
+    participant U as UI
 
-        %% API Components
-        subgraph API["REST API"]
-            handlers["Request Handlers"]
-            auth["Authentication"]
-            websocket["WebSocket Server"]
-        end
-
-        %% Integration
-        subgraph Integration["Backend Integration"]
-            fleetClient["Fleet Client"]
-            syncClient["Sync Client"]
-            eventBus["Event Bus"]
-        end
-    end
-
-    %% Service Flow
-    UI --> API
-    API --> Integration
-    Integration --> eventBus
+    Note over H,U: Normal Operation
+    H->>M: Hardware State Change
+    M->>E: Device State Update
+    E->>B: Edge State Sync
+    B->>S: Version State
+    S-->>U: State Change Event
+    
+    Note over H,U: Conflict Resolution
+    E->>B: Edge State A
+    B->>S: Version State A
+    E->>B: Edge State B (Conflict)
+    B->>S: Version State B
+    S-->>S: Detect Conflict
+    S-->>S: Resolve Conflict
+    S->>B: Resolution
+    B->>E: State Update
+    E->>M: Apply Changes
 ```
 
-These diagrams provide a visual representation of the key architectural components and their interactions within the Wrale Fleet system. They complement the detailed documentation in OVERVIEW.md, LAYERS.md, API.md, SECURITY.md, and DEPLOYMENT.md.
+### Configuration Distribution Flow
+```mermaid
+sequenceDiagram
+    participant U as UI
+    participant A as API
+    participant B as Brain
+    participant S as Sync
+    participant E as Edge
+    participant M as Metal
+
+    Note over U,M: Config Update
+    U->>A: Update Config
+    A->>B: Validate Config
+    B->>S: Version Config
+    S->>S: Generate Delta
+    par Distribution to Edges
+        S->>E: Config Delta 1
+        S->>E: Config Delta 2
+    end
+    E->>M: Apply Config
+    M-->>E: Config Applied
+    E-->>S: Ack Config
+    S-->>B: Distribution Complete
+    B-->>A: Update Success
+    A-->>U: Success Response
+```
+
+### Recovery Flow
+```mermaid
+sequenceDiagram
+    participant H as Hardware
+    participant M as Metal
+    participant E as Edge
+    participant B as Brain
+    participant S as Sync
+
+    Note over H,S: Recovery Process
+    H->>M: Hardware Error
+    M->>E: Error Event
+    E->>B: Report Failure
+    B->>S: Version Error State
+    
+    par Recovery Actions
+        B->>E: Recovery Instructions
+        E->>M: Recovery Commands
+        M->>H: Hardware Reset
+    end
+    
+    H-->>M: Hardware Ready
+    M-->>E: Device State
+    E-->>B: Recovery Complete
+    B-->>S: Version Recovery State
+```
+
+### Network Partition Recovery
+```mermaid
+sequenceDiagram
+    participant E1 as Edge 1
+    participant E2 as Edge 2
+    participant B as Brain
+    participant S as Sync
+
+    Note over E1,S: Partition Event
+    E1->>B: State Update
+    E2-xB: Update Fails
+    E2-->>E2: Enter Partition Mode
+    
+    Note over E1,S: Recovery
+    E2->>B: Reconnect
+    B->>S: Request State Diff
+    S->>S: Calculate Delta
+    S->>B: State Resolution
+    B->>E2: State Update
+    E2-->>B: Ack Update
+```
+
+## Physical Safety Flows
+
+### Temperature Safety Response
+```mermaid
+sequenceDiagram
+    participant H as Hardware
+    participant M as Metal
+    participant E as Edge
+    participant B as Brain
+    
+    Note over H,B: Temperature Event
+    H->>M: Temperature Alert
+    M->>M: Check Safety Bounds
+    
+    alt Temperature Critical
+        M->>H: Emergency Shutdown
+        M->>E: Critical Alert
+        E->>B: Emergency Event
+    else Temperature High
+        M->>H: Increase Cooling
+        M->>E: Warning Alert
+        E->>B: Warning Event
+    end
+```
+
+### Resource Management Flow
+```mermaid
+sequenceDiagram
+    participant H as Hardware
+    participant M as Metal
+    participant E as Edge
+    participant B as Brain
+    participant S as Sync
+
+    Note over H,S: Resource Management
+    B->>S: Resource Policy Update
+    S->>E: Policy Distribution
+    E->>M: Resource Limits
+    M->>H: Apply Constraints
+    
+    H-->>M: Resource Metrics
+    M-->>E: Resource State
+    E-->>B: Resource Usage
+    B-->>S: Version Resource State
+```

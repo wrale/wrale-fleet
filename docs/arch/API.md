@@ -16,10 +16,24 @@ type DeviceManager interface {
 ```
 
 #### Hardware Management
-- GPIO control and monitoring
-- Power state management
-- Thermal control interfaces
-- Security monitoring
+```go
+type HardwareManager interface {
+    // GPIO management
+    GetGPIOState(pin GPIOPin) (GPIOState, error)
+    SetGPIOState(pin GPIOPin, state GPIOState) error
+    MonitorGPIO(pin GPIOPin) (<-chan GPIOEvent, error)
+
+    // Power management
+    GetPowerState() (PowerState, error)
+    SetPowerMode(mode PowerMode) error
+    MonitorPower() (<-chan PowerEvent, error)
+
+    // Thermal management
+    GetTemperature() (Temperature, error)
+    SetCoolingMode(mode CoolingMode) error
+    MonitorTemperature() (<-chan TempEvent, error)
+}
+```
 
 ### Fleet Layer API
 
@@ -34,11 +48,100 @@ type StateManager interface {
 }
 ```
 
-#### Edge Management
-- Device state synchronization
-- Local resource management
-- Command processing
-- Event handling
+#### Configuration Management
+```go
+type ConfigManager interface {
+    // Layer configuration
+    GetLayerConfig(layer Layer) (*LayerConfig, error)
+    UpdateLayerConfig(layer Layer, config *LayerConfig) error
+    ValidateConfig(config *LayerConfig) error
+
+    // Device configuration
+    GetDeviceConfig(deviceID DeviceID) (*DeviceConfig, error)
+    UpdateDeviceConfig(deviceID DeviceID, config *DeviceConfig) error
+    ValidateDeviceConfig(config *DeviceConfig) error
+
+    // Policy configuration
+    GetPolicyConfig() (*PolicyConfig, error)
+    UpdatePolicyConfig(config *PolicyConfig) error
+    ValidatePolicyConfig(config *PolicyConfig) error
+
+    // Config versioning
+    GetConfigVersion() (Version, error)
+    RollbackConfig(version Version) error
+    ListConfigVersions() ([]Version, error)
+}
+
+// Configuration types
+type LayerConfig struct {
+    Layer       Layer                    `json:"layer"`
+    Settings    map[string]interface{}   `json:"settings"`
+    Constraints map[string]Constraint    `json:"constraints"`
+    Version     Version                  `json:"version"`
+}
+
+type DeviceConfig struct {
+    DeviceID    DeviceID                 `json:"device_id"`
+    Hardware    HardwareConfig           `json:"hardware"`
+    Network     NetworkConfig            `json:"network"`
+    Security    SecurityConfig           `json:"security"`
+    Version     Version                  `json:"version"`
+}
+
+type PolicyConfig struct {
+    Safety      SafetyPolicy             `json:"safety"`
+    Resource    ResourcePolicy           `json:"resource"`
+    Security    SecurityPolicy           `json:"security"`
+    Version     Version                  `json:"version"`
+}
+```
+
+#### Recovery Management
+```go
+type RecoveryManager interface {
+    // State recovery
+    DetectStateInconsistency() error
+    InitiateStateRecovery(deviceID DeviceID) error
+    ValidateStateRecovery(deviceID DeviceID) error
+    CompleteStateRecovery(deviceID DeviceID) error
+
+    // Config recovery
+    DetectConfigInconsistency() error
+    InitiateConfigRecovery(version Version) error
+    ValidateConfigRecovery(version Version) error
+    CompleteConfigRecovery(version Version) error
+
+    // System recovery
+    DetectSystemIssue() error
+    InitiateSystemRecovery(component Component) error
+    ValidateSystemRecovery(component Component) error
+    CompleteSystemRecovery(component Component) error
+
+    // Recovery monitoring
+    GetRecoveryStatus(recoveryID RecoveryID) (*RecoveryStatus, error)
+    MonitorRecovery(recoveryID RecoveryID) (<-chan RecoveryEvent, error)
+    ListActiveRecoveries() ([]RecoveryStatus, error)
+}
+
+// Recovery types
+type RecoveryStatus struct {
+    ID          RecoveryID               `json:"recovery_id"`
+    Type        RecoveryType             `json:"type"`
+    State       RecoveryState            `json:"state"`
+    Progress    float64                  `json:"progress"`
+    StartTime   time.Time                `json:"start_time"`
+    LastUpdate  time.Time                `json:"last_update"`
+    Error       string                   `json:"error,omitempty"`
+}
+
+type RecoveryEvent struct {
+    ID          RecoveryID               `json:"recovery_id"`
+    Type        RecoveryEventType        `json:"type"`
+    Message     string                   `json:"message"`
+    Timestamp   time.Time                `json:"timestamp"`
+    Data        map[string]interface{}   `json:"data,omitempty"`
+}
+```
 
 ### Sync Layer API
 
@@ -54,11 +157,23 @@ type StateStore interface {
 }
 ```
 
-#### Sync Management
-- Configuration distribution
-- State synchronization
-- Conflict resolution
-- Version control
+#### Conflict Resolution
+```go
+type ConflictResolver interface {
+    // Conflict detection
+    DetectConflicts(states []VersionedState) ([]Conflict, error)
+    ValidateStateConsistency(state VersionedState) error
+    
+    // Resolution
+    ResolveConflict(conflict Conflict) (*Resolution, error)
+    ApplyResolution(resolution *Resolution) error
+    ValidateResolution(resolution *Resolution) error
+
+    // History
+    GetConflictHistory(deviceID DeviceID) ([]Conflict, error)
+    GetResolutionHistory(deviceID DeviceID) ([]Resolution, error)
+}
+```
 
 ### User Layer API
 
@@ -74,97 +189,101 @@ type DeviceService interface {
 }
 ```
 
-#### UI Types
-```typescript
-interface Device {
-    id: string
-    status: string
-    location: Location
-    metrics: DeviceMetrics
-    config: DeviceConfig
-    lastUpdate: string
-}
-
-interface DeviceMetrics {
-    temperature: number
-    powerUsage: number
-    cpuLoad: number
-    memoryUsage: number
+#### Real-time Events
+```go
+type EventService interface {
+    // Event streams
+    SubscribeDeviceEvents(deviceID string) (<-chan DeviceEvent, error)
+    SubscribeStateEvents() (<-chan StateEvent, error)
+    SubscribeAlertEvents() (<-chan AlertEvent, error)
+    
+    // Event management
+    PublishEvent(event Event) error
+    GetEventHistory(deviceID string) ([]Event, error)
+    AcknowledgeEvent(eventID string) error
 }
 ```
-
-## Cross-Layer Communication
-
-### Metal → Fleet
-1. Hardware state updates
-2. Physical metrics
-3. Security events
-4. Environmental data
-
-### Fleet → Sync
-1. Device state changes
-2. Configuration updates
-3. Operation events
-4. Resource allocation
-
-### Sync → User
-1. State updates
-2. Configuration changes
-3. Event notifications
-4. Resource metrics
-
-## Real-Time APIs
-
-### WebSocket Events
-1. State changes
-2. Metric updates
-3. Alert notifications
-4. Command responses
-
-### Event Streams
-1. Hardware events
-2. State transitions
-3. Metric streams
-4. Alert streams
-
-## API Security
-
-### Authentication
-1. Service-to-service auth
-2. User authentication
-3. Device authentication
-4. Token management
-
-### Authorization
-1. Role-based access control
-2. Resource permissions
-3. Operation validation
-4. Audit logging
 
 ## Error Handling
 
 ### Error Types
-1. Hardware errors
-2. State errors
-3. Operation errors
-4. Validation errors
+```go
+type Error interface {
+    error
+    Code() ErrorCode
+    Layer() Layer
+    Details() map[string]interface{}
+    Recoverable() bool
+}
 
-### Error Propagation
-1. Error context addition
-2. Layer-specific wrapping
-3. Client-friendly messages
-4. Error recovery hints
+// Error implementations
+type HardwareError struct {
+    code        ErrorCode
+    message     string
+    component   Component
+    recoverable bool
+    details     map[string]interface{}
+}
 
-## API Versioning
+type StateError struct {
+    code        ErrorCode
+    message     string
+    stateID     StateID
+    version     Version
+    recoverable bool
+    details     map[string]interface{}
+}
 
-### Version Management
-1. API versioning strategy
-2. Compatibility guarantees
-3. Deprecation policies
-4. Migration support
+type OperationError struct {
+    code        ErrorCode
+    message     string
+    operation   Operation
+    recoverable bool
+    details     map[string]interface{}
+}
+```
 
-### Backward Compatibility
-1. Type compatibility
-2. Interface stability
-3. Default behaviors
-4. Optional fields
+### Error Recovery
+```go
+type ErrorRecovery interface {
+    // Recovery handling
+    CanRecover(err error) bool
+    GetRecoveryPlan(err error) (*RecoveryPlan, error)
+    ExecuteRecovery(plan *RecoveryPlan) error
+    ValidateRecovery(plan *RecoveryPlan) error
+
+    // Recovery monitoring
+    GetRecoveryStatus(planID string) (*RecoveryStatus, error)
+    MonitorRecovery(planID string) (<-chan RecoveryEvent, error)
+}
+```
+
+## Version Management
+
+### API Versioning
+```go
+type VersionManager interface {
+    // Version control
+    GetAPIVersion() Version
+    ValidateVersion(version Version) error
+    IsCompatible(clientVersion Version) bool
+
+    // Migration
+    RequiresMigration(fromVersion Version) bool
+    GetMigrationPath(fromVersion Version) ([]Migration, error)
+    ExecuteMigration(migration Migration) error
+}
+```
+
+### Compatibility Checking
+```go
+type CompatibilityChecker interface {
+    // Interface compatibility
+    ValidateInterface(interface{} interface{}) error
+    CheckCompatibility(oldVersion, newVersion Version) error
+    
+    // Type compatibility
+    ValidateType(typeName string, version Version) error
+    GetCompatibleTypes(version Version) ([]string, error)
+}
+```
