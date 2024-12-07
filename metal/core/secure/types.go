@@ -8,6 +8,13 @@ import (
 	hw "github.com/wrale/wrale-fleet/metal/hw/secure"
 )
 
+// Default timing values
+const (
+	defaultMinDelay   = 100 * time.Millisecond
+	defaultMaxDelay   = 500 * time.Millisecond
+	defaultAlertDelay = 5 * time.Minute
+)
+
 // SecurityLevel indicates the required security posture
 type SecurityLevel string
 
@@ -41,6 +48,18 @@ type SecurityPolicy struct {
 type TimeWindow struct {
 	Start time.Time
 	End   time.Time
+}
+
+// SecurityMetrics provides monitoring statistics
+type SecurityMetrics struct {
+	CurrentLevel     SecurityLevel        `json:"current_level"`
+	TamperState     hw.TamperState       `json:"tamper_state"`
+	DetectionEvents  []TamperEvent       `json:"detection_events"`
+	VoltageLevel     float64             `json:"voltage_level"`
+	MotionDetected   bool                `json:"motion_detected"`
+	LastTamperEvent  *TamperEvent        `json:"last_tamper_event,omitempty"`
+	PolicyViolations []string            `json:"policy_violations,omitempty"`
+	UpdatedAt        time.Time           `json:"updated_at"`
 }
 
 // TamperEvent represents a security violation
