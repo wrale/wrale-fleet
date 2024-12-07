@@ -1,67 +1,54 @@
-export type DeviceStatus = 'online' | 'offline' | 'warning'
-
+// Device types
 export interface Device {
-  id: string
-  name: string
-  status: DeviceStatus
-  location: string
-  lastSeen: string
-  temperature: number
-  cpuLoad: number
-  memoryUsage: number
-  model?: string
-  serialNumber?: string
-  networkAddress?: string
-  physicalPosition?: {
-    rack: string
-    unit: number
-    coordinates?: {
-      x: number
-      y: number
-      z: number
-    }
-  }
-  environmentalData?: {
-    humidity?: number
-    ambientLight?: number
-    airQuality?: number
-    vibration?: number
-  }
-  powerMetrics?: {
-    voltage: number
-    current: number
-    powerDraw: number
-    efficiency: number
-  }
-}
-
-export interface DeviceGroup {
-  id: string
-  name: string
-  description?: string
-  devices: Device[]
-  location?: string
-  tags?: string[]
+    id: string
+    status: string
+    location: Location
+    metrics: DeviceMetrics
+    config: DeviceConfig
+    lastUpdate: string
 }
 
 export interface Location {
-  id: string
-  name: string
-  type: 'room' | 'rack' | 'shelf' | 'zone'
-  parent?: string // Parent location ID
-  coordinates?: {
-    x: number
-    y: number
-    z: number
-  }
-  dimensions?: {
-    width: number
-    height: number
-    depth: number
-  }
-  environmentalData?: {
+    rack: string
+    position: number
+    zone: string
+}
+
+export interface DeviceMetrics {
     temperature: number
-    humidity: number
-    airQuality?: number
-  }
+    powerUsage: number
+    cpuLoad: number
+    memoryUsage: number
+}
+
+export interface DeviceConfig {
+    [key: string]: any
+}
+
+export interface DeviceCommand {
+    operation: string
+    params?: Record<string, any>
+    timeout?: number
+}
+
+export interface CommandResponse {
+    id: string
+    status: string
+    startTime: string
+    endTime?: string
+    result?: any
+    error?: string
+}
+
+// Update request types
+export interface DeviceCreateRequest {
+    id: string
+    location: Location
+    config?: DeviceConfig
+}
+
+export interface DeviceUpdateRequest {
+    status?: string
+    location?: Location
+    config?: DeviceConfig
 }
