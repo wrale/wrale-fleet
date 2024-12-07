@@ -11,12 +11,13 @@ import (
 
 // Service provides the main brain service functionality
 type Service struct {
-    inventory   *device.Inventory
-    topology    *device.TopologyManager
-    scheduler   *coordinator.Scheduler
+    inventory    *device.Inventory
+    topology     *device.TopologyManager
+    scheduler    *coordinator.Scheduler
     orchestrator *coordinator.Orchestrator
-    analyzer    *engine.Analyzer
-    optimizer   *engine.Optimizer
+    analyzer     *engine.Analyzer
+    optimizer    *engine.Optimizer
+    thermalMgr   *engine.ThermalManager
 }
 
 // NewService creates a new brain service instance
@@ -28,14 +29,16 @@ func NewService(metalClient coordinator.MetalClient) *Service {
     orchestrator := coordinator.NewOrchestrator(scheduler, inventory, metalClient)
     analyzer := engine.NewAnalyzer(inventory, topology)
     optimizer := engine.NewOptimizer(inventory, topology, analyzer)
+    thermalMgr := engine.NewThermalManager(inventory, topology, analyzer)
 
     return &Service{
-        inventory:   inventory,
-        topology:    topology,
-        scheduler:   scheduler,
+        inventory:    inventory,
+        topology:     topology,
+        scheduler:    scheduler,
         orchestrator: orchestrator,
-        analyzer:    analyzer,
-        optimizer:   optimizer,
+        analyzer:     analyzer,
+        optimizer:    optimizer,
+        thermalMgr:   thermalMgr,
     }
 }
 
@@ -53,12 +56,80 @@ func (s *Service) UpdateDeviceState(ctx context.Context, state types.DeviceState
     return s.inventory.UpdateState(ctx, state)
 }
 
+func (s *Service) UpdateThermalState(ctx context.Context, deviceID types.DeviceID, state types.ThermalState) error {
+    if err := s.inventory.UpdateThermalState(ctx, deviceID, state); err != nil {
+        return err
+    }
+
+    // Analyze thermal state for alerts and optimizations
+    return s.thermalMgr.ProcessThermalUpdate(ctx, deviceID, state)
+}
+
 func (s *Service) GetDeviceState(ctx context.Context, deviceID types.DeviceID) (*types.DeviceState, error) {
     return s.inventory.GetDevice(ctx, deviceID)
 }
 
+func (s *Service) GetThermalState(ctx context.Context, deviceID types.DeviceID) (*types.ThermalState, error) {
+    return s.inventory.GetThermalState(ctx, deviceID)
+}
+
 func (s *Service) ListDevices(ctx context.Context) ([]types.DeviceState, error) {
     return s.inventory.ListDevices(ctx)
+}
+
+// Thermal Management
+
+func (s *Service) UpdateThermalPolicy(ctx context.Context, deviceID types.DeviceID, policy types.ThermalPolicy) error {
+    // Validate policy
+    if err := s.thermalMgr.ValidatePolicy(ctx, deviceID, policy); err != nil {
+        return err
+    }
+
+    // Schedule policy update
+    task := types.Task{
+        Type:     types.TaskUpdateThermalPolicy,
+        DeviceID: deviceID,
+        Payload:  policy,
+    }
+    return s.scheduler.Schedule(ctx, task)
+}
+
+func (s *Service) GetThermalPolicy(ctx context.Context, deviceID types.DeviceID) (*types.ThermalPolicy, error) {
+    return s.thermalMgr.GetPolicy(ctx, deviceID)
+}
+
+func (s *Service) SetFanSpeed(ctx context.Context, deviceID types.DeviceID, speed uint32) error {
+    if err := s.thermalMgr.ValidateFanSpeed(ctx, deviceID, speed); err != nil {
+        return err
+    }
+
+    task := types.Task{
+        Type:     types.TaskSetFanSpeed,
+        DeviceID: deviceID,
+        Payload:  speed,
+    }
+    return s.scheduler.Schedule(ctx, task)
+}
+
+func (s *Service) SetThrottling(ctx context.Context, deviceID types.DeviceID, enabled bool) error {
+    task := types.Task{
+        Type:     types.TaskSetThrottling,
+        DeviceID: deviceID,
+        Payload:  enabled,
+    }
+    return s.scheduler.Schedule(ctx, task)
+}
+
+func (s *Service) GetThermalMetrics(ctx context.Context, deviceID types.DeviceID) (*types.ThermalMetrics, error) {
+    return s.thermalMgr.GetMetrics(ctx, deviceID)
+}
+
+func (s *Service) GetThermalAlerts(ctx context.Context) ([]types.ThermalAlert, error) {
+    return s.thermalMgr.GetAlerts(ctx)
+}
+
+func (s *Service) GetThermalSummary(ctx context.Context) (*types.ThermalSummary, error) {
+    return s.thermalMgr.GetSummary(ctx)
 }
 
 // Task Management

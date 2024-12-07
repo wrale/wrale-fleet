@@ -56,6 +56,12 @@ func (c *BrainClient) SyncState(state types.DeviceState) error {
     return c.retryRequest("POST", url, state, nil)
 }
 
+// SyncThermalState synchronizes thermal state with the brain
+func (c *BrainClient) SyncThermalState(state types.ThermalState) error {
+    url := fmt.Sprintf("%s/api/v1/devices/%s/thermal/state", c.baseURL, c.deviceID)
+    return c.retryRequest("POST", url, state, nil)
+}
+
 // GetCommands retrieves pending commands from the brain
 func (c *BrainClient) GetCommands() ([]agent.Command, error) {
     url := fmt.Sprintf("%s/api/v1/devices/%s/commands", c.baseURL, c.deviceID)
@@ -72,11 +78,11 @@ func (c *BrainClient) ReportCommandResult(result agent.CommandResult) error {
 }
 
 // ReportHealth reports device health status to brain
-func (c *BrainClient) ReportHealth(healthy bool, details map[string]interface{}) error {
+func (c *BrainClient) ReportHealth(healthy bool, diagnostics map[string]interface{}) error {
     url := fmt.Sprintf("%s/api/v1/devices/%s/health", c.baseURL, c.deviceID)
     payload := map[string]interface{}{
-        "healthy": healthy,
-        "details": details,
+        "healthy":     healthy,
+        "diagnostics": diagnostics,
     }
     return c.retryRequest("POST", url, payload, nil)
 }
