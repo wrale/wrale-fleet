@@ -10,30 +10,32 @@ import (
 type StateVersion string
 
 // DeviceID represents a unique device identifier
-type DeviceID string
+type DeviceID = types.DeviceID
 
 // ConsensusStatus represents the status of state consensus
-type ConsensusStatus string
+type ConsensusStatus struct {
+	Version       StateVersion `json:"version"`
+	Validators    []string     `json:"validators"`
+	Threshold     int          `json:"threshold"`
+	Confirmations int          `json:"confirmations"`
+	ReachedAt     *time.Time   `json:"reached_at,omitempty"`
+}
 
-const (
-	// ConsensusAchieved indicates all nodes agree on state
-	ConsensusAchieved ConsensusStatus = "achieved"
-	// ConsensusPending indicates consensus is being negotiated
-	ConsensusPending ConsensusStatus = "pending"
-	// ConsensusConflict indicates there are conflicts to resolve
-	ConsensusConflict ConsensusStatus = "conflict"
-)
-
-// SyncOperation represents a sync operation type
-type SyncOperation string
+// SyncOperation represents a sync operation
+type SyncOperation struct {
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 const (
 	// SyncPush indicates pushing state to devices
-	SyncPush SyncOperation = "push"
+	SyncPush = "push"
 	// SyncPull indicates pulling state from devices
-	SyncPull SyncOperation = "pull"
+	SyncPull = "pull"
 	// SyncMerge indicates merging conflicting states
-	SyncMerge SyncOperation = "merge"
+	SyncMerge = "merge"
 )
 
 // VersionedState represents a versioned device state
@@ -49,8 +51,8 @@ type StateChange struct {
 	DeviceID    DeviceID          `json:"device_id"`
 	PrevVersion StateVersion      `json:"prev_version,omitempty"`
 	NewVersion  StateVersion      `json:"new_version"`
-	OldState    types.DeviceState `json:"old_state,omitempty"`
-	NewState    types.DeviceState `json:"new_state"`
+	OldState    *types.DeviceState `json:"old_state,omitempty"`
+	NewState    types.DeviceState  `json:"new_state"`
 	Timestamp   time.Time         `json:"timestamp"`
 	Source      string           `json:"source"`
 }
@@ -59,9 +61,9 @@ type StateChange struct {
 type ConfigData struct {
 	Version     string                 `json:"version"`
 	Config      map[string]interface{} `json:"config"`
-	ValidFrom   time.Time              `json:"valid_from"`
-	ValidTo     time.Time              `json:"valid_to,omitempty"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ValidFrom   time.Time             `json:"valid_from"`
+	ValidTo     time.Time             `json:"valid_to,omitempty"`
+	UpdatedAt   time.Time             `json:"updated_at"`
 	Settings    map[string]interface{} `json:"settings"`
 	Policies    map[string]interface{} `json:"policies"`
 	Constraints map[string]interface{} `json:"constraints"`
@@ -69,8 +71,8 @@ type ConfigData struct {
 
 // StateStore defines interface for state storage and retrieval
 type StateStore interface {
-	GetState(version StateVersion) (types.DeviceState, error)
-	SetState(state types.DeviceState) error
+	GetState(version StateVersion) (*VersionedState, error)
+	SetState(deviceID DeviceID, state types.DeviceState) error
 	SaveState(state *VersionedState) error
 	ListVersions() ([]StateVersion, error)
 	GetHistory(limit int) ([]StateChange, error)
@@ -79,8 +81,8 @@ type StateStore interface {
 
 // ConflictResolver defines interface for resolving state conflicts
 type ConflictResolver interface {
-	DetectConflicts(states []VersionedState) bool
-	ResolveConflicts(states []VersionedState) (*VersionedState, error)
+	DetectConflicts(states []*VersionedState) ([]*VersionedState, error)
+	ResolveConflicts(states []*VersionedState) (*VersionedState, error)
 	ValidateState(state *VersionedState) error
 	ValidateResolution(state *VersionedState) error
 }
@@ -91,4 +93,5 @@ type ConfigManager interface {
 	UpdateConfig(config *ConfigData) error
 	ValidateConfig(config *ConfigData) error
 	DistributeConfig(config *ConfigData, devices []DeviceID) error
+	GetDeviceConfig(deviceID DeviceID) (*ConfigData, error)
 }
