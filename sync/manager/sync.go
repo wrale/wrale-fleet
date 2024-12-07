@@ -3,13 +3,15 @@ package manager
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Config defines configuration for the sync manager
 type Config struct {
-	StoragePath string
-	MaxRetries  int
-	Timeout     int
+	StoragePath   string
+	MaxRetries    int
+	Timeout       time.Duration
+	RetryInterval time.Duration
 }
 
 // SyncManager handles state synchronization
@@ -29,7 +31,10 @@ func New(config Config) (*SyncManager, error) {
 		config.MaxRetries = 3
 	}
 	if config.Timeout == 0 {
-		config.Timeout = 30
+		config.Timeout = 30 * time.Second
+	}
+	if config.RetryInterval == 0 {
+		config.RetryInterval = time.Second
 	}
 
 	return &SyncManager{

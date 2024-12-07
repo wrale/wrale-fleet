@@ -9,6 +9,7 @@ import (
 
 func setupTestSyncManager() (*manager.SyncManager, error) {
 	config := manager.Config{
+		StoragePath:   "/tmp/test-sync",
 		RetryInterval: time.Second,
 		MaxRetries:    3,
 		Timeout:       5 * time.Second,

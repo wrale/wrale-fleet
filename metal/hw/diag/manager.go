@@ -1,12 +1,12 @@
 package diag
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/wrale/wrale-fleet/metal/hw/diag/types"
+	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 )
 
 // Manager handles hardware diagnostics and testing
@@ -20,7 +20,7 @@ type Manager struct {
 
 // New creates a new hardware diagnostics manager
 func New(cfg types.Config) (*Manager, error) {
-	if cfg.GPIO == nil {
+	if cfg.GPIO == (*gpio.Controller)(nil) {
 		return nil, fmt.Errorf("GPIO controller required")
 	}
 
@@ -42,5 +42,3 @@ func New(cfg types.Config) (*Manager, error) {
 		cfg: cfg,
 	}, nil
 }
-
-// Rest of the manager.go file remains the same...
