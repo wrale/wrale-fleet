@@ -7,6 +7,7 @@ import (
     "time"
 
     "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Agent implements the edge agent functionality
@@ -23,7 +24,7 @@ type Agent struct {
     mu          sync.RWMutex
 
     // Thermal management
-    thermalState     types.ThermalState
+    thermalState     thermal.ThermalState
     lastThermalSync  time.Time
     thermalUpdateMux sync.RWMutex
 }
