@@ -14,7 +14,7 @@ BUILD_FLAGS ?= -v -ldflags="$(LDFLAGS)"
 
 go-build: ## Build Go binary
 	@echo "Building $(COMPONENT_NAME)..."
-	$(GO) build $(BUILD_FLAGS) -o $(BUILD_DIR)/$(COMPONENT_NAME) ./cmd/$(COMPONENT_NAME)
+	$(GO) build $(BUILD_FLAGS) -o $(BUILD_DIR)/$(COMPONENT_NAME) $(MAIN_PACKAGE)
 
 go-test: ## Run Go tests
 	@echo "Running tests..."

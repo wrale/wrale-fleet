@@ -1,6 +1,7 @@
 # Edge Agent Makefile
 COMPONENT_NAME := wrale-edge
 MAKEFILES_DIR := ../../Makefiles
+MAIN_PACKAGE := ./agent
 
 include $(MAKEFILES_DIR)/templates/agent.mk
 $(eval $(AGENT_TEMPLATE))

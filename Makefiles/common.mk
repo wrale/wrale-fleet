@@ -11,6 +11,9 @@ GIT_COMMIT ?= $(shell git rev-parse HEAD)
 BUILD_DIR ?= build
 DIST_DIR ?= dist
 
+# Build settings
+MAIN_PACKAGE ?= ./cmd/$(COMPONENT_NAME)  # Default for backward compatibility
+
 # Docker registry settings
 DOCKER_REGISTRY ?= wrale
 DOCKER_TAG ?= $(VERSION)
