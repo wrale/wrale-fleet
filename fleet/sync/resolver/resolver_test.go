@@ -20,15 +20,15 @@ func TestResolver(t *testing.T) {
 			Status: "running",
 			Metrics: types.DeviceMetrics{
 				Temperature: 45.0,
-				PowerUsage: 100,
+				PowerUsage:  100,
 			},
 		}
-		
+
 		deviceState2 := types.DeviceState{
 			Status: "running",
 			Metrics: types.DeviceMetrics{
 				Temperature: 46.0,
-				PowerUsage: 102,
+				PowerUsage:  102,
 			},
 		}
 

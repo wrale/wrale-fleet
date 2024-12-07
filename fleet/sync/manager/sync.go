@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/types"
 	synctypes "github.com/wrale/wrale-fleet/fleet/sync/types"
 )
 
@@ -98,20 +97,6 @@ func (m *Manager) UpdateState(deviceID synctypes.DeviceID, newState *synctypes.V
 		Confirmations: 0,
 	}
 	m.consLock.Unlock()
-
-	return nil
-}
-
-// ValidateState validates a state version
-func (m *Manager) ValidateState(version synctypes.StateVersion) error {
-	state, err := m.store.GetState(version)
-	if err != nil {
-		return fmt.Errorf("failed to get state: %w", err)
-	}
-
-	if err := m.resolver.ValidateResolution(state); err != nil {
-		return fmt.Errorf("state validation failed: %w", err)
-	}
 
 	return nil
 }

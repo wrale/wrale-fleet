@@ -34,8 +34,8 @@ func TestFileStore(t *testing.T) {
 		}
 
 		testState := &synctypes.VersionedState{
-			Version: synctypes.StateVersion(1),
-			State:   deviceState,
+			Version:   synctypes.StateVersion("1"),
+			State:     deviceState,
 			Timestamp: time.Now(),
 		}
 
@@ -70,16 +70,24 @@ func TestFileStore(t *testing.T) {
 
 	t.Run("Change Tracking", func(t *testing.T) {
 		// Create test change
-		deviceState := types.DeviceState{
+		oldState := types.DeviceState{
+			ID:     "test-device-1",
+			Status: "active",
+		}
+		newState := types.DeviceState{
 			ID:     "test-device-1",
 			Status: "updated",
 		}
 
 		change := &synctypes.StateChange{
-			PrevVersion: synctypes.StateVersion(1),
-			NewVersion:  synctypes.StateVersion(2),
-			State:       deviceState,
+			DeviceID:    "test-device-1",
+			PrevVersion: synctypes.StateVersion("1"),
+			NewVersion:  synctypes.StateVersion("2"),
+			OldState:    &oldState,
+			NewState:    newState,
 			Timestamp:   time.Now(),
+			Source:      "test",
+			Changes:     []string{"status"},
 		}
 
 		// Track change
@@ -110,7 +118,7 @@ func TestFileStore(t *testing.T) {
 		}
 
 		// Verify state persists
-		state, err := newStore.GetState(synctypes.StateVersion(1))
+		state, err := newStore.GetState(synctypes.StateVersion("1"))
 		if err != nil {
 			t.Errorf("Failed to get state from new store: %v", err)
 		}
@@ -135,19 +143,19 @@ func TestFileStore(t *testing.T) {
 				Status: "active",
 			},
 			{
-				ID:     "device-2", 
+				ID:     "device-2",
 				Status: "active",
 			},
 		}
 
 		states := []*synctypes.VersionedState{
 			{
-				Version:   synctypes.StateVersion(3),
+				Version:   synctypes.StateVersion("3"),
 				State:     deviceStates[0],
 				Timestamp: time.Now(),
 			},
 			{
-				Version:   synctypes.StateVersion(4),
+				Version:   synctypes.StateVersion("4"),
 				State:     deviceStates[1],
 				Timestamp: time.Now(),
 			},

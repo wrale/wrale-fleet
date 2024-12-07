@@ -11,9 +11,9 @@ import (
 
 func setupTestSyncManager() *manager.SyncManager {
 	config := manager.Config{
-		StoragePath: "/tmp/test-sync",
+		StoragePath:   "/tmp/test-sync",
 		RetryInterval: time.Second,
-		MaxRetries: 3,
+		MaxRetries:    3,
 	}
 	syncManager, err := manager.New(config)
 	if err != nil {
@@ -24,7 +24,7 @@ func setupTestSyncManager() *manager.SyncManager {
 
 func TestConfigSync(t *testing.T) {
 	syncManager := setupTestSyncManager()
-	
+
 	config := &types.ConfigData{
 		Version:   "1.0",
 		Config:    map[string]interface{}{"key": "value"},
@@ -45,7 +45,7 @@ func TestConfigSync(t *testing.T) {
 
 func TestConfigSyncFailure(t *testing.T) {
 	syncManager := setupTestSyncManager()
-	
+
 	// Test with invalid config
 	config := &types.ConfigData{
 		Version:   "1.0",
@@ -59,7 +59,7 @@ func TestConfigSyncFailure(t *testing.T) {
 
 func TestDeviceConfigSync(t *testing.T) {
 	syncManager := setupTestSyncManager()
-	
+
 	config := &types.ConfigData{
 		Version:   "1.0",
 		Config:    map[string]interface{}{"setting": "test"},
