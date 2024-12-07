@@ -40,12 +40,29 @@ Wrale Fleet is a comprehensive hardware fleet management system with a physical-
 
 3. Build and start services:
    ```bash
-   chmod +x scripts/build.sh scripts/deploy.sh
-   ./scripts/build.sh 1.0.0
-   ./scripts/deploy.sh 1.0.0 development
+   make all
    ```
 
 4. Access the dashboard at http://localhost:3000
+
+## Make Targets
+
+The project uses a standardized build system with make targets across all components:
+
+### Core Targets
+- `make all` - Build all components
+- `make clean` - Clean all build artifacts
+- `make test` - Run tests across all components
+- `make verify` - Run verification checks
+
+### Component-Specific Builds
+- `make fleet` - Build fleet service
+- `make fleet/edge` - Build edge agent
+- `make metal/core` - Build metal daemon
+- `make user/api` - Build API service
+- `make user/ui/wrale-dashboard` - Build UI dashboard
+
+Run `make help` to see all available targets for each component.
 
 ## Configuration
 
@@ -79,24 +96,26 @@ See `.env.production` and `.env.development` for available configurations:
 ```
 
 ### Building Components
+Use make targets for building:
 ```bash
 # Build all components
-./scripts/build.sh VERSION
+make all
 
 # Build individual components
-cd metal && go build ./...
-cd fleet && go build ./...
-cd user/api && go build ./...
-cd user/ui/wrale-dashboard && npm install && npm run build
+make fleet
+make metal/core
+make user/api
+make user/ui/wrale-dashboard
 ```
 
 ### Running Tests
 ```bash
 # Run all tests
-go test ./...
+make test
 
-# Run UI tests
-cd user/ui/wrale-dashboard && npm test
+# Run component-specific tests
+make fleet test
+make user/ui/wrale-dashboard test
 ```
 
 ## Deployment
@@ -110,7 +129,8 @@ cd user/ui/wrale-dashboard && npm test
 
 2. Deploy services:
    ```bash
-   ./scripts/deploy.sh VERSION production
+   make all
+   make deploy
    ```
 
 ### Docker Images
