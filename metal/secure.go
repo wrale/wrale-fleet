@@ -1,93 +1,43 @@
 package metal
 
-import (
-	"context"
-	"time"
+// Security-specific option helpers
 
-	"github.com/wrale/wrale-fleet/metal/internal/types"
-)
-
-// SecurityLevel indicates the required security posture
-type SecurityLevel string
-
-const (
-	SecurityLow    SecurityLevel = "LOW"
-	SecurityMedium SecurityLevel = "MEDIUM"
-	SecurityHigh   SecurityLevel = "HIGH"
-)
-
-// TamperState represents the current tamper detection status
-type TamperState struct {
-	types.CommonState
-	CaseOpen       bool          `json:"case_open"`
-	MotionDetected bool          `json:"motion_detected"`
-	VoltageNormal  bool          `json:"voltage_normal"`
-	SecurityLevel  SecurityLevel `json:"security_level"`
-	Violations     []string      `json:"violations,omitempty"`
+// WithSecurityLevel returns an option that sets the default security level
+func WithSecurityLevel(level SecurityLevel) Option {
+    return func(v interface{}) error {
+        if s, ok := v.(interface{ setSecurityLevel(SecurityLevel) error }); ok {
+            return s.setSecurityLevel(level)
+        }
+        return ErrNotSupported
+    }
 }
 
-// TimeWindow represents a time period
-type TimeWindow struct {
-	Start time.Time `json:"start"`
-	End   time.Time `json:"end"`
+// WithQuietHours returns an option that sets quiet hours windows
+func WithQuietHours(windows []TimeWindow) Option {
+    return func(v interface{}) error {
+        if s, ok := v.(interface{ setQuietHours([]TimeWindow) error }); ok {
+            return s.setQuietHours(windows)
+        }
+        return ErrNotSupported
+    }
 }
 
-// SecurityManager defines the interface for security management
-type SecurityManager interface {
-	types.Monitor
-
-	// State Management
-	GetTamperState() (TamperState, error)
-	GetSecurityLevel() (SecurityLevel, error)
-	ValidateState() error
-	
-	// Security Control
-	SetSecurityLevel(level SecurityLevel) error
-	ClearViolations() error
-	ResetTamperState() error
-	
-	// Monitoring
-	WatchState(ctx context.Context) (<-chan TamperState, error)
-	WatchSensor(ctx context.Context, name string) (<-chan bool, error)
-	
-	// Policy Management
-	SetQuietHours(windows []TimeWindow) error
-	SetMotionSensitivity(sensitivity float64) error
-	SetVoltageThreshold(min float64) error
-	
-	// Events
-	OnTamper(func(TamperEvent))
-	OnViolation(func(TamperEvent))
+// WithMotionSensitivity returns an option that sets motion detection sensitivity
+func WithMotionSensitivity(sensitivity float64) Option {
+    return func(v interface{}) error {
+        if s, ok := v.(interface{ setMotionSensitivity(float64) error }); ok {
+            return s.setMotionSensitivity(sensitivity)
+        }
+        return ErrNotSupported
+    }
 }
 
-// TamperEvent represents a security violation
-type TamperEvent struct {
-	types.CommonState
-	Type        string        `json:"type"`
-	Severity    SecurityLevel `json:"severity"`
-	Description string        `json:"description"`
-	State       TamperState   `json:"state"`
-	Details     interface{}   `json:"details,omitempty"`
-}
-
-// StateStore defines the interface for persisting security state
-type StateStore interface {
-	SaveState(ctx context.Context, deviceID string, state TamperState) error
-	LoadState(ctx context.Context, deviceID string) (TamperState, error)
-	LogEvent(ctx context.Context, deviceID string, eventType string, details interface{}) error
-}
-
-// SecurityManagerConfig holds configuration for security management
-type SecurityManagerConfig struct {
-	GPIO            types.GPIOController
-	StateStore      StateStore
-	CaseSensor      string
-	MotionSensor    string
-	VoltageSensor   string
-	DefaultLevel    SecurityLevel
-	QuietHours      []TimeWindow
-	VoltageMin      float64
-	Sensitivity     float64
-	OnTamper        func(TamperEvent)
-	OnViolation     func(TamperEvent)
+// WithVoltageThreshold returns an option that sets voltage tamper threshold
+func WithVoltageThreshold(min float64) Option {
+    return func(v interface{}) error {
+        if s, ok := v.(interface{ setVoltageThreshold(float64) error }); ok {
+            return s.setVoltageThreshold(min)
+        }
+        return ErrNotSupported
+    }
 }

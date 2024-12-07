@@ -176,3 +176,58 @@ type PWMConfig struct {
     Pull       PullMode `json:"pull"`
     Resolution uint32   `json:"resolution"`
 }
+
+// Configuration Types
+
+type DiagnosticManagerConfig struct {
+    GPIO            GPIO
+    PowerManager    PowerManager
+    ThermalManager  ThermalManager
+    SecurityManager SecurityManager
+    RetryAttempts   int
+    LoadTestTime    time.Duration
+    MinVoltage      float64
+    TempRange       [2]float64
+    OnTestStart     func(TestType, string)
+    OnTestComplete  func(TestResult)
+}
+
+type PowerManagerConfig struct {
+    GPIO            GPIO
+    MonitorInterval time.Duration
+    PowerPins       map[PowerSource]string
+    VoltageMin      float64
+    VoltageMax      float64
+    CurrentMin      float64
+    CurrentMax      float64
+    OnCritical      func(PowerState)
+    OnWarning       func(PowerState)
+}
+
+type ThermalManagerConfig struct {
+    GPIO            GPIO
+    MonitorInterval time.Duration
+    FanControlPin   string
+    ThrottlePin     string
+    CPUTempPath     string
+    GPUTempPath     string
+    AmbientTempPath string
+    DefaultProfile  ThermalProfile
+    Curve           *CoolingCurve
+    OnWarning       func(ThermalEvent)
+    OnCritical      func(ThermalEvent)
+}
+
+type SecurityManagerConfig struct {
+    GPIO            GPIO
+    StateStore      StateStore
+    CaseSensor      string
+    MotionSensor    string
+    VoltageSensor   string
+    DefaultLevel    SecurityLevel
+    QuietHours      []TimeWindow
+    VoltageMin      float64
+    Sensitivity     float64
+    OnTamper        func(TamperEvent)
+    OnViolation     func(TamperEvent)
+}
