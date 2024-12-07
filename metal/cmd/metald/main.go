@@ -8,10 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/wrale/wrale-fleet/metal/hardware"
+	"github.com/wrale/wrale-fleet/metal/internal/hw"
 	"github.com/wrale/wrale-fleet/metal/internal/server"
-	"github.com/wrale/wrale-fleet/metal/secure"
-	"github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 func main() {
@@ -29,19 +27,30 @@ func main() {
 	defer cancel()
 
 	// Initialize hardware monitors
-	thermalMonitor, err := hardware.NewThermalMonitor(*deviceID)
+	monitorCfg := hw.MonitorConfig{
+		DeviceID: *deviceID,
+	}
+
+	thermalMonitor, err := hw.NewThermalMonitor(monitorCfg)
 	if err != nil {
 		log.Fatalf("Failed to create thermal monitor: %v", err)
 	}
 
-	securityMonitor, err := hardware.NewSecureMonitor(*deviceID)
+	securityMonitor, err := hw.NewSecurityMonitor(monitorCfg)
 	if err != nil {
 		log.Fatalf("Failed to create security monitor: %v", err)
 	}
 
 	// Create policy managers
-	thermalMgr := thermal.NewPolicyManager(*deviceID, thermalMonitor, thermal.DefaultPolicy())
-	securityMgr := secure.NewPolicyManager(*deviceID, securityMonitor, secure.DefaultPolicy())
+	thermalMgr, err := server.NewThermalManager(*deviceID, thermalMonitor)
+	if err != nil {
+		log.Fatalf("Failed to create thermal manager: %v", err)
+	}
+
+	securityMgr, err := server.NewSecurityManager(*deviceID, securityMonitor)
+	if err != nil {
+		log.Fatalf("Failed to create security manager: %v", err)
+	}
 
 	// Create server with managers
 	srv, err := server.New(server.Config{
