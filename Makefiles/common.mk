@@ -1,5 +1,5 @@
-# Common make configurations and targets
-# This file is included by all component Makefiles
+# Common variables and configurations
+# Only defines variables, no targets or commands
 
 ifndef COMMON_MK_INCLUDED
 COMMON_MK_INCLUDED := 1
@@ -48,29 +48,5 @@ LDFLAGS ?= -X main.version=$(VERSION) \
 
 # Simulation environment
 SIM_DIR ?= /tmp/wrale-sim
-
-# Common targets
-.PHONY: clean fmt lint deps verify help version
-
-clean: ## Clean build artifacts
-	rm -rf $(BUILD_DIR) $(DIST_DIR)
-	rm -f coverage.out
-
-fmt: ## Format Go code
-	$(GOFMT) ./...
-
-lint: ## Run linter
-	$(GOLINT) $(LINTFLAGS)
-
-deps: ## Download and tidy dependencies
-	$(GOMOD) download
-	$(GOMOD) tidy
-
-verify: fmt lint test coverage ## Run all verifications
-
-version: ## Show version info
-	@echo "Version:    $(VERSION)"
-	@echo "Commit:     $(COMMIT)"
-	@echo "Build Time: $(BUILD_TIME)"
 
 endif # COMMON_MK_INCLUDED

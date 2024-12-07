@@ -11,19 +11,34 @@ ENV ?= development
 
 .PHONY: all build clean test verify setup dev-env docker-up docker-down release help $(COMPONENTS)
 
-all: $(COMPONENTS) ## Build all components
-
-build: $(COMPONENTS) ## Build all components (alias for 'all')
-
+# Component targets - explicitly specify the target to run
 $(COMPONENTS):
-	$(MAKE) -C $@
+	$(MAKE) -C $@ $(TARGET)
 
-clean test verify: ## Run command for all components
+# Main targets that operate on all components
+define run_components
 	@for dir in $(COMPONENTS); do \
-		echo "Running $@ in $$dir..."; \
-		$(MAKE) -C $$dir $@ || exit 1; \
+		echo "Running $(1) in $$dir..."; \
+		$(MAKE) -C $$dir $(1) || exit 1; \
 	done
+endef
 
+all: ## Build all components
+	$(call run_components,all)
+
+build: ## Build all components
+	$(call run_components,build)
+
+clean: ## Clean all components
+	$(call run_components,clean)
+
+test: ## Test all components
+	$(call run_components,test)
+
+verify: ## Verify all components
+	$(call run_components,verify)
+
+# Development targets
 setup: ## Set up development environment
 	@echo "Installing development tools..."
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
@@ -40,6 +55,11 @@ docker-up: ## Start Docker services
 docker-down: ## Stop Docker services
 	$(DOCKER_COMPOSE) down
 
+dev-tools: ## Install development tools
+	@go install github.com/golangci/golint/cmd/golangci-lint@latest
+	@go install github.com/golang/mock/mockgen@latest
+	@go install github.com/swaggo/swag/cmd/swag@latest
+
 release: verify ## Create a new release
 	@if [ "$(VERSION)" = "" ]; then \
 		echo "Error: VERSION is required. Use 'make release VERSION=v1.2.3'"; \
@@ -50,12 +70,6 @@ release: verify ## Create a new release
 	@git push origin $(VERSION)
 	@echo "Release $(VERSION) created and pushed"
 
-dev-tools: ## Install development tools
-	@go install github.com/golangci/golint/cmd/golangci-lint@latest
-	@go install github.com/golang/mock/mockgen@latest
-	@go install github.com/swaggo/swag/cmd/swag@latest
-
-# Help system
 help: ## Show available targets
 	@echo "Wrale Fleet v$(BUILD_VERSION) - Main targets:"
 	@echo
