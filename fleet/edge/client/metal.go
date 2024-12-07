@@ -29,18 +29,21 @@ type MetricsResponse struct {
 }
 
 // NewMetalClient creates a new metal client with the given base URL and optional power manager
-func NewMetalClient(baseURL string, powerMgr power.Manager) *MetalClient {
-	return &MetalClient{
+func NewMetalClient(baseURL string, powerMgr ...power.Manager) *MetalClient {
+	client := &MetalClient{
 		baseURL:    baseURL,
 		httpClient: &http.Client{},
-		powerMgr:   powerMgr,
 	}
+	if len(powerMgr) > 0 {
+		client.powerMgr = powerMgr[0]
+	}
+	return client
 }
 
 // GetPowerState retrieves current power system state
 func (c *MetalClient) GetPowerState() (*power.PowerState, error) {
+	// Check for direct hardware access using type assertion
 	if c.powerMgr != nil {
-		// Direct hardware access
 		state := c.powerMgr.GetState()
 		return &state, nil
 	}
@@ -76,6 +79,11 @@ func (c *MetalClient) GetMetrics() (*MetricsResponse, error) {
 
 // UpdatePowerState updates the device power state
 func (c *MetalClient) UpdatePowerState(powerState *power.PowerState) error {
+	if c.powerMgr != nil {
+		// Direct hardware update if available
+		return fmt.Errorf("direct power state updates not supported")
+	}
+
 	payload, err := json.Marshal(powerState)
 	if err != nil {
 		return fmt.Errorf("failed to marshal power state: %v", err)
