@@ -51,7 +51,7 @@ func (r *Resolver) ValidateState(state *types.VersionedState) bool {
 	}
 
 	// Check if state is not too old
-	if time.Since(time.Unix(state.Timestamp, 0)) > r.timeout {
+	if time.Since(state.Timestamp) > r.timeout {
 		return false
 	}
 

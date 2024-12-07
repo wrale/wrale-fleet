@@ -168,7 +168,9 @@ func (m *Manager) IsConfigValid(version string) (bool, error) {
 	if now.Before(config.ValidFrom) {
 		return false, nil
 	}
-	if config.ValidTo != nil && now.After(*config.ValidTo) {
+
+	// Handle ValidTo being an optional field
+	if config.ValidTo != nil && !config.ValidTo.IsZero() && now.After(*config.ValidTo) {
 		return false, nil
 	}
 
