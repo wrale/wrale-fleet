@@ -5,65 +5,51 @@ import (
 
 	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 	"github.com/wrale/wrale-fleet/metal/hw/power"
-	"github.com/wrale/wrale-fleet/metal/hw/secure"
 	"github.com/wrale/wrale-fleet/metal/hw/thermal"
+	"github.com/wrale/wrale-fleet/metal/hw/secure"
 )
 
-// TestType identifies different hardware diagnostic tests
-type TestType string
+// TestType identifies the type of diagnostic test
+type TestType int
 
 const (
-	TestGPIO     TestType = "GPIO"
-	TestPower    TestType = "POWER"
-	TestThermal  TestType = "THERMAL"
-	TestSecurity TestType = "SECURITY"
+	TestGPIO TestType = iota
+	TestPower
+	TestThermal
+	TestSecurity
 )
 
-// TestResult represents a hardware test outcome
+// TestStatus represents the result status of a test
+type TestStatus int
+
+const (
+	StatusPass TestStatus = iota
+	StatusFail
+	StatusWarning
+)
+
+// TestResult captures the outcome of a diagnostic test
 type TestResult struct {
 	Type        TestType
 	Component   string
 	Status      TestStatus
+	Description string
 	Reading     float64
 	Expected    float64
-	Description string
 	Error       error
 	Timestamp   time.Time
 }
 
-// TestStatus represents the outcome of a hardware test
-type TestStatus string
-
-const (
-	StatusPass    TestStatus = "PASS"
-	StatusFail    TestStatus = "FAIL"
-	StatusWarning TestStatus = "WARNING"
-	StatusSkipped TestStatus = "SKIPPED"
-)
-
-// Config holds the hardware diagnostics configuration
+// Config defines the configuration for the diagnostics manager
 type Config struct {
-	// Hardware subsystem interfaces
-	GPIO     *gpio.Controller
-	Power    *power.Manager
-	Thermal  *thermal.Monitor
-	Security *secure.Manager
-
-	// Test parameters
-	GPIOPins     []string      // GPIO pins to test
-	LoadTestTime time.Duration // Duration for power load tests
-	MinVoltage   float64       // Minimum acceptable voltage
-	TempRange    [2]float64    // Valid temperature range
-	Retries      int           // Number of test retries
-
-	// Optional callbacks
+	GPIO          gpio.Controller
+	Power         *power.Manager
+	Thermal       *thermal.Monitor
+	Security      *secure.Manager
+	GPIOPins      map[string]int
+	RetryAttempts int
+	LoadTestTime  time.Duration
+	MinVoltage    float64
+	TempRange     [2]float64
 	OnTestComplete func(TestResult)
-}
-
-// RawReadings holds direct sensor readings
-type RawReadings struct {
-	GPIOStates     map[string]bool // Raw GPIO pin states
-	Voltages       []float64       // Raw voltage measurements
-	Temperatures   []float64       // Raw temperature readings
-	SecurityInputs []bool          // Raw security sensor states
 }

@@ -1,31 +1,22 @@
+# Service-specific template
+include $(MAKEFILES_DIR)/templates/go.mk
+
+# Define the service template
 define SERVICE_TEMPLATE
-include $(MAKEFILES_DIR)/common.mk
-include $(MAKEFILES_DIR)/golang.mk
-include $(MAKEFILES_DIR)/docker.mk
-include $(MAKEFILES_DIR)/verify.mk
+$(GO_TEMPLATE)
 
-.PHONY: all build clean test package deploy help
+.PHONY: test-integration run deploy
 
-all: clean verify-all build docker-build ## Build everything
+test-integration: ## Run integration tests
+	$(GOTEST) $(TESTFLAGS) $(INTFLAGS) ./integration/...
 
-build: go-build ## Build the service
+run: build ## Run the service locally
+	./$(BUILD_DIR)/$(BINARY_NAME)
 
-clean: go-clean docker-clean ## Clean all artifacts
-	rm -rf $(BUILD_DIR) $(DIST_DIR)
+deploy: docker-build docker-push ## Deploy the service
+	@echo "Deploying $(COMPONENT_NAME) version $(VERSION)..."
 
-test: go-test ## Run tests
+monitoring: ## Check service health and metrics
+	@echo "Checking $(COMPONENT_NAME) health..."
 
-package: verify-all docker-build ## Create deployable package
-	@echo "Creating distribution package..."
-	mkdir -p $(DIST_DIR)
-	cp $(BUILD_DIR)/$(COMPONENT_NAME) $(DIST_DIR)/
-	cp Dockerfile $(DIST_DIR)/
-	tar -czf $(DIST_DIR)/$(COMPONENT_NAME)-$(VERSION).tar.gz -C $(DIST_DIR) .
-
-deploy: package ## Deploy the service
-	@echo "Deploying $(COMPONENT_NAME)..."
-	./scripts/deploy.sh $(DIST_DIR)/$(COMPONENT_NAME)-$(VERSION).tar.gz
-
-help: ## Show this help
-	$(call HELP_FUNCTION)
 endef

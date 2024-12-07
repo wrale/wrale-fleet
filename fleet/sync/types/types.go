@@ -1,130 +1,100 @@
-// Package types defines core types for fleet synchronization
 package types
 
 import (
-    "time"
+	"time"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+	"github.com/wrale/wrale-fleet/fleet/brain/types"
 )
 
-// StateVersion represents a version of device state
+// StateVersion represents a version number for state
 type StateVersion string
 
-// Operation represents a sync operation type
-type Operation string
+// DeviceID represents a unique device identifier
+type DeviceID = types.DeviceID
+
+// ConsensusStatus represents the status of state consensus
+type ConsensusStatus struct {
+	Version       StateVersion `json:"version"`
+	Validators    []string     `json:"validators"`
+	Threshold     int          `json:"threshold"`
+	Confirmations int          `json:"confirmations"`
+	ReachedAt     *time.Time   `json:"reached_at,omitempty"`
+}
+
+// SyncOperation represents a sync operation
+type SyncOperation struct {
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 const (
-    OpStateSync      Operation = "state_sync"
-    OpConfigSync     Operation = "config_sync"
-    OpPolicySync     Operation = "policy_sync"
-    OpResourceSync   Operation = "resource_sync"
+	// SyncPush indicates pushing state to devices
+	SyncPush = "push"
+	// SyncPull indicates pulling state from devices
+	SyncPull = "pull"
+	// SyncMerge indicates merging conflicting states
+	SyncMerge = "merge"
 )
 
 // VersionedState represents a versioned device state
 type VersionedState struct {
-    Version     StateVersion
-    State       types.DeviceState
-    UpdatedAt   time.Time
-    UpdatedBy   string
-    ValidatedBy []string
+	Version   StateVersion      `json:"version"`
+	State     types.DeviceState `json:"state"`
+	Timestamp time.Time         `json:"timestamp"`
+	UpdatedAt time.Time         `json:"updated_at"`
+	UpdatedBy string            `json:"updated_by"`
+	Source    string            `json:"source"`
 }
 
 // StateChange represents a change in device state
 type StateChange struct {
-    PrevVersion StateVersion
-    NewVersion  StateVersion
-    Changes     map[string]interface{}
-    Timestamp   time.Time
-    Source      string
+	DeviceID    DeviceID           `json:"device_id"`
+	PrevVersion StateVersion       `json:"prev_version,omitempty"`
+	NewVersion  StateVersion       `json:"new_version"`
+	OldState    *types.DeviceState `json:"old_state,omitempty"`
+	NewState    types.DeviceState  `json:"new_state"`
+	Timestamp   time.Time          `json:"timestamp"`
+	Source      string             `json:"source"`
+	Changes     []string           `json:"changes,omitempty"`
 }
 
-// SyncOperation represents a synchronization operation
-type SyncOperation struct {
-    ID          string
-    Type        Operation
-    DeviceIDs   []types.DeviceID
-    Payload     interface{}
-    Priority    int
-    Status      string
-    CreatedAt   time.Time
-    CompletedAt *time.Time
-    Error       error
-}
-
-// ConsensusStatus tracks state consensus
-type ConsensusStatus struct {
-    Version     StateVersion
-    Validators  []string
-    Confirmations int
-    Threshold     int
-    ReachedAt   *time.Time
-}
-
-// SyncError represents a synchronization error
-type SyncError struct {
-    Operation   *SyncOperation
-    Error       error
-    Device      types.DeviceID
-    Timestamp   time.Time
-    RetryCount  int
-}
-
-// ConfigData represents configuration data
+// ConfigData represents device configuration data
 type ConfigData struct {
-    Version     string
-    Config      map[string]interface{}
-    ValidFrom   time.Time
-    ValidTo     *time.Time
-    Signature   string
+	Version     string                 `json:"version"`
+	Config      map[string]interface{} `json:"config"`
+	ValidFrom   time.Time              `json:"valid_from"`
+	ValidTo     *time.Time             `json:"valid_to,omitempty"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	Settings    map[string]interface{} `json:"settings"`
+	Policies    map[string]interface{} `json:"policies"`
+	Constraints map[string]interface{} `json:"constraints"`
 }
 
-// SyncManager handles state synchronization
-type SyncManager interface {
-    // State operations
-    GetState(deviceID types.DeviceID) (*VersionedState, error)
-    UpdateState(deviceID types.DeviceID, state *VersionedState) error
-    ValidateState(version StateVersion) error
-    
-    // Operation management
-    CreateOperation(op *SyncOperation) error
-    GetOperation(id string) (*SyncOperation, error)
-    ListOperations() ([]*SyncOperation, error)
-    
-    // Consensus operations
-    GetConsensus(version StateVersion) (*ConsensusStatus, error)
-    AddValidation(version StateVersion, validator string) error
-}
-
-// StateStore handles state persistence
+// StateStore defines interface for state storage and retrieval
 type StateStore interface {
-    // State management
-    GetState(version StateVersion) (*VersionedState, error)
-    SaveState(state *VersionedState) error
-    ListVersions() ([]StateVersion, error)
-    
-    // Change tracking
-    TrackChange(change *StateChange) error
-    GetChanges(since time.Time) ([]*StateChange, error)
+	GetState(version StateVersion) (*VersionedState, error)
+	SetState(deviceID DeviceID, state types.DeviceState) error
+	SaveState(state *VersionedState) error
+	ListVersions() ([]StateVersion, error)
+	GetHistory(limit int) ([]StateChange, error)
+	GetVersion() StateVersion
 }
 
-// ConflictResolver handles state conflicts
+// ConflictResolver defines interface for resolving state conflicts
 type ConflictResolver interface {
-    // Conflict detection
-    DetectConflicts(states []*VersionedState) ([]*StateChange, error)
-    
-    // Resolution
-    ResolveConflicts(changes []*StateChange) (*VersionedState, error)
-    ValidateResolution(state *VersionedState) error
+	DetectConflicts(states []*VersionedState) ([]*VersionedState, error)
+	ResolveConflicts(states []*VersionedState) (*VersionedState, error)
+	ValidateState(state *VersionedState) error
+	ValidateResolution(state *VersionedState) error
 }
 
-// ConfigManager handles configuration distribution
+// ConfigManager defines interface for configuration management
 type ConfigManager interface {
-    // Config management
-    GetConfig(version string) (*ConfigData, error)
-    UpdateConfig(config *ConfigData) error
-    ListConfigs() ([]*ConfigData, error)
-    
-    // Distribution
-    DistributeConfig(config *ConfigData, devices []types.DeviceID) error
-    GetDeviceConfig(deviceID types.DeviceID) (*ConfigData, error)
+	GetConfig(deviceID DeviceID) (*ConfigData, error)
+	UpdateConfig(config *ConfigData) error
+	ValidateConfig(config *ConfigData) error
+	DistributeConfig(config *ConfigData, devices []DeviceID) error
+	GetDeviceConfig(deviceID DeviceID) (*ConfigData, error)
 }

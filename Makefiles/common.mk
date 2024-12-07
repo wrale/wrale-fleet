@@ -1,25 +1,52 @@
-# Common variables and utilities
-SHELL := /bin/bash
-MAKEFILES_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+# Common variables and configurations
+# Only defines variables, no targets or commands
+
+ifndef COMMON_MK_INCLUDED
+COMMON_MK_INCLUDED := 1
+
+# Go parameters
+GOCMD ?= go
+GOBUILD ?= $(GOCMD) build
+GOTEST ?= $(GOCMD) test
+GOGET ?= $(GOCMD) get
+GOMOD ?= $(GOCMD) mod
+GOFMT ?= $(GOCMD) fmt
+
+# Build parameters
+BUILD_DIR ?= build
+DIST_DIR ?= dist
+BINARY_NAME ?= $(COMPONENT_NAME)
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty)
+COMMIT ?= $(shell git rev-parse --short HEAD)
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-GIT_COMMIT ?= $(shell git rev-parse HEAD)
 
-# Directory structure
-BUILD_DIR ?= build
-DIST_DIR ?= dist
+# Test flags
+TESTFLAGS ?= -v -race
+COVERFLAGS ?= -coverprofile=coverage.out
+BENCHFLAGS ?= -bench=. -benchmem
 
-# Build settings
-MAIN_PACKAGE ?= ./cmd/$(COMPONENT_NAME)  # Default for backward compatibility
+# Tag-based test categories
+SIMFLAGS ?= -tags=simulation
+HWFLAGS ?= -tags=hardware
+INTFLAGS ?= -tags=integration
 
-# Docker registry settings
-DOCKER_REGISTRY ?= wrale
+# Linting
+GOLINT ?= golangci-lint
+LINTFLAGS ?= run --timeout=5m
+
+# Docker
+DOCKER ?= docker
+DOCKER_IMAGE ?= wrale/$(COMPONENT_NAME)
 DOCKER_TAG ?= $(VERSION)
 
-# Help function
-define HELP_FUNCTION
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
-		/^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-endef
+# Default build flags
+LDFLAGS ?= -X main.version=$(VERSION) \
+           -X main.commit=$(COMMIT) \
+           -X main.buildTime=$(BUILD_TIME)
+
+# Simulation environment
+SIM_DIR ?= /tmp/wrale-sim
+
+endif # COMMON_MK_INCLUDED

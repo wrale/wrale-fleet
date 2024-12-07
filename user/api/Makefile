@@ -1,5 +1,9 @@
 # User API Service Makefile
+# Manages the REST API service that provides the interface between
+# the frontend dashboard and the fleet management system.
+
 COMPONENT_NAME := wrale-api
+COMPONENT_DESCRIPTION := API Service - Frontend integration and service gateway
 MAKEFILES_DIR := ../../Makefiles
 
 include $(MAKEFILES_DIR)/templates/service.mk

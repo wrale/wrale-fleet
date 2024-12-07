@@ -1,205 +1,151 @@
 package client
 
 import (
-    "bytes"
-    "encoding/json"
-    "fmt"
-    "net/http"
-    "time"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+	"github.com/wrale/wrale-fleet/metal/hw/diag"
+	"github.com/wrale/wrale-fleet/metal/hw/power"
+	"github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
-// MetalClient implements communication with the metal layer
+// MetalClient represents a client connection to the metal layer
 type MetalClient struct {
-    baseURL    string
-    httpClient *http.Client
+	baseURL    string
+	httpClient *http.Client
 }
 
-// NewMetalClient creates a new metal client instance
+// MetricsResponse represents system metrics from the metal layer
+type MetricsResponse struct {
+	Temperature float64   `json:"temperature"`
+	PowerUsage  float64   `json:"power_usage"`
+	CPULoad     float64   `json:"cpu_load"`
+	MemoryUsage float64   `json:"memory_usage"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+// NewMetalClient creates a new metal client with the given base URL
 func NewMetalClient(baseURL string) *MetalClient {
-    return &MetalClient{
-        baseURL: baseURL,
-        httpClient: &http.Client{
-            Timeout: time.Second * 10, // Shorter timeout for local operations
-        },
-    }
+	return &MetalClient{
+		baseURL:    baseURL,
+		httpClient: &http.Client{},
+	}
 }
 
-// GetMetrics retrieves current device metrics
-func (c *MetalClient) GetMetrics() (types.DeviceMetrics, error) {
-    var metrics types.DeviceMetrics
-    url := fmt.Sprintf("%s/api/v1/metrics", c.baseURL)
+// GetMetrics retrieves current system metrics
+func (c *MetalClient) GetMetrics() (*MetricsResponse, error) {
+	resp, err := c.httpClient.Get(fmt.Sprintf("%s/metrics", c.baseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metrics: %v", err)
+	}
+	defer resp.Body.Close()
 
-    if err := c.doRequest("GET", url, nil, &metrics); err != nil {
-        return metrics, fmt.Errorf("failed to get metrics: %w", err)
-    }
-
-    return metrics, nil
-}
-
-// GetThermalState retrieves current thermal state
-func (c *MetalClient) GetThermalState() (types.ThermalState, error) {
-    var state types.ThermalState
-    url := fmt.Sprintf("%s/api/v1/thermal/state", c.baseURL)
-
-    if err := c.doRequest("GET", url, nil, &state); err != nil {
-        return state, fmt.Errorf("failed to get thermal state: %w", err)
-    }
-
-    return state, nil
-}
-
-// UpdateThermalPolicy updates the thermal management policy
-func (c *MetalClient) UpdateThermalPolicy(policy types.ThermalPolicy) error {
-    url := fmt.Sprintf("%s/api/v1/thermal/policy", c.baseURL)
-    
-    if err := c.doRequest("PUT", url, policy, nil); err != nil {
-        return fmt.Errorf("failed to update thermal policy: %w", err)
-    }
-
-    return nil
-}
-
-// SetFanSpeed sets the cooling fan speed
-func (c *MetalClient) SetFanSpeed(speed uint32) error {
-    url := fmt.Sprintf("%s/api/v1/thermal/fan", c.baseURL)
-    payload := map[string]uint32{"speed": speed}
-
-    if err := c.doRequest("PUT", url, payload, nil); err != nil {
-        return fmt.Errorf("failed to set fan speed: %w", err)
-    }
-
-    return nil
-}
-
-// SetThrottling enables or disables thermal throttling
-func (c *MetalClient) SetThrottling(enabled bool) error {
-    url := fmt.Sprintf("%s/api/v1/thermal/throttle", c.baseURL)
-    payload := map[string]bool{"enabled": enabled}
-
-    if err := c.doRequest("PUT", url, payload, nil); err != nil {
-        return fmt.Errorf("failed to set throttling: %w", err)
-    }
-
-    return nil
+	var metrics MetricsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&metrics); err != nil {
+		return nil, fmt.Errorf("failed to decode metrics response: %v", err)
+	}
+	return &metrics, nil
 }
 
 // UpdatePowerState updates the device power state
-func (c *MetalClient) UpdatePowerState(state string) error {
-    url := fmt.Sprintf("%s/api/v1/power/state", c.baseURL)
-    payload := map[string]string{"state": state}
+func (c *MetalClient) UpdatePowerState(powerState *power.PowerState) error {
+	payload, err := json.Marshal(powerState)
+	if err != nil {
+		return fmt.Errorf("failed to marshal power state: %v", err)
+	}
 
-    if err := c.doRequest("PUT", url, payload, nil); err != nil {
-        return fmt.Errorf("failed to update power state: %w", err)
-    }
+	url := fmt.Sprintf("%s/power/state", c.baseURL)
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %v", err)
+	}
 
-    return nil
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to update power state: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update power state: got status %d", resp.StatusCode)
+	}
+	return nil
 }
 
-// UpdateThermalConfig updates thermal management configuration
-func (c *MetalClient) UpdateThermalConfig(config map[string]interface{}) error {
-    url := fmt.Sprintf("%s/api/v1/thermal/config", c.baseURL)
-    
-    if err := c.doRequest("PUT", url, config, nil); err != nil {
-        return fmt.Errorf("failed to update thermal config: %w", err)
-    }
-
-    return nil
-}
-
-// ExecuteOperation executes a hardware operation
-func (c *MetalClient) ExecuteOperation(operation string) error {
-    url := fmt.Sprintf("%s/api/v1/operations", c.baseURL)
-    payload := map[string]string{"operation": operation}
-
-    if err := c.doRequest("POST", url, payload, nil); err != nil {
-        return fmt.Errorf("failed to execute operation: %w", err)
-    }
-
-    return nil
-}
-
-// GetOperationStatus retrieves the status of an operation
-func (c *MetalClient) GetOperationStatus(operationID string) (string, error) {
-    url := fmt.Sprintf("%s/api/v1/operations/%s/status", c.baseURL, operationID)
-    var result struct {
-        Status string `json:"status"`
-    }
-
-    if err := c.doRequest("GET", url, nil, &result); err != nil {
-        return "", fmt.Errorf("failed to get operation status: %w", err)
-    }
-
-    return result.Status, nil
-}
-
-// GetHealthStatus checks device health
+// GetHealthStatus retrieves the current health status of the device
 func (c *MetalClient) GetHealthStatus() (bool, error) {
-    url := fmt.Sprintf("%s/api/v1/health", c.baseURL)
-    var result struct {
-        Healthy bool `json:"healthy"`
-    }
+	resp, err := c.httpClient.Get(fmt.Sprintf("%s/health", c.baseURL))
+	if err != nil {
+		return false, fmt.Errorf("failed to get health status: %v", err)
+	}
+	defer resp.Body.Close()
 
-    if err := c.doRequest("GET", url, nil, &result); err != nil {
-        return false, fmt.Errorf("failed to get health status: %w", err)
-    }
-
-    return result.Healthy, nil
+	if resp.StatusCode != http.StatusOK {
+		return false, nil
+	}
+	return true, nil
 }
 
-// RunDiagnostics executes hardware diagnostics
-func (c *MetalClient) RunDiagnostics() (map[string]interface{}, error) {
-    url := fmt.Sprintf("%s/api/v1/diagnostics", c.baseURL)
-    var result map[string]interface{}
+// RunDiagnostics runs system diagnostics and returns results
+func (c *MetalClient) RunDiagnostics() (*diag.TestResult, error) {
+	resp, err := c.httpClient.Post(fmt.Sprintf("%s/diagnostics/run", c.baseURL), "application/json", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run diagnostics: %v", err)
+	}
+	defer resp.Body.Close()
 
-    if err := c.doRequest("POST", url, nil, &result); err != nil {
-        return nil, fmt.Errorf("failed to run diagnostics: %w", err)
-    }
-
-    return result, nil
+	var results diag.TestResult
+	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+		return nil, fmt.Errorf("failed to decode diagnostics results: %v", err)
+	}
+	return &results, nil
 }
 
-// doRequest performs an HTTP request to the metal API
-func (c *MetalClient) doRequest(method, url string, payload, response interface{}) error {
-    var req *http.Request
-    var err error
+// GetThermalState retrieves the current thermal state
+func (c *MetalClient) GetThermalState() (*thermal.ThermalState, error) {
+	resp, err := c.httpClient.Get(fmt.Sprintf("%s/thermal/state", c.baseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get thermal state: %v", err)
+	}
+	defer resp.Body.Close()
 
-    if payload != nil {
-        data, err := json.Marshal(payload)
-        if err != nil {
-            return fmt.Errorf("failed to marshal payload: %w", err)
-        }
-        req, err = http.NewRequest(method, url, bytes.NewReader(data))
-    } else {
-        req, err = http.NewRequest(method, url, nil)
-    }
+	var state thermal.ThermalState
+	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+		return nil, fmt.Errorf("failed to decode thermal state: %v", err)
+	}
+	return &state, nil
+}
 
-    if err != nil {
-        return fmt.Errorf("failed to create request: %w", err)
-    }
+// ExecuteOperation executes a generic metal operation
+func (c *MetalClient) ExecuteOperation(operation string, params map[string]interface{}) error {
+	if params == nil {
+		params = make(map[string]interface{})
+	}
 
-    // Set headers
-    req.Header.Set("Content-Type", "application/json")
+	payload, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("failed to marshal operation parameters: %v", err)
+	}
 
-    // Perform request
-    resp, err := c.httpClient.Do(req)
-    if err != nil {
-        return fmt.Errorf("request failed: %w", err)
-    }
-    defer resp.Body.Close()
+	url := fmt.Sprintf("%s/operations/%s", c.baseURL, operation)
+	resp, err := c.httpClient.Post(url, "application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		return fmt.Errorf("failed to execute operation %s: %v", operation, err)
+	}
+	defer resp.Body.Close()
 
-    // Check response status
-    if resp.StatusCode >= 400 {
-        return fmt.Errorf("request failed with status %d", resp.StatusCode)
-    }
+	if resp.StatusCode != http.StatusOK {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+			return fmt.Errorf("operation %s failed with status %d", operation, resp.StatusCode)
+		}
+		return fmt.Errorf("operation %s failed: %s", operation, errResp.Error)
+	}
 
-    // Parse response if needed
-    if response != nil {
-        if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
-            return fmt.Errorf("failed to decode response: %w", err)
-        }
-    }
-
-    return nil
+	return nil
 }

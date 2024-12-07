@@ -2,12 +2,49 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/wrale/wrale-fleet/user/api/types"
 )
+
+// Helper methods
+func (s *Server) parseJSON(r *http.Request, v interface{}) error {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		return fmt.Errorf("invalid request body: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) sendJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+
+	if err := json.NewEncoder(w).Encode(types.APIResponse{
+		Success: true,
+		Data:    data,
+	}); err != nil {
+		log.Printf("Error encoding response: %v", err)
+	}
+}
+
+func (s *Server) sendError(w http.ResponseWriter, status int, code string, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+
+	if err := json.NewEncoder(w).Encode(types.APIResponse{
+		Success: false,
+		Error: &types.APIError{
+			Code:    code,
+			Message: message,
+		},
+	}); err != nil {
+		log.Printf("Error encoding error response: %v", err)
+	}
+}
 
 // API handlers
 
@@ -144,7 +181,16 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := s.upgrader.Upgrade(w, r, nil)
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			// TODO: Implement proper origin checking for v1.0
+			return true
+		},
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade failed: %v", err)
 		return

@@ -1,46 +1,38 @@
-define UI_TEMPLATE
-include $(MAKEFILES_DIR)/common.mk
-include $(MAKEFILES_DIR)/docker.mk
+# UI-specific template (Next.js)
+include $(MAKEFILES_DIR)/templates/base.mk
 
-# Node/NPM settings
-NODE_ENV ?= production
+# Node/NPM configuration
+NODE ?= node
 NPM ?= npm
+NEXT ?= $(NPM) run
+BUILD_DIR ?= .next
+DIST_DIR ?= dist
 
-.PHONY: all build clean test lint verify package deploy help
+# Override base commands with npm equivalents
+CLEAN_CMD ?= rm -rf $(BUILD_DIR) $(DIST_DIR) node_modules/.cache
+BUILD_CMD ?= $(NPM) install && $(NPM) run build
+TEST_CMD ?= $(NPM) test
+VERIFY_CMD ?= $(NPM) run lint
 
-all: clean verify build docker-build ## Build everything
+# Define the UI template with npm-specific targets
+define UI_TEMPLATE
+$(BASE_TEMPLATE)
 
-build: ## Build the UI application
-	@echo "Building $(COMPONENT_NAME)..."
-	$(NPM) ci
-	$(NPM) run build
+.PHONY: dev analyze deploy install-deps lint-fix
 
-clean: ## Clean build artifacts
-	@echo "Cleaning..."
-	rm -rf .next out node_modules coverage
-	docker rmi $(DOCKER_IMAGE):$(DOCKER_TAG) || true
+install-deps: ## Install dependencies
+	$(NPM) install
 
-test: ## Run tests
-	@echo "Running tests..."
-	$(NPM) run test
-	$(NPM) run test:coverage
+dev: install-deps ## Run development server
+	$(NEXT) dev
 
-lint: ## Run linters
-	@echo "Running linters..."
-	$(NPM) run lint
-	$(NPM) run type-check
+analyze: build ## Analyze bundle size
+	$(NEXT) analyze
 
-verify: lint test ## Run all verifications
+deploy: build ## Deploy to production
+	$(NEXT) deploy
 
-package: verify docker-build ## Create deployable package
-	@echo "Creating distribution package..."
-	mkdir -p $(DIST_DIR)
-	tar -czf $(DIST_DIR)/$(COMPONENT_NAME)-$(VERSION).tar.gz .next
+lint-fix: install-deps ## Run linter with auto-fix
+	$(NPM) run lint -- --fix
 
-deploy: package ## Deploy the application
-	@echo "Deploying $(COMPONENT_NAME)..."
-	./scripts/deploy.sh $(DIST_DIR)/$(COMPONENT_NAME)-$(VERSION).tar.gz
-
-help: ## Show this help
-	$(call HELP_FUNCTION)
 endef
