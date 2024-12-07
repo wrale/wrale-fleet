@@ -1,135 +1,158 @@
-import { useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+"use client"
 
-const data = [
-  {
-    date: '2024-01-01',
-    avgCpuLoad: 65,
-    avgMemoryUsage: 72,
-    avgTemperature: 42,
-    networkLatency: 15
-  },
-  {
-    date: '2024-01-02',
-    avgCpuLoad: 68,
-    avgMemoryUsage: 75,
-    avgTemperature: 43,
-    networkLatency: 18
-  },
-  {
-    date: '2024-01-03',
-    avgCpuLoad: 72,
-    avgMemoryUsage: 78,
-    avgTemperature: 44,
-    networkLatency: 20
-  },
-  {
-    date: '2024-01-04',
-    avgCpuLoad: 70,
-    avgMemoryUsage: 76,
-    avgTemperature: 43,
-    networkLatency: 16
-  },
-  {
-    date: '2024-01-05',
-    avgCpuLoad: 75,
-    avgMemoryUsage: 80,
-    avgTemperature: 45,
-    networkLatency: 22
-  }
-]
+import { useEffect, useState } from 'react'
+import {
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer
+} from 'recharts'
 
-type MetricType = 'cpu' | 'memory' | 'temperature' | 'network'
-
-export function PerformanceMetrics() {
-  const [selectedMetrics, setSelectedMetrics] = useState<MetricType[]>(['cpu', 'memory'])
-
-  const metrics = [
-    { id: 'cpu', name: 'CPU Load', color: '#f56565', dataKey: 'avgCpuLoad' },
-    { id: 'memory', name: 'Memory Usage', color: '#4fd1c5', dataKey: 'avgMemoryUsage' },
-    { id: 'temperature', name: 'Temperature', color: '#ed8936', dataKey: 'avgTemperature' },
-    { id: 'network', name: 'Network Latency', color: '#9f7aea', dataKey: 'networkLatency' }
-  ]
-
-  const toggleMetric = (metricId: MetricType) => {
-    if (selectedMetrics.includes(metricId)) {
-      setSelectedMetrics(selectedMetrics.filter(id => id !== metricId))
-    } else {
-      setSelectedMetrics([...selectedMetrics, metricId])
+interface PerformanceMetricsProps {
+    cpuLoad: number
+    memoryUsage: number
+    resourceUsage?: {
+        cpu: number
+        memory: number
+        power: number
     }
-  }
+}
 
-  const getMetricTrend = (metricId: MetricType) => {
-    const metric = metrics.find(m => m.id === metricId)
-    if (!metric) return { value: 0, trend: 0 }
+interface MetricsPoint {
+    timestamp: number
+    cpu: number
+    memory: number
+}
 
-    const values = data.map(d => d[metric.dataKey as keyof typeof data[0]] as number)
-    const current = values[values.length - 1]
-    const previous = values[values.length - 2]
-    const trend = ((current - previous) / previous) * 100
+const MAX_POINTS = 20
 
-    return {
-      value: current,
-      trend: parseFloat(trend.toFixed(1))
-    }
-  }
+export function PerformanceMetrics({
+    cpuLoad,
+    memoryUsage,
+    resourceUsage
+}: PerformanceMetricsProps) {
+    const [history, setHistory] = useState<MetricsPoint[]>([])
 
-  return (
-    <div>
-      <div className="mb-4 flex flex-wrap gap-2">
-        {metrics.map(metric => (
-          <button
-            key={metric.id}
-            onClick={() => toggleMetric(metric.id as MetricType)}
-            className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-              selectedMetrics.includes(metric.id as MetricType)
-                ? 'bg-gray-800 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {metric.name}
-          </button>
-        ))}
-      </div>
+    useEffect(() => {
+        // Add new data point
+        const timestamp = Date.now()
+        setHistory(current => {
+            const updated = [
+                ...current,
+                { timestamp, cpu: cpuLoad, memory: memoryUsage }
+            ]
+            // Keep only last N points
+            return updated.slice(-MAX_POINTS)
+        })
+    }, [cpuLoad, memoryUsage])
 
-      <div className="h-80">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {metrics
-              .filter(metric => selectedMetrics.includes(metric.id as MetricType))
-              .map(metric => (
-                <Line
-                  key={metric.id}
-                  type="monotone"
-                  dataKey={metric.dataKey}
-                  name={metric.name}
-                  stroke={metric.color}
-                  strokeWidth={2}
-                />
-              ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+    return (
+        <div className="space-y-4">
+            {/* Current values */}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 className="text-sm font-medium text-gray-500">CPU Load</h3>
+                    <div className="mt-1">
+                        <div className="relative pt-1">
+                            <div className="flex mb-2 items-center justify-between">
+                                <div>
+                                    <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200">
+                                        {cpuLoad.toFixed(1)}%
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-200">
+                                <div
+                                    style={{ width: `${cpuLoad}%` }}
+                                    className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-      <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {metrics.map(metric => {
-          const { value, trend } = getMetricTrend(metric.id as MetricType)
-          return (
-            <div key={metric.id} className="bg-gray-50 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-gray-500">{metric.name}</h3>
-              <p className="mt-1 text-2xl font-semibold">{value}</p>
-              <p className={`text-sm ${trend > 0 ? 'text-wrale-warning' : 'text-wrale-success'}`}>
-                {trend > 0 ? '↑' : '↓'} {Math.abs(trend)}% vs previous
-              </p>
+                <div>
+                    <h3 className="text-sm font-medium text-gray-500">Memory Usage</h3>
+                    <div className="mt-1">
+                        <div className="relative pt-1">
+                            <div className="flex mb-2 items-center justify-between">
+                                <div>
+                                    <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-green-600 bg-green-200">
+                                        {memoryUsage.toFixed(1)}%
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-green-200">
+                                <div
+                                    style={{ width: `${memoryUsage}%` }}
+                                    className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-green-500"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-          )
-        })}
-      </div>
-    </div>
-  )
+
+            {/* Historical chart */}
+            <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={history}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                            dataKey="timestamp"
+                            type="number"
+                            domain={['auto', 'auto']}
+                            tickFormatter={(ts) => new Date(ts).toLocaleTimeString()}
+                        />
+                        <YAxis domain={[0, 100]} />
+                        <Tooltip
+                            labelFormatter={(ts) => new Date(ts).toLocaleTimeString()}
+                            formatter={(value: number) => [`${value.toFixed(1)}%`]}
+                        />
+                        <Line
+                            type="monotone"
+                            dataKey="cpu"
+                            stroke="#3B82F6"
+                            name="CPU"
+                            dot={false}
+                        />
+                        <Line
+                            type="monotone"
+                            dataKey="memory"
+                            stroke="#10B981"
+                            name="Memory"
+                            dot={false}
+                        />
+                    </LineChart>
+                </ResponsiveContainer>
+            </div>
+
+            {/* Resource usage comparison */}
+            {resourceUsage && (
+                <div className="grid grid-cols-3 gap-4 mt-4">
+                    <div className="text-center">
+                        <div className="text-sm font-medium text-gray-500">CPU Efficiency</div>
+                        <div className="mt-1 text-lg font-semibold">
+                            {(resourceUsage.cpu * 100).toFixed(1)}%
+                        </div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-sm font-medium text-gray-500">Memory Efficiency</div>
+                        <div className="mt-1 text-lg font-semibold">
+                            {(resourceUsage.memory * 100).toFixed(1)}%
+                        </div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-sm font-medium text-gray-500">Power Efficiency</div>
+                        <div className="mt-1 text-lg font-semibold">
+                            {(resourceUsage.power * 100).toFixed(1)}%
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
 }

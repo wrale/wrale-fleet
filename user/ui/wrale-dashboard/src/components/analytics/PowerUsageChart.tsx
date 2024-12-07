@@ -1,60 +1,117 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+"use client"
 
-const data = [
-  { time: '00:00', totalPower: 2100, rackOne: 1200, rackTwo: 900 },
-  { time: '04:00', totalPower: 2300, rackOne: 1300, rackTwo: 1000 },
-  { time: '08:00', totalPower: 2600, rackOne: 1500, rackTwo: 1100 },
-  { time: '12:00', totalPower: 2800, rackOne: 1600, rackTwo: 1200 },
-  { time: '16:00', totalPower: 2500, rackOne: 1400, rackTwo: 1100 },
-  { time: '20:00', totalPower: 2200, rackOne: 1300, rackTwo: 900 },
-]
+import { useEffect, useState } from 'react'
+import {
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+    Cell
+} from 'recharts'
+import { Device } from '@/types/device'
 
-export function PowerUsageChart() {
-  return (
-    <div className="h-80">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="time" />
-          <YAxis />
-          <Tooltip />
-          <Legend />
-          <Line 
-            type="monotone" 
-            dataKey="totalPower" 
-            name="Total Power (W)"
-            stroke="#4fd1c5" 
-            strokeWidth={2}
-          />
-          <Line 
-            type="monotone" 
-            dataKey="rackOne" 
-            name="Rack 1 (W)"
-            stroke="#9f7aea" 
-            strokeDasharray="5 5"
-          />
-          <Line 
-            type="monotone" 
-            dataKey="rackTwo" 
-            name="Rack 2 (W)"
-            stroke="#ed64a6" 
-            strokeDasharray="5 5"
-          />
-        </LineChart>
-      </ResponsiveContainer>
+interface PowerUsageChartProps {
+    powerUsage: number
+    devices: Device[]
+}
 
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <div>
-          <h3 className="text-sm font-medium text-gray-500">Daily Average</h3>
-          <p className="mt-1 text-2xl font-semibold">2.4 kW</p>
-          <p className="text-sm text-wrale-success">↓ 12% vs last week</p>
+interface PowerDataPoint {
+    name: string
+    value: number
+    status: string
+}
+
+const STATUS_COLORS = {
+    active: '#10B981',    // Green
+    standby: '#F59E0B',   // Yellow
+    error: '#EF4444',     // Red
+    default: '#6B7280'    // Gray
+}
+
+export function PowerUsageChart({
+    powerUsage,
+    devices
+}: PowerUsageChartProps) {
+    const [data, setData] = useState<PowerDataPoint[]>([])
+
+    useEffect(() => {
+        // Transform devices into power usage data
+        const powerData = devices
+            .map(device => ({
+                name: device.id,
+                value: device.metrics.powerUsage,
+                status: device.status
+            }))
+            .sort((a, b) => b.value - a.value) // Sort by power usage descending
+
+        setData(powerData)
+    }, [devices])
+
+    const getStatusColor = (status: string) => {
+        return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || STATUS_COLORS.default
+    }
+
+    return (
+        <div className="space-y-4">
+            {/* Total power usage */}
+            <div className="text-center">
+                <div className="text-sm font-medium text-gray-500">Total Power Usage</div>
+                <div className="mt-1 text-3xl font-semibold text-blue-600">
+                    {powerUsage.toFixed(1)} W
+                </div>
+            </div>
+
+            {/* Power usage by device */}
+            <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                            dataKey="name"
+                            angle={-45}
+                            textAnchor="end"
+                            height={60}
+                            interval={0}
+                            tick={{ fontSize: 12 }}
+                        />
+                        <YAxis
+                            label={{ 
+                                value: 'Power Usage (W)',
+                                angle: -90,
+                                position: 'insideLeft'
+                            }}
+                        />
+                        <Tooltip
+                            formatter={(value: number) => [`${value.toFixed(1)}W`]}
+                            labelFormatter={(label: string) => `Device: ${label}`}
+                        />
+                        <Bar dataKey="value">
+                            {data.map((entry, index) => (
+                                <Cell 
+                                    key={`cell-${index}`}
+                                    fill={getStatusColor(entry.status)}
+                                />
+                            ))}
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+
+            {/* Legend */}
+            <div className="flex justify-center space-x-4">
+                {Object.entries(STATUS_COLORS).map(([status, color]) => (
+                    <div key={status} className="flex items-center">
+                        <div 
+                            className="w-3 h-3 rounded-full mr-1"
+                            style={{ backgroundColor: color }}
+                        />
+                        <span className="text-sm capitalize">{status}</span>
+                    </div>
+                ))}
+            </div>
         </div>
-        <div>
-          <h3 className="text-sm font-medium text-gray-500">Peak Usage</h3>
-          <p className="mt-1 text-2xl font-semibold">2.8 kW</p>
-          <p className="text-sm text-wrale-warning">↑ 5% vs last week</p>
-        </div>
-      </div>
-    </div>
-  )
+    )
 }

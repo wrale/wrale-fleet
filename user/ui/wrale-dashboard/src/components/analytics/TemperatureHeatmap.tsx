@@ -1,88 +1,108 @@
-interface RackTemperature {
-  id: string
-  unit: number
-  temperature: number
+"use client"
+
+import { useEffect, useState } from 'react'
+import { Device } from '@/types/device'
+
+interface TemperatureHeatmapProps {
+    devices: Device[]
 }
 
-export function TemperatureHeatmap() {
-  const rack1Data: RackTemperature[] = [
-    { id: '1', unit: 1, temperature: 35 },
-    { id: '2', unit: 2, temperature: 38 },
-    { id: '3', unit: 3, temperature: 42 },
-    { id: '4', unit: 4, temperature: 45 },
-    { id: '5', unit: 5, temperature: 40 },
-    { id: '6', unit: 6, temperature: 37 },
-  ]
+interface GridCell {
+    deviceId: string | null
+    temperature: number | null
+    status: string | null
+}
 
-  const rack2Data: RackTemperature[] = [
-    { id: '7', unit: 1, temperature: 36 },
-    { id: '8', unit: 2, temperature: 39 },
-    { id: '9', unit: 3, temperature: 41 },
-    { id: '10', unit: 4, temperature: 43 },
-    { id: '11', unit: 5, temperature: 38 },
-    { id: '12', unit: 6, temperature: 35 },
-  ]
+const GRID_SIZE = 10 // 10x10 grid for demonstration
+const TEMPERATURE_RANGE = {
+    min: 20,
+    max: 80
+}
 
-  const getTemperatureColor = (temp: number) => {
-    if (temp >= 45) return 'bg-red-500'
-    if (temp >= 40) return 'bg-orange-400'
-    if (temp >= 35) return 'bg-yellow-300'
-    return 'bg-green-300'
-  }
+export function TemperatureHeatmap({ devices }: TemperatureHeatmapProps) {
+    const [grid, setGrid] = useState<GridCell[][]>([])
 
-  const getTemperatureOpacity = (temp: number) => {
-    const percentage = ((temp - 30) / 20) * 100
-    return `${Math.min(100, Math.max(20, percentage))}%`
-  }
+    useEffect(() => {
+        // Create empty grid
+        const emptyGrid = Array(GRID_SIZE).fill(null).map(() =>
+            Array(GRID_SIZE).fill(null).map(() => ({
+                deviceId: null,
+                temperature: null,
+                status: null
+            }))
+        )
 
-  const RackColumn = ({ data, name }: { data: RackTemperature[], name: string }) => (
-    <div>
-      <h3 className="text-sm font-medium mb-2">{name}</h3>
-      <div className="space-y-1">
-        {[...data].reverse().map((item) => (
-          <div
-            key={item.id}
-            className={`h-8 rounded ${getTemperatureColor(item.temperature)}`}
-            style={{ opacity: getTemperatureOpacity(item.temperature) }}
-          >
-            <div className="flex items-center justify-between px-2 py-1">
-              <span className="text-xs font-medium">U{item.unit}</span>
-              <span className="text-xs font-medium">{item.temperature}°C</span>
+        // Place devices on grid based on their position
+        devices.forEach(device => {
+            const row = Math.floor(device.location.position / GRID_SIZE)
+            const col = device.location.position % GRID_SIZE
+            if (row < GRID_SIZE && col < GRID_SIZE) {
+                emptyGrid[row][col] = {
+                    deviceId: device.id,
+                    temperature: device.metrics.temperature,
+                    status: device.status
+                }
+            }
+        })
+
+        setGrid(emptyGrid)
+    }, [devices])
+
+    const getTemperatureColor = (temp: number | null) => {
+        if (temp === null) return '#f3f4f6' // Gray for empty cells
+
+        // Calculate color based on temperature range
+        const percentage = Math.min(
+            Math.max(
+                (temp - TEMPERATURE_RANGE.min) /
+                (TEMPERATURE_RANGE.max - TEMPERATURE_RANGE.min),
+                0
+            ),
+            1
+        )
+
+        // Color gradient from blue (cool) to red (hot)
+        const blue = Math.round(255 * (1 - percentage))
+        const red = Math.round(255 * percentage)
+        return `rgb(${red}, 0, ${blue})`
+    }
+
+    return (
+        <div className="space-y-4">
+            {/* Temperature grid */}
+            <div className="grid gap-1" 
+                style={{ 
+                    gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`
+                }}>
+                {grid.flat().map((cell, index) => (
+                    <div
+                        key={index}
+                        className="aspect-square relative rounded-sm"
+                        style={{ 
+                            backgroundColor: getTemperatureColor(cell.temperature)
+                        }}
+                    >
+                        {cell.temperature !== null && (
+                            <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-white">
+                                {cell.temperature.toFixed(1)}°C
+                            </div>
+                        )}
+                    </div>
+                ))}
             </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
 
-  return (
-    <div>
-      <div className="grid grid-cols-2 gap-8">
-        <RackColumn data={rack1Data} name="Rack 1" />
-        <RackColumn data={rack2Data} name="Rack 2" />
-      </div>
+            {/* Legend */}
+            <div className="flex items-center justify-center space-x-2">
+                <div className="text-sm">Cool</div>
+                <div className="h-2 w-32 bg-gradient-to-r from-blue-500 to-red-500 rounded" />
+                <div className="text-sm">Hot</div>
+            </div>
 
-      <div className="mt-6">
-        <div className="text-sm text-gray-500 mb-2">Temperature Scale:</div>
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-green-300 rounded mr-1"></div>
-            <span className="text-sm">&lt; 35°C</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-yellow-300 rounded mr-1"></div>
-            <span className="text-sm">35-40°C</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-orange-400 rounded mr-1"></div>
-            <span className="text-sm">40-45°C</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-red-500 rounded mr-1"></div>
-            <span className="text-sm">&gt; 45°C</span>
-          </div>
+            {/* Temperature range */}
+            <div className="flex justify-between text-sm text-gray-500">
+                <span>{TEMPERATURE_RANGE.min}°C</span>
+                <span>{TEMPERATURE_RANGE.max}°C</span>
+            </div>
         </div>
-      </div>
-    </div>
-  )
+    )
 }
