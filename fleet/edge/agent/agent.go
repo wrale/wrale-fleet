@@ -24,7 +24,7 @@ type Agent struct {
     mu          sync.RWMutex
 
     // Thermal management
-    thermalState     thermal.ThermalState
+    thermalState     *types.ThermalMetrics  // Updated to use ThermalMetrics
     lastThermalSync  time.Time
     thermalUpdateMux sync.RWMutex
 }
@@ -60,7 +60,7 @@ func (a *Agent) Start(ctx context.Context) error {
     go a.stateLoop(ctx)
     go a.commandLoop(ctx)
     go a.healthLoop(ctx)
-    go a.thermalLoop(ctx) // New thermal management loop
+    go a.thermalLoop(ctx)
 
     return nil
 }
@@ -72,7 +72,7 @@ func (a *Agent) Stop() {
 
 // thermalLoop manages thermal state updates
 func (a *Agent) thermalLoop(ctx context.Context) {
-    ticker := time.NewTicker(5 * time.Second) // More frequent updates for thermal
+    ticker := time.NewTicker(5 * time.Second)
     defer ticker.Stop()
 
     for {
@@ -91,7 +91,6 @@ func (a *Agent) thermalLoop(ctx context.Context) {
 
 // updateThermalState gets and syncs thermal state
 func (a *Agent) updateThermalState(ctx context.Context) error {
-    // Get latest thermal state
     thermalState, err := a.metalClient.GetThermalState()
     if err != nil {
         return fmt.Errorf("failed to get thermal state: %w", err)
@@ -192,7 +191,6 @@ func (a *Agent) executeCommand(ctx context.Context, cmd Command) CommandResult {
     }
 
     switch cmd.Type {
-    // Existing command handlers
     case CmdUpdateState:
         if err := a.updateAndSyncState(ctx); err != nil {
             result.Error = err
@@ -211,7 +209,6 @@ func (a *Agent) executeCommand(ctx context.Context, cmd Command) CommandResult {
             result.Error = fmt.Errorf("invalid task payload")
         }
 
-    // Thermal command handlers
     case CmdUpdateThermalPolicy:
         if policy, ok := cmd.Payload.(types.ThermalPolicy); ok {
             if err := a.metalClient.UpdateThermalPolicy(policy); err != nil {
@@ -251,11 +248,10 @@ func (a *Agent) executeCommand(ctx context.Context, cmd Command) CommandResult {
         } else {
             result.Success = true
             a.thermalUpdateMux.RLock()
-            result.Payload = a.thermalState
+            result.Payload = a.thermalState  // Now properly using the Payload field
             a.thermalUpdateMux.RUnlock()
         }
 
-    // Mode management
     case CmdEnterSafeMode:
         a.setMode(ModeSafe)
         result.Success = true

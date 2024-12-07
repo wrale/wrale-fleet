@@ -1,7 +1,7 @@
 # Fleet Service Makefile
 COMPONENT_NAME := wrale-fleet
 MAKEFILES_DIR := ../Makefiles
-MAIN_PACKAGE := ./brain/service
+MAIN_PACKAGE := ./cmd/fleetd
 
 include $(MAKEFILES_DIR)/templates/service.mk
 $(eval $(SERVICE_TEMPLATE))

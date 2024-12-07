@@ -3,10 +3,10 @@ package diag
 import (
 	"time"
 
-	"github.com/wrale/wrale-fleet-metal-hw/gpio"
-	"github.com/wrale/wrale-fleet-metal-hw/power"
-	"github.com/wrale/wrale-fleet-metal-hw/secure"
-	"github.com/wrale/wrale-fleet-metal-hw/thermal"
+	"github.com/wrale/wrale-fleet/metal/hw/gpio"
+	"github.com/wrale/wrale-fleet/metal/hw/power"
+	"github.com/wrale/wrale-fleet/metal/hw/secure"
+	"github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // TestType identifies different hardware diagnostic tests

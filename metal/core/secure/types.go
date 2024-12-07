@@ -8,6 +8,13 @@ import (
 	hw "github.com/wrale/wrale-fleet/metal/hw/secure"
 )
 
+// Default timing values
+const (
+	defaultMinDelay   = 100 * time.Millisecond
+	defaultMaxDelay   = 500 * time.Millisecond
+	defaultAlertDelay = 5 * time.Minute
+)
+
 // SecurityLevel indicates the required security posture
 type SecurityLevel string
 
@@ -43,6 +50,18 @@ type TimeWindow struct {
 	End   time.Time
 }
 
+// SecurityMetrics provides monitoring statistics
+type SecurityMetrics struct {
+	CurrentLevel     SecurityLevel        `json:"current_level"`
+	TamperState     hw.TamperState       `json:"tamper_state"`
+	DetectionEvents  []TamperEvent       `json:"detection_events"`
+	VoltageLevel     float64             `json:"voltage_level"`
+	MotionDetected   bool                `json:"motion_detected"`
+	LastTamperEvent  *TamperEvent        `json:"last_tamper_event,omitempty"`
+	PolicyViolations []string            `json:"policy_violations,omitempty"`
+	UpdatedAt        time.Time           `json:"updated_at"`
+}
+
 // TamperEvent represents a security violation
 type TamperEvent struct {
 	DeviceID    string
@@ -52,6 +71,43 @@ type TamperEvent struct {
 	State       hw.TamperState
 	Timestamp   time.Time
 	Details     interface{}
+}
+
+// Event represents a general security-related incident for logging
+type Event struct {
+	DeviceID  string      `json:"device_id"`
+	Type      string      `json:"type"`
+	Timestamp time.Time   `json:"timestamp"`
+	Details   interface{} `json:"details"`
+}
+
+// SecurityEvent represents a specific security-related occurrence
+// Used for detailed event tracking and analysis
+type SecurityEvent struct {
+	Timestamp time.Time
+	Type      string
+	Source    string
+	Severity  string
+	State     hw.TamperState
+	Context   map[string]interface{}
+}
+
+// TamperAttempt represents a detected pattern of potentially malicious activity
+type TamperAttempt struct {
+	StartTime  time.Time
+	EndTime    time.Time
+	EventCount int
+	Pattern    string
+	Severity   string
+}
+
+// StateTransition records a change in the system's security state
+type StateTransition struct {
+	Timestamp time.Time
+	FromState hw.TamperState
+	ToState   hw.TamperState
+	Trigger   string
+	Context   map[string]interface{}
 }
 
 // StateStore defines the interface for persisting security state
@@ -64,4 +120,10 @@ type StateStore interface {
 
 	// LogEvent records a security event
 	LogEvent(ctx context.Context, deviceID string, eventType string, details interface{}) error
+}
+
+// HandleStateUpdate updates the security state with context
+func (pm *PolicyManager) HandleStateUpdate(ctx context.Context, state hw.TamperState) error {
+	// Implementation details would go here
+	return nil
 }

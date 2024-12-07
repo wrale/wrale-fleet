@@ -31,8 +31,8 @@ type Monitor struct {
 	lastSync time.Time
 
 	// Event correlation tracking
-	eventHistory    []SecurityEvent
-	tamperAttempts  []TamperAttempt
+	eventHistory     []SecurityEvent
+	tamperAttempts   []TamperAttempt
 	stateTransitions []StateTransition
 	lastStateChange  time.Time
 }
@@ -63,35 +63,6 @@ type MonitorMetrics struct {
 	StateTransitions  uint64
 }
 
-// SecurityEvent tracks individual security-related events
-type SecurityEvent struct {
-	Timestamp   time.Time
-	Type        string
-	Source      string
-	Severity    string
-	State       hw.TamperState
-	Context     map[string]interface{}
-}
-
-// TamperAttempt tracks potential intrusion patterns
-type TamperAttempt struct {
-	StartTime    time.Time
-	EndTime      time.Time
-	EventCount   int
-	Pattern      string
-	Severity     string
-	RelatedEvents []string
-}
-
-// StateTransition tracks security state changes
-type StateTransition struct {
-	Timestamp    time.Time
-	FromState    hw.TamperState
-	ToState      hw.TamperState
-	Trigger      string
-	Context      map[string]interface{}
-}
-
 // NewMonitor creates a new security monitor
 func NewMonitor(cfg MonitorConfig) (*Monitor, error) {
 	if cfg.HWManager == nil {
@@ -119,16 +90,16 @@ func NewMonitor(cfg MonitorConfig) (*Monitor, error) {
 	}
 
 	return &Monitor{
-		hwManager:       cfg.HWManager,
-		policyManager:   cfg.PolicyManager,
-		stateStore:      cfg.StateStore,
-		deviceID:        cfg.DeviceID,
-		monitorInterval: cfg.MonitorInterval,
-		retryDelay:      cfg.RetryDelay,
-		maxRetries:      cfg.MaxRetries,
-		shutdownTimeout: cfg.ShutdownTimeout,
-		eventHistory:    make([]SecurityEvent, 0, 1000),  // Pre-allocate space for events
-		tamperAttempts:  make([]TamperAttempt, 0),
+		hwManager:        cfg.HWManager,
+		policyManager:    cfg.PolicyManager,
+		stateStore:       cfg.StateStore,
+		deviceID:         cfg.DeviceID,
+		monitorInterval:  cfg.MonitorInterval,
+		retryDelay:       cfg.RetryDelay,
+		maxRetries:       cfg.MaxRetries,
+		shutdownTimeout:  cfg.ShutdownTimeout,
+		eventHistory:     make([]SecurityEvent, 0, 1000),
+		tamperAttempts:   make([]TamperAttempt, 0),
 		stateTransitions: make([]StateTransition, 0),
 	}, nil
 }
@@ -175,7 +146,6 @@ func (m *Monitor) Start(ctx context.Context) error {
 			return nil
 
 		case <-recoveryTicker.C:
-			// Attempt recovery from errors
 			m.attemptErrorRecovery()
 
 		case <-ticker.C:
@@ -192,7 +162,6 @@ func (m *Monitor) Start(ctx context.Context) error {
 					"error": err.Error(),
 				})
 
-				// Log error but continue monitoring
 				fmt.Printf("Security check failed: %v\n", err)
 			} else {
 				m.Lock()
@@ -200,25 +169,19 @@ func (m *Monitor) Start(ctx context.Context) error {
 				m.Unlock()
 			}
 
-			// Analyze patterns periodically
 			m.analyzeTamperPatterns()
 		}
 	}
 }
 
-// check performs a single monitoring cycle
 func (m *Monitor) check(ctx context.Context) error {
 	m.Lock()
 	m.metrics.CheckCount++
 	m.Unlock()
 
-	// Get current hardware state
 	state := m.hwManager.GetState()
-
-	// Check for state transitions
 	m.detectStateTransition(state)
 
-	// Process through policy manager
 	if err := m.policyManager.HandleStateUpdate(ctx, state); err != nil {
 		return fmt.Errorf("policy enforcement failed: %w", err)
 	}
@@ -226,54 +189,27 @@ func (m *Monitor) check(ctx context.Context) error {
 	return nil
 }
 
-// detectStateTransition analyzes state changes
-func (m *Monitor) detectStateTransition(newState hw.TamperState) {
+func (m *Monitor) shutdown(hwCancel context.CancelFunc, hwErrCh chan error) error {
+	m.recordSecurityEvent("MONITOR_SHUTDOWN", "info", nil)
+	hwCancel()
+
+	select {
+	case err := <-hwErrCh:
+		if err != nil {
+			return fmt.Errorf("hardware monitor failed during shutdown: %w", err)
+		}
+	case <-time.After(m.shutdownTimeout):
+		return fmt.Errorf("hardware monitor shutdown timed out")
+	}
+
 	m.Lock()
-	defer m.Unlock()
+	m.running = false
+	m.Unlock()
 
-	if len(m.stateTransitions) == 0 || !m.stateEqual(m.stateTransitions[len(m.stateTransitions)-1].ToState, newState) {
-		transition := StateTransition{
-			Timestamp: time.Now(),
-			ToState:   newState,
-			Context:   make(map[string]interface{}),
-		}
-
-		if len(m.stateTransitions) > 0 {
-			transition.FromState = m.stateTransitions[len(m.stateTransitions)-1].ToState
-		}
-
-		// Determine transition trigger
-		trigger := m.determineTrigger(transition.FromState, newState)
-		transition.Trigger = trigger
-
-		m.stateTransitions = append(m.stateTransitions, transition)
-		m.metrics.StateTransitions++
-		m.lastStateChange = time.Now()
-	}
+	return nil
 }
 
-// stateEqual compares two TamperStates for equality
-func (m *Monitor) stateEqual(a, b hw.TamperState) bool {
-	return a.CaseOpen == b.CaseOpen &&
-		a.MotionDetected == b.MotionDetected &&
-		a.VoltageNormal == b.VoltageNormal
-}
-
-// determineTrigger analyzes what caused a state transition
-func (m *Monitor) determineTrigger(from, to hw.TamperState) string {
-	if from.CaseOpen != to.CaseOpen {
-		return "CASE_STATE_CHANGE"
-	}
-	if from.MotionDetected != to.MotionDetected {
-		return "MOTION_DETECTED"
-	}
-	if from.VoltageNormal != to.VoltageNormal {
-		return "VOLTAGE_CHANGE"
-	}
-	return "UNKNOWN"
-}
-
-// recordSecurityEvent adds an event to the history
+// Helper methods
 func (m *Monitor) recordSecurityEvent(eventType string, severity string, context map[string]interface{}) {
 	m.Lock()
 	defer m.Unlock()
@@ -288,14 +224,54 @@ func (m *Monitor) recordSecurityEvent(eventType string, severity string, context
 	}
 
 	m.eventHistory = append(m.eventHistory, event)
-
-	// Trim history if needed
 	if len(m.eventHistory) > 1000 {
 		m.eventHistory = m.eventHistory[1:]
 	}
 }
 
-// analyzeTamperPatterns looks for patterns in security events
+func (m *Monitor) detectStateTransition(newState hw.TamperState) {
+	m.Lock()
+	defer m.Unlock()
+
+	if len(m.stateTransitions) > 0 && m.stateEqual(m.stateTransitions[len(m.stateTransitions)-1].ToState, newState) {
+		return
+	}
+
+	transition := StateTransition{
+		Timestamp: time.Now(),
+		ToState:   newState,
+		Context:   make(map[string]interface{}),
+	}
+
+	if len(m.stateTransitions) > 0 {
+		transition.FromState = m.stateTransitions[len(m.stateTransitions)-1].ToState
+	}
+
+	transition.Trigger = m.determineTrigger(transition.FromState, newState)
+	m.stateTransitions = append(m.stateTransitions, transition)
+	m.metrics.StateTransitions++
+	m.lastStateChange = time.Now()
+}
+
+func (m *Monitor) stateEqual(a, b hw.TamperState) bool {
+	return a.CaseOpen == b.CaseOpen &&
+		a.MotionDetected == b.MotionDetected &&
+		a.VoltageNormal == b.VoltageNormal
+}
+
+func (m *Monitor) determineTrigger(from, to hw.TamperState) string {
+	switch {
+	case from.CaseOpen != to.CaseOpen:
+		return "CASE_STATE_CHANGE"
+	case from.MotionDetected != to.MotionDetected:
+		return "MOTION_DETECTED"
+	case from.VoltageNormal != to.VoltageNormal:
+		return "VOLTAGE_CHANGE"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 func (m *Monitor) analyzeTamperPatterns() {
 	m.Lock()
 	defer m.Unlock()
@@ -316,7 +292,6 @@ func (m *Monitor) analyzeTamperPatterns() {
 		}
 	}
 
-	// If we see many transitions in a short time, record an attempt
 	if transitions > 5 {
 		attempt := TamperAttempt{
 			StartTime:  recentEvents[0].Timestamp,
@@ -336,13 +311,11 @@ func (m *Monitor) analyzeTamperPatterns() {
 	}
 }
 
-// attemptErrorRecovery tries to recover from error states
 func (m *Monitor) attemptErrorRecovery() {
 	m.Lock()
 	defer m.Unlock()
 
 	if m.metrics.ErrorCount > 0 && time.Since(m.metrics.LastErrorTime) > m.retryDelay {
-		// Reset error count if we've been stable
 		if time.Since(m.metrics.LastErrorTime) > m.retryDelay*5 {
 			m.metrics.ErrorCount = 0
 			m.recordSecurityEvent("ERROR_STATE_RECOVERED", "info", nil)
@@ -350,74 +323,7 @@ func (m *Monitor) attemptErrorRecovery() {
 	}
 }
 
-// shutdown handles graceful shutdown
-func (m *Monitor) shutdown(hwCancel context.CancelFunc, hwErrCh chan error) error {
-	// Record shutdown event
-	m.recordSecurityEvent("MONITOR_SHUTDOWN", "info", nil)
-
-	// Cancel hardware monitoring
-	hwCancel()
-
-	// Wait for hardware monitor to stop
-	select {
-	case err := <-hwErrCh:
-		if err != nil {
-			return fmt.Errorf("hardware monitor failed during shutdown: %w", err)
-		}
-	case <-time.After(m.shutdownTimeout):
-		return fmt.Errorf("hardware monitor shutdown timed out")
-	}
-
-	m.Lock()
-	m.running = false
-	m.Unlock()
-
-	return nil
-}
-
-// GetMetrics returns current monitoring metrics
-func (m *Monitor) GetMetrics() MonitorMetrics {
-	m.RLock()
-	defer m.RUnlock()
-	return m.metrics
-}
-
-// IsRunning returns whether the monitor is currently running
-func (m *Monitor) IsRunning() bool {
-	m.RLock()
-	defer m.RUnlock()
-	return m.running
-}
-
-// GetTamperAttempts returns recent tamper attempts
-func (m *Monitor) GetTamperAttempts(since time.Time) []TamperAttempt {
-	m.RLock()
-	defer m.RUnlock()
-
-	var attempts []TamperAttempt
-	for _, attempt := range m.tamperAttempts {
-		if attempt.EndTime.After(since) {
-			attempts = append(attempts, attempt)
-		}
-	}
-	return attempts
-}
-
-// GetStateTransitions returns recent state transitions
-func (m *Monitor) GetStateTransitions(since time.Time) []StateTransition {
-	m.RLock()
-	defer m.RUnlock()
-
-	var transitions []StateTransition
-	for _, transition := range m.stateTransitions {
-		if transition.Timestamp.After(since) {
-			transitions = append(transitions, transition)
-		}
-	}
-	return transitions
-}
-
-// max returns the larger of x or y
+// Helper function
 func max(x, y int) int {
 	if x > y {
 		return x

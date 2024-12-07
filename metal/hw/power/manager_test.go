@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	hw_gpio "github.com/wrale/wrale-fleet-metal-hw/gpio"
+	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 	"periph.io/x/conn/v3/gpio"
 	"periph.io/x/conn/v3/physic"
 )
@@ -49,7 +49,7 @@ func (m *mockPin) PWM(duty gpio.Duty, f physic.Frequency) error { return nil }
 func (m *mockPin) WaitForEdge(timeout time.Duration) bool       { return true }
 
 func TestPowerManager(t *testing.T) {
-	gpioCtrl, err := hw_gpio.New(hw_gpio.WithSimulation())
+	gpioCtrl, err := gpio.New(gpio.WithSimulation())
 	if err != nil {
 		t.Fatalf("Failed to create GPIO controller: %v", err)
 	}
