@@ -48,6 +48,11 @@ func NewHardwareMonitor() (*HardwareMonitor, error) {
 	}, nil
 }
 
+// Monitor returns the underlying hardware monitor
+func (h *HardwareMonitor) Monitor() *hw.Monitor {
+	return h.monitor
+}
+
 // DefaultPolicy returns a sensible default thermal policy
 func DefaultPolicy() ThermalPolicy {
 	return ThermalPolicy{

@@ -50,7 +50,7 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Initialize core policy managers
-	thermalMgr := core_thermal.NewPolicyManager(cfg.DeviceID, hwThermal, core_thermal.DefaultPolicy())
+	thermalMgr := core_thermal.NewPolicyManager(cfg.DeviceID, hwThermal.Monitor(), core_thermal.DefaultPolicy())
 	securityMgr := core_secure.NewPolicyManager(cfg.DeviceID, hwSecurity, core_secure.DefaultPolicy())
 
 	s := &Server{
