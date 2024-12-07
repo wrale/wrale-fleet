@@ -28,7 +28,9 @@ type GPIO interface {
 
 // Power Management
 type PowerManager interface {
-    Monitor
+    // Monitor interface methods 
+    Start(ctx context.Context) error
+    Stop() error
     
     // State management
     GetState() (PowerState, error)
@@ -41,8 +43,6 @@ type PowerManager interface {
     EnableCharging(enable bool) error
     
     // Monitoring
-    Start(ctx context.Context) error
-    Stop() error
     WatchPower(ctx context.Context) (<-chan PowerState, error)
     WatchSource(ctx context.Context) (<-chan PowerSource, error)
     
