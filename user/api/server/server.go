@@ -3,14 +3,12 @@ package server
 
 import (
     "context"
-    "encoding/json"
     "fmt"
     "log"
     "net/http"
     "time"
 
     "github.com/gorilla/mux"
-    "github.com/gorilla/websocket"
     
     "github.com/wrale/wrale-fleet/fleet/brain/types"
     "github.com/wrale/wrale-fleet/user/api/service"
@@ -27,7 +25,6 @@ type Server struct {
     config     Config
     srv        *http.Server
     router     *mux.Router
-    upgrader   websocket.Upgrader
     
     // Services
     deviceSvc  apitypes.DeviceService
@@ -45,14 +42,6 @@ func New(cfg Config) (*Server, error) {
         fleetSvc:  service.NewFleetService(),
         wsSvc:     service.NewWebSocketService(),
         authSvc:   service.NewAuthService(),
-        upgrader: websocket.Upgrader{
-            ReadBufferSize:  1024,
-            WriteBufferSize: 1024,
-            CheckOrigin: func(r *http.Request) bool {
-                // TODO: Implement proper origin checking for v1.0
-                return true
-            },
-        },
     }
 
     s.setupRoutes()
@@ -125,7 +114,6 @@ func (s *Server) setupRoutes() {
 }
 
 // Middleware functions
-
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         start := time.Now()
@@ -178,44 +166,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
     })
 }
 
-// Helper methods
-
-func (s *Server) sendJSON(w http.ResponseWriter, status int, data interface{}) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-
-    if err := json.NewEncoder(w).Encode(apitypes.APIResponse{
-        Success: true,
-        Data:    data,
-    }); err != nil {
-        log.Printf("Error encoding response: %v", err)
-    }
-}
-
-func (s *Server) sendError(w http.ResponseWriter, status int, code string, message string) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-
-    if err := json.NewEncoder(w).Encode(apitypes.APIResponse{
-        Success: false,
-        Error: &apitypes.APIError{
-            Code:    code,
-            Message: message,
-        },
-    }); err != nil {
-        log.Printf("Error encoding error response: %v", err)
-    }
-}
-
-// Request parsing helpers
-
-func (s *Server) parseJSON(r *http.Request, v interface{}) error {
-    if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-        return fmt.Errorf("invalid request body: %w", err)
-    }
-    return nil
-}
-
+// getDeviceID extracts device ID from request vars
 func (s *Server) getDeviceID(r *http.Request) types.DeviceID {
     return types.DeviceID(mux.Vars(r)["id"])
 }
