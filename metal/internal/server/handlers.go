@@ -3,9 +3,6 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	
-	core_secure "github.com/wrale/wrale-fleet/metal/secure"
-	core_thermal "github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 // Device information response
@@ -47,13 +44,17 @@ func (s *Server) handleThermalPolicy(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(s.thermalMgr.GetPolicy())
 
 	case http.MethodPut:
-		var policy core_thermal.ThermalPolicy
+		var policy interface{}
 		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		s.thermalMgr.UpdatePolicy(policy)
+		if err := s.thermalMgr.UpdatePolicy(policy); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		
 		w.WriteHeader(http.StatusOK)
 
 	default:
@@ -79,13 +80,17 @@ func (s *Server) handleSecurityPolicy(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(s.securityMgr.GetPolicy())
 
 	case http.MethodPut:
-		var policy core_secure.SecurityPolicy
+		var policy interface{}
 		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		s.securityMgr.UpdatePolicy(policy)
+		if err := s.securityMgr.UpdatePolicy(policy); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
 
 	default:
