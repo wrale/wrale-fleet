@@ -60,12 +60,13 @@ type CommandResult struct {
     Success     bool
     Error       error
     CompletedAt time.Time
+    Payload     interface{} // Stores command-specific response data
 }
 
 // MetalClient interface for metal layer communication
 type MetalClient interface {
     GetMetrics() (types.DeviceMetrics, error)
-    GetThermalState() (types.ThermalState, error)
+    GetThermalState() (*types.ThermalMetrics, error)  // Updated to use ThermalMetrics
     UpdateThermalPolicy(policy types.ThermalPolicy) error
     SetFanSpeed(speed uint32) error
     SetThrottling(enabled bool) error
@@ -79,7 +80,7 @@ type MetalClient interface {
 type BrainClient interface {
     GetCommands() ([]Command, error)
     SyncState(state types.DeviceState) error
-    SyncThermalState(state types.ThermalState) error
+    SyncThermalState(state *types.ThermalMetrics) error  // Updated to use ThermalMetrics
     ReportCommandResult(result CommandResult) error
     ReportHealth(healthy bool, diagnostics map[string]interface{}) error
 }
