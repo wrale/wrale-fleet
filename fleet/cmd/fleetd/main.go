@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/service"
 	"github.com/wrale/wrale-fleet/fleet/brain/coordinator"
+	"github.com/wrale/wrale-fleet/fleet/brain/service"
 )
 
 var (
@@ -18,9 +21,37 @@ var (
 	GitCommit string
 )
 
+type server struct {
+	brainSvc *service.Service
+}
+
+func (s *server) healthHandler(w http.ResponseWriter, r *http.Request) {
+	health := map[string]interface{}{
+		"status":    "ok",
+		"version":   Version,
+		"buildTime": BuildTime,
+		"gitCommit": GitCommit,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(health)
+}
+
+func (s *server) deviceListHandler(w http.ResponseWriter, r *http.Request) {
+	devices, err := s.brainSvc.ListDevices(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(devices)
+}
+
 func main() {
 	// Parse command line flags
-	metalAddr := flag.String("metal-addr", "localhost:50051", "Metal service address")
+	metalAddr := flag.String("metal-addr", "http://localhost:8081", "Metal service address")
+	listenAddr := flag.String("listen", ":8080", "HTTP server listen address")
 	flag.Parse()
 
 	// Set up logging
@@ -40,15 +71,36 @@ func main() {
 		cancel()
 	}()
 
-	// Initialize metal client
+	// Initialize metal client and brain service
 	metalClient := coordinator.NewMetalClient(*metalAddr)
-
-	// Create and start brain service
 	brainSvc := service.NewService(metalClient)
 
-	// TODO: Add service endpoints (gRPC/HTTP) initialization here
+	// Initialize HTTP server
+	srv := &server{brainSvc: brainSvc}
+	
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", srv.healthHandler)
+	mux.HandleFunc("/devices", srv.deviceListHandler)
+
+	httpServer := &http.Server{
+		Addr:    *listenAddr,
+		Handler: mux,
+	}
+
+	// Start HTTP server
+	go func() {
+		log.Printf("Starting HTTP server on %s", *listenAddr)
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+	}()
 
 	// Wait for shutdown signal
 	<-ctx.Done()
 	log.Println("Shutting down wrale-fleet service...")
+
+	// Graceful shutdown
+	if err := httpServer.Shutdown(context.Background()); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	}
 }
