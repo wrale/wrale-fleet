@@ -3,35 +3,19 @@ package thermal
 
 import (
 	"time"
+
+	"github.com/wrale/wrale-fleet/metal/core/policy"
 )
 
 // ThermalState represents the current thermal status
 type ThermalState struct {
-	CPUTemp      float64
-	GPUTemp      float64
-	AmbientTemp  float64
-	FanSpeed     uint32
-	Throttled    bool
-	Warnings     []string
-	UpdatedAt    time.Time
-}
-
-// Monitor handles hardware temperature monitoring and fan control
-type Monitor struct {
-	state      ThermalState
-	config     Config
-	fanControl string
-	throttle   string
-}
-
-// Config defines the monitor configuration
-type Config struct {
-	MonitorInterval time.Duration
-	FanControlPin   string
-	ThrottlePin     string
-	CPUTempPath     string
-	GPUTempPath     string
-	AmbientTempPath string
+	CPUTemp     float64
+	GPUTemp     float64
+	AmbientTemp float64
+	FanSpeed    uint32
+	Throttled   bool
+	Warnings    []string
+	UpdatedAt   time.Time
 }
 
 // ThermalProfile defines thermal behavior requirements
@@ -44,13 +28,16 @@ const (
 	ProfileCool    ThermalProfile = "COOL"    // Prioritize cooling
 	ProfileMax     ThermalProfile = "MAX"     // Maximum cooling
 	
-	// Default monitoring intervals
-	defaultStateInterval = 1 * time.Second
-	defaultStatsInterval = 5 * time.Second
+	// Default timing values
+	defaultMonitorInterval = 1 * time.Second
+	defaultWarningDelay   = 5 * time.Second
+	defaultCriticalDelay  = 1 * time.Second
 )
 
 // ThermalPolicy defines cooling behavior and thresholds
 type ThermalPolicy struct {
+	policy.BasePolicy
+
 	// Active profile
 	Profile ThermalProfile
 
@@ -69,13 +56,8 @@ type ThermalPolicy struct {
 	FanRampRate     float64 // Speed change per degree
 	ThrottleTemp    float64 // Temperature to enable throttling
 	
-	// Timing parameters
-	ResponseDelay  time.Duration // Minimum time between fan changes
-	WarningDelay   time.Duration // Minimum time between warnings
-	CriticalDelay  time.Duration // Minimum time between critical alerts
-	
 	// Environment
-	AmbientOffset  float64       // Ambient temperature adjustment
+	AmbientOffset  float64      // Ambient temperature adjustment
 	ThermalZones   []ThermalZone // Defined thermal zones
 	
 	// Callbacks
@@ -86,11 +68,11 @@ type ThermalPolicy struct {
 
 // ThermalZone defines a physical area with thermal requirements
 type ThermalZone struct {
-	Name           string
-	MaxTemp        float64
-	TargetTemp     float64
-	Priority       int
-	Sensors        []string
+	Name       string
+	MaxTemp    float64
+	TargetTemp float64
+	Priority   int
+	Sensors    []string
 }
 
 // ThermalEvent represents a thermal incident
@@ -107,30 +89,24 @@ type ThermalEvent struct {
 
 // ThermalMetrics tracks thermal performance
 type ThermalMetrics struct {
-	// Current temperatures
-	CPUTemp        float64
-	GPUTemp        float64
-	AmbientTemp    float64
-	
-	// Fan metrics
-	FanSpeed       uint32
-	FanDuty        uint32
-	FanRPM         uint32
-	
-	// Throttling
-	ThrottleCount  uint64
-	ThrottleTime   time.Duration
-	LastThrottle   time.Time
-	
-	// Temperature trends
-	CPUTrend       float64
-	GPUTrend       float64
-	AmbientTrend   float64
-	
-	// Status
-	CurrentProfile ThermalProfile
-	ActiveWarnings []string
-	LastUpdate     time.Time
+	policy.Metrics
+	CPUTemp        float64        `json:"cpu_temp"`
+	GPUTemp        float64        `json:"gpu_temp"`
+	AmbientTemp    float64        `json:"ambient_temp"`
+	FanSpeed       uint32         `json:"fan_speed"`
+	CurrentProfile ThermalProfile `json:"profile"`
+}
+
+// Config defines hardware monitor configuration
+type Config struct {
+	GPIO            *GPIOController
+	MonitorInterval time.Duration
+	FanControlPin   string
+	ThrottlePin     string
+	CPUTempPath     string
+	GPUTempPath     string
+	AmbientTempPath string
+	OnStateChange   func(ThermalState)
 }
 
 // CoolingCurve defines fan response to temperature
@@ -148,4 +124,12 @@ type CoolingCurve struct {
 	Hysteresis  float64 // Temperature difference for speed reduction
 	SmoothSteps int     // Number of steps for speed changes
 	RampTime    time.Duration // Time to reach target speed
+}
+
+// GPIOController defines GPIO operations needed for thermal control
+type GPIOController interface {
+	ConfigurePin(name string, pin uint, mode string) error
+	SetPWMDutyCycle(name string, duty uint32) error
+	GetPinState(name string) (bool, error)
+	SetPinState(name string, state bool) error
 }
