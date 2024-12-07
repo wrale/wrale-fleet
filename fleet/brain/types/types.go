@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"time"
 )
 
@@ -9,6 +10,15 @@ type DeviceID string
 
 // TaskID uniquely identifies a task
 type TaskID string
+
+// StateManager defines the interface for managing device state
+type StateManager interface {
+	GetDeviceState(ctx context.Context, deviceID DeviceID) (*DeviceState, error)
+	UpdateDeviceState(ctx context.Context, state DeviceState) error
+	ListDevices(ctx context.Context) ([]DeviceState, error)
+	RemoveDevice(ctx context.Context, deviceID DeviceID) error
+	AddDevice(ctx context.Context, state DeviceState) error
+}
 
 // Task represents a scheduled operation
 type Task struct {
@@ -24,11 +34,19 @@ type Task struct {
 
 // DeviceState represents current device state
 type DeviceState struct {
-	ID          DeviceID      `json:"id"`
-	Status      string        `json:"status"`
-	LastSeen    time.Time     `json:"last_seen"`
-	Metrics     DeviceMetrics `json:"metrics"`
-	LastUpdated time.Time     `json:"last_updated"`
+	ID          DeviceID         `json:"id"`
+	Status      string           `json:"status"`
+	LastSeen    time.Time        `json:"last_seen"`
+	Metrics     DeviceMetrics    `json:"metrics"`
+	Location    PhysicalLocation `json:"location"`
+	LastUpdated time.Time        `json:"last_updated"`
+}
+
+// PhysicalLocation represents a device's physical location
+type PhysicalLocation struct {
+	Rack     string `json:"rack"`
+	Position int    `json:"position"`
+	Zone     string `json:"zone"`
 }
 
 // DeviceMetrics represents device performance and thermal metrics

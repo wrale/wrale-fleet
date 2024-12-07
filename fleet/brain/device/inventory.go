@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/coordinator"
 	"github.com/wrale/wrale-fleet/fleet/brain/types"
 )
 
@@ -21,13 +20,13 @@ const (
 )
 
 // Inventory manages device registration and tracking.
-// It implements coordinator.StateManager interface.
+// It implements types.StateManager interface.
 type Inventory struct {
 	devices map[types.DeviceID]*DeviceInfo
 	mu      sync.RWMutex
 }
 
-var _ coordinator.StateManager = (*Inventory)(nil) // Verify interface implementation
+var _ types.StateManager = (*Inventory)(nil) // Verify interface implementation
 
 // DeviceInfo extends DeviceState with additional inventory information
 type DeviceInfo struct {
@@ -136,21 +135,16 @@ func (i *Inventory) ListDevices(ctx context.Context) ([]types.DeviceState, error
 
 // determineHealth evaluates device health based on metrics and thermal state
 func determineHealth(state types.DeviceState) HealthStatus {
-	if state.Metrics.ThermalMetrics != nil {
-		// Check thermal state first
-		if state.Metrics.ThermalMetrics.CPUTemp > 80 {
-			return HealthStatusUnhealthy
-		}
-		if state.Metrics.ThermalMetrics.IsThrottled {
-			return HealthStatusDegraded
-		}
-	}
-
-	// Check other metrics
 	if state.Metrics.CPULoad > 90 {
 		return HealthStatusDegraded
 	}
 	if state.Metrics.MemoryUsage > 95 {
+		return HealthStatusDegraded
+	}
+	if state.Metrics.Temperature > 80 {
+		return HealthStatusUnhealthy
+	}
+	if state.Metrics.Throttled {
 		return HealthStatusDegraded
 	}
 	
