@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/wrale/wrale-fleet/metal"
 )
@@ -22,11 +23,12 @@ type Manager struct {
 	deviceID string
 
 	// State management
-	state      metal.TamperState
-	stateStore metal.StateStore
+	state    TamperState
+	onTamper func(TamperEvent)
 
-	// Callbacks for security events
-	onTamper func(metal.TamperState)
+	// Monitoring
+	running  bool
+	stopChan chan struct{}
 }
 
 // New creates a new security manager
@@ -44,32 +46,75 @@ func New(cfg Config) (*Manager, error) {
 		motionSensor: cfg.MotionSensor,
 		voltSensor:   cfg.VoltageSensor,
 		deviceID:     cfg.DeviceID,
-		stateStore:   cfg.StateStore,
 		onTamper:     cfg.OnTamper,
+		state: TamperState{
+			CommonState: metal.CommonState{
+				DeviceID:  cfg.DeviceID,
+				UpdatedAt: time.Now(),
+			},
+			LastCheck: time.Now(),
+		},
+		stopChan: make(chan struct{}),
 	}
 
-	// Load last known state if store is available
-	if m.stateStore != nil {
-		if state, err := m.stateStore.LoadState(context.Background(), m.deviceID); err == nil {
-			if tamperState, ok := state.(metal.TamperState); ok {
-				m.state = tamperState
-			}
+	// Configure input pins
+	pins := map[string]uint{
+		cfg.CaseSensor:    0,
+		cfg.MotionSensor:  1,
+		cfg.VoltageSensor: 2,
+	}
+
+	for name, pin := range pins {
+		if err := m.gpio.ConfigurePin(name, pin, metal.ModeInput); err != nil {
+			return nil, fmt.Errorf("failed to configure pin %s: %w", name, err)
 		}
 	}
 
 	return m, nil
 }
 
+// Start begins security monitoring
+func (m *Manager) Start(ctx context.Context) error {
+	m.mux.Lock()
+	if m.running {
+		m.mux.Unlock()
+		return fmt.Errorf("already running")
+	}
+	m.running = true
+	m.mux.Unlock()
+
+	return m.monitor(ctx)
+}
+
+// Stop halts security monitoring
+func (m *Manager) Stop() error {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+
+	if !m.running {
+		return nil
+	}
+
+	m.running = false
+	close(m.stopChan)
+	return nil
+}
+
+// Close releases resources
+func (m *Manager) Close() error {
+	return m.Stop()
+}
+
 // GetState returns the current security state
-func (m *Manager) GetState() metal.TamperState {
+func (m *Manager) GetState() TamperState {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
 	return m.state
 }
 
 // Monitor starts security state monitoring
-func (m *Manager) Monitor(ctx context.Context) error {
-	// Setup GPIO interrupt channels
+func (m *Manager) monitor(ctx context.Context) error {
+	// Setup watch channels
 	caseChan, err := m.gpio.WatchPin(m.caseSensor, metal.ModeInput)
 	if err != nil {
 		return fmt.Errorf("failed to monitor case sensor: %w", err)
@@ -85,11 +130,20 @@ func (m *Manager) Monitor(ctx context.Context) error {
 		return fmt.Errorf("failed to monitor voltage sensor: %w", err)
 	}
 
+	defer func() {
+		m.gpio.UnwatchPin(m.caseSensor)
+		m.gpio.UnwatchPin(m.motionSensor)
+		m.gpio.UnwatchPin(m.voltSensor)
+	}()
+
 	// Monitor all sensors
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+
+		case <-m.stopChan:
+			return nil
 		
 		case caseOpen := <-caseChan:
 			m.handleCaseEvent(caseOpen)
@@ -109,10 +163,18 @@ func (m *Manager) handleCaseEvent(caseOpen bool) {
 
 	if m.state.CaseOpen != caseOpen {
 		m.state.CaseOpen = caseOpen
+		m.state.UpdatedAt = time.Now()
+		m.state.LastCheck = time.Now()
+
 		if caseOpen && m.onTamper != nil {
-			m.onTamper(m.state)
+			m.onTamper(TamperEvent{
+				CommonState: m.state.CommonState,
+				Type:        "CASE_OPEN",
+				Severity:    "HIGH",
+				Description: "Case intrusion detected",
+				State:       m.state,
+			})
 		}
-		m.saveState()
 	}
 }
 
@@ -122,10 +184,18 @@ func (m *Manager) handleMotionEvent(motion bool) {
 
 	if m.state.MotionDetected != motion {
 		m.state.MotionDetected = motion
+		m.state.UpdatedAt = time.Now()
+		m.state.LastCheck = time.Now()
+
 		if motion && m.onTamper != nil {
-			m.onTamper(m.state)
+			m.onTamper(TamperEvent{
+				CommonState: m.state.CommonState,
+				Type:        "MOTION",
+				Severity:    "MEDIUM",
+				Description: "Motion detected",
+				State:       m.state,
+			})
 		}
-		m.saveState()
 	}
 }
 
@@ -135,29 +205,17 @@ func (m *Manager) handleVoltageEvent(voltageOK bool) {
 
 	if m.state.VoltageNormal != voltageOK {
 		m.state.VoltageNormal = voltageOK
+		m.state.UpdatedAt = time.Now()
+		m.state.LastCheck = time.Now()
+
 		if !voltageOK && m.onTamper != nil {
-			m.onTamper(m.state)
-		}
-		m.saveState()
-	}
-}
-
-func (m *Manager) saveState() {
-	if m.stateStore != nil {
-		if err := m.stateStore.SaveState(context.Background(), m.deviceID, m.state); err != nil {
-			// Log error but continue - state storage is non-critical
-			fmt.Printf("Failed to save security state: %v\n", err)
+			m.onTamper(TamperEvent{
+				CommonState: m.state.CommonState,
+				Type:        "VOLTAGE",
+				Severity:    "HIGH",
+				Description: "Voltage anomaly detected",
+				State:       m.state,
+			})
 		}
 	}
-}
-
-// Config represents the configuration for security manager
-type Config struct {
-	GPIO          metal.GPIO
-	StateStore    metal.StateStore
-	CaseSensor    string
-	MotionSensor  string
-	VoltageSensor string
-	DeviceID      string
-	OnTamper      func(metal.TamperState)
 }
