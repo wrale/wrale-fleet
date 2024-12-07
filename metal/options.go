@@ -1,5 +1,7 @@
 package metal
 
+import "time"
+
 // Common options for all hardware components
 
 // WithSimulation returns an option that enables simulation mode

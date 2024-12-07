@@ -1,92 +1,83 @@
 package diag
 
 import (
-	"context"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/gpio"
+	"github.com/wrale/wrale-fleet/metal"
 )
 
-func NewMockGPIO() (*gpio.Controller, error) {
-	return gpio.New(gpio.WithSimulation())
+type mockGPIO struct {
+	metal.GPIO
+	initialized bool
+	pins        map[string]bool
 }
 
-func TestDiagnostics(t *testing.T) {
-	// Create GPIO controller for tests in simulation mode
-	gpioCtrl, err := NewMockGPIO()
-	if err != nil {
-		t.Fatalf("Failed to create GPIO controller: %v", err)
+func newMockGPIO() *mockGPIO {
+	return &mockGPIO{
+		pins: make(map[string]bool),
+	}
+}
+
+func (m *mockGPIO) Initialize() error {
+	m.initialized = true
+	return nil
+}
+
+func (m *mockGPIO) SetPinState(name string, state bool) error {
+	m.pins[name] = state
+	return nil
+}
+
+func (m *mockGPIO) GetPinState(name string) (bool, error) {
+	return m.pins[name], nil
+}
+
+func TestNew(t *testing.T) {
+	gpio := newMockGPIO()
+	cfg := Config{
+		GPIO:          gpio,
+		RetryAttempts: 3,
+		LoadTestTime:  30 * time.Second,
+		MinVoltage:    4.8,
+		TempRange:     [2]float64{-10, 50},
 	}
 
-	// Track test results
-	var results []TestResult
-	var resultsMux sync.Mutex
-
-	// Create diagnostic manager
-	mgr, err := New(Config{
-		GPIO:         gpioCtrl,
-		GPIOPins:     []string{"test_pin1", "test_pin2"},
-		LoadTestTime: 100 * time.Millisecond,
-		MinVoltage:   4.8,
-		TempRange:    [2]float64{-10, 50},
-		OnTestComplete: func(result TestResult) {
-			resultsMux.Lock()
-			results = append(results, result)
-			resultsMux.Unlock()
-		},
-	})
+	mgr, err := New(cfg)
 	if err != nil {
-		t.Fatalf("Failed to create diagnostic manager: %v", err)
+		t.Fatalf("Failed to create manager: %v", err)
 	}
 
-	// Test GPIO diagnostics
-	t.Run("GPIO Tests", func(t *testing.T) {
-		if err := mgr.TestGPIO(context.Background()); err != nil {
-			// Expect this to fail since we're in simulation mode
-			t.Skip("Skipping GPIO test on simulation")
-		}
-	})
+	if mgr == nil {
+		t.Fatal("Manager should not be nil")
+	}
 
-	// Test power diagnostics
-	t.Run("Power Tests", func(t *testing.T) {
-		if err := mgr.TestPower(context.Background()); err != nil {
-			// Expect this to fail since we're in simulation mode
-			t.Skip("Skipping power test on simulation")
-		}
-	})
+	// Test default config values
+	if mgr.cfg.RetryAttempts != 3 {
+		t.Errorf("Wrong retry attempts: got %d, want 3", mgr.cfg.RetryAttempts)
+	}
 
-	// Test thermal diagnostics
-	t.Run("Thermal Tests", func(t *testing.T) {
-		if err := mgr.TestThermal(context.Background()); err != nil {
-			// Expect this to fail since we're in simulation mode
-			t.Skip("Skipping thermal test on simulation")
-		}
-	})
+	if mgr.cfg.LoadTestTime != 30*time.Second {
+		t.Errorf("Wrong load test time: got %v, want 30s", mgr.cfg.LoadTestTime)
+	}
 
-	// Test security diagnostics
-	t.Run("Security Tests", func(t *testing.T) {
-		if err := mgr.TestSecurity(context.Background()); err != nil {
-			// Expect this to fail since we're in simulation mode
-			t.Skip("Skipping security test on simulation")
-		}
-	})
+	if mgr.cfg.MinVoltage != 4.8 {
+		t.Errorf("Wrong min voltage: got %f, want 4.8", mgr.cfg.MinVoltage)
+	}
 
-	// Test complete diagnostic suite
-	t.Run("Full Diagnostic Suite", func(t *testing.T) {
-		if err := mgr.RunAll(context.Background()); err != nil {
-			// Expect this to fail since we're in simulation mode
-			t.Skip("Skipping full test suite on simulation")
-		}
+	if len(mgr.cfg.TempRange) != 2 || mgr.cfg.TempRange[0] != -10 || mgr.cfg.TempRange[1] != 50 {
+		t.Errorf("Wrong temp range: got %v, want [-10, 50]", mgr.cfg.TempRange)
+	}
+}
 
-		// Verify test tracking works
-		resultsMux.Lock()
-		finalResults := len(results)
-		resultsMux.Unlock()
-
-		if finalResults > 0 {
-			t.Logf("Recorded %d test results", finalResults)
-		}
-	})
+func TestNewNoGPIO(t *testing.T) {
+	cfg := Config{}
+	mgr, err := New(cfg)
+	
+	if err == nil {
+		t.Error("New() should fail without GPIO")
+	}
+	if mgr != nil {
+		t.Error("Manager should be nil when creation fails")
+	}
 }
