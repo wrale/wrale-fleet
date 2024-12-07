@@ -6,69 +6,58 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/gpio"
-	"periph.io/x/conn/v3/gpio"
-	"periph.io/x/conn/v3/physic"
+	"github.com/wrale/wrale-fleet/metal"
 )
 
-// mockPin implements a basic GPIO pin for testing
-type mockPin struct {
+// mockGPIO implements a test GPIO controller
+type mockGPIO struct {
 	sync.Mutex
-	state bool
-	pull  gpio.Pull
+	pins map[string]bool
 }
 
-func (m *mockPin) String() string         { return "mock" }
-func (m *mockPin) Halt() error            { return nil }
-func (m *mockPin) Name() string           { return "MOCK" }
-func (m *mockPin) Number() int            { return 0 }
-func (m *mockPin) Function() string       { return "In/Out" }
-func (m *mockPin) DefaultPull() gpio.Pull { return gpio.Float }
-func (m *mockPin) In(pull gpio.Pull, edge gpio.Edge) error {
-	m.Lock()
-	defer m.Unlock()
-	m.pull = pull
-	return nil
-}
-func (m *mockPin) Read() gpio.Level {
-	m.Lock()
-	defer m.Unlock()
-	if m.state {
-		return gpio.High
+func newMockGPIO() *mockGPIO {
+	return &mockGPIO{
+		pins: make(map[string]bool),
 	}
-	return gpio.Low
 }
-func (m *mockPin) Out(l gpio.Level) error {
-	m.Lock()
-	defer m.Unlock()
-	m.state = l == gpio.High
+
+func (m *mockGPIO) ConfigurePin(name string, pin uint, mode metal.PinMode) error {
 	return nil
 }
-func (m *mockPin) Pull() gpio.Pull                              { return m.pull }
-func (m *mockPin) PWM(duty gpio.Duty, f physic.Frequency) error { return nil }
-func (m *mockPin) WaitForEdge(timeout time.Duration) bool       { return true }
+
+func (m *mockGPIO) GetPinState(name string) (bool, error) {
+	m.Lock()
+	defer m.Unlock()
+	return m.pins[name], nil
+}
+
+func (m *mockGPIO) SetPinState(name string, state bool) error {
+	m.Lock()
+	defer m.Unlock()
+	m.pins[name] = state
+	return nil
+}
+
+func (m *mockGPIO) Close() error {
+	return nil
+}
+
+func (m *mockGPIO) Start(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockGPIO) Stop() error {
+	return nil
+}
 
 func TestPowerManager(t *testing.T) {
-	gpioCtrl, err := gpio.New(gpio.WithSimulation())
-	if err != nil {
-		t.Fatalf("Failed to create GPIO controller: %v", err)
-	}
-
-	mainPin := &mockPin{}
-	batteryPin := &mockPin{}
-
-	if err := gpioCtrl.ConfigurePin("main_power", mainPin, gpio.PullUp); err != nil {
-		t.Fatalf("Failed to configure main power pin: %v", err)
-	}
-	if err := gpioCtrl.ConfigurePin("battery_power", batteryPin, gpio.PullUp); err != nil {
-		t.Fatalf("Failed to configure battery power pin: %v", err)
-	}
+	gpio := newMockGPIO()
 
 	manager, err := New(Config{
-		GPIO: gpioCtrl,
-		PowerPins: map[PowerSource]string{
-			MainPower:    "main_power",
-			BatteryPower: "battery_power",
+		GPIO: gpio,
+		PowerPins: map[metal.PowerSource]string{
+			metal.MainPower:    "main_power",
+			metal.BatteryPower: "battery_power",
 		},
 		BatteryADCPath:  "/dev/null",
 		VoltageADCPath:  "/dev/null",
