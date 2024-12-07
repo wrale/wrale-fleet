@@ -4,21 +4,19 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/wrale/wrale-fleet/metal/diag/types"
 )
 
 // Manager handles hardware diagnostics and testing
 type Manager struct {
 	mux sync.RWMutex
-	cfg types.Config
+	cfg Config
 
 	// Test history
-	results []types.TestResult
+	results []TestResult
 }
 
 // New creates a new hardware diagnostics manager
-func New(cfg types.Config) (*Manager, error) {
+func New(cfg Config) (*Manager, error) {
 	if cfg.GPIO == nil {
 		return nil, fmt.Errorf("GPIO controller required")
 	}

@@ -3,10 +3,7 @@ package diag
 import (
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/gpio"
-	"github.com/wrale/wrale-fleet/metal/power"
-	"github.com/wrale/wrale-fleet/metal/thermal"
-	"github.com/wrale/wrale-fleet/metal/secure"
+	"github.com/wrale/wrale-fleet/metal"
 )
 
 // TestType identifies the type of diagnostic test
@@ -42,10 +39,10 @@ type TestResult struct {
 
 // Config defines the configuration for the diagnostics manager
 type Config struct {
-	GPIO          gpio.Controller
-	Power         *power.Manager
-	Thermal       *thermal.Monitor
-	Security      *secure.Manager
+	GPIO          metal.GPIO
+	Power         metal.PowerManager
+	Thermal       metal.ThermalManager
+	Security      metal.SecurityManager
 	GPIOPins      map[string]int
 	RetryAttempts int
 	LoadTestTime  time.Duration

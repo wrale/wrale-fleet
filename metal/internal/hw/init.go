@@ -2,9 +2,10 @@
 package hw
 
 import (
+	"context"
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/gpio"
+	"github.com/wrale/wrale-fleet/metal"
 	"github.com/wrale/wrale-fleet/metal/internal/monitors"
 )
 
@@ -15,31 +16,31 @@ type MonitorConfig struct {
 
 // securityMonitor implements hardware security monitoring
 type securityMonitor struct {
-	gpio        monitors.GPIOController
-	caseSensor  string
+	gpio         metal.GPIO
+	caseSensor   string
 	motionSensor string
-	voltSensor  string
-	state       monitors.TamperState
+	voltSensor   string
+	state        monitors.TamperState
 }
 
 // NewSecurityMonitor creates a security monitor instance
 func NewSecurityMonitor(cfg MonitorConfig) (monitors.SecurityMonitor, error) {
-	gpioCtrl, err := gpio.New()
+	gpioCtrl, err := metal.NewGPIO()
 	if err != nil {
 		return nil, err
 	}
 
 	return &securityMonitor{
-		gpio:        gpioCtrl,
-		caseSensor:  "case_tamper",
+		gpio:         gpioCtrl,
+		caseSensor:   "case_tamper",
 		motionSensor: "motion_detect",
-		voltSensor:  "voltage_mon",
+		voltSensor:   "voltage_mon",
 	}, nil
 }
 
 // thermalMonitor implements hardware thermal monitoring
 type thermalMonitor struct {
-	gpio         monitors.GPIOController
+	gpio         metal.GPIO
 	fanPin       string
 	throttlePin  string
 	cpuTemp      string
@@ -50,7 +51,7 @@ type thermalMonitor struct {
 
 // NewThermalMonitor creates a thermal monitor instance
 func NewThermalMonitor(cfg MonitorConfig) (monitors.ThermalMonitor, error) {
-	gpioCtrl, err := gpio.New()
+	gpioCtrl, err := metal.NewGPIO()
 	if err != nil {
 		return nil, err
 	}
