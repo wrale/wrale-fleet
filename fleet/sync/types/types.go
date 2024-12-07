@@ -43,27 +43,27 @@ type VersionedState struct {
 	Version   StateVersion      `json:"version"`
 	State     types.DeviceState `json:"state"`
 	Timestamp time.Time         `json:"timestamp"`
-	Source    string           `json:"source"`
+	Source    string            `json:"source"`
 }
 
 // StateChange represents a change in device state
 type StateChange struct {
-	DeviceID    DeviceID          `json:"device_id"`
-	PrevVersion StateVersion      `json:"prev_version,omitempty"`
-	NewVersion  StateVersion      `json:"new_version"`
+	DeviceID    DeviceID           `json:"device_id"`
+	PrevVersion StateVersion       `json:"prev_version,omitempty"`
+	NewVersion  StateVersion       `json:"new_version"`
 	OldState    *types.DeviceState `json:"old_state,omitempty"`
 	NewState    types.DeviceState  `json:"new_state"`
-	Timestamp   time.Time         `json:"timestamp"`
-	Source      string           `json:"source"`
+	Timestamp   time.Time          `json:"timestamp"`
+	Source      string             `json:"source"`
 }
 
 // ConfigData represents device configuration data
 type ConfigData struct {
 	Version     string                 `json:"version"`
 	Config      map[string]interface{} `json:"config"`
-	ValidFrom   time.Time             `json:"valid_from"`
-	ValidTo     time.Time             `json:"valid_to,omitempty"`
-	UpdatedAt   time.Time             `json:"updated_at"`
+	ValidFrom   time.Time              `json:"valid_from"`
+	ValidTo     time.Time              `json:"valid_to,omitempty"`
+	UpdatedAt   time.Time              `json:"updated_at"`
 	Settings    map[string]interface{} `json:"settings"`
 	Policies    map[string]interface{} `json:"policies"`
 	Constraints map[string]interface{} `json:"constraints"`
