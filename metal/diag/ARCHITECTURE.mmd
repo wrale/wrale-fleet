@@ -1,0 +1,128 @@
+```mermaid
+graph TB
+    %% Diagnostics System Overview
+    subgraph DiagSystem["Diagnostics System (metal/diag)"]
+        direction TB
+        
+        %% Core Diagnostics
+        subgraph CoreDiag["Core Diagnostics"]
+            diagManager["Diagnostics Manager"]
+            testRunner["Test Runner"]
+            resultCollector["Result Collector"]
+            metricAggregator["Metric Aggregator"]
+            
+            diagManager --> testRunner
+            testRunner --> resultCollector
+            resultCollector --> metricAggregator
+        end
+
+        %% Hardware Tests
+        subgraph HWTests["Hardware Tests"]
+            powerTests["Power Tests"]
+            thermalTests["Thermal Tests"]
+            gpioTests["GPIO Tests"]
+            storageTests["Storage Tests"]
+            networkTests["Network Tests"]
+            securityTests["Security Tests"]
+        end
+
+        %% Analysis Engine
+        subgraph Analysis["Analysis Engine"]
+            analyzer["Test Analyzer"]
+            predictor["Failure Predictor"]
+            trends["Trend Analysis"]
+            patterns["Pattern Recognition"]
+            
+            analyzer --> predictor
+            analyzer --> trends
+            predictor --> patterns
+        end
+
+        %% Reporting System
+        subgraph Reporting["Reporting System"]
+            reporter["Report Generator"]
+            alerts["Alert Manager"]
+            dashboard["Dashboard Data"]
+            history["Historical Data"]
+            
+            reporter --> alerts
+            reporter --> dashboard
+            reporter --> history
+        end
+    end
+
+    %% External Systems
+    subgraph ExternalSystems["External Systems"]
+        hwLayer["metal/hw Layer"]
+        metalCore["metal/core"]
+        fleetMgr["fleet/ Layer"]
+        userAPI["user/api"]
+    end
+
+    %% Test Flows
+    hwLayer --> powerTests
+    hwLayer --> thermalTests
+    hwLayer --> gpioTests
+    hwLayer --> storageTests
+    hwLayer --> networkTests
+    hwLayer --> securityTests
+
+    %% Result Flows
+    powerTests --> resultCollector
+    thermalTests --> resultCollector
+    gpioTests --> resultCollector
+    storageTests --> resultCollector
+    networkTests --> resultCollector
+    securityTests --> resultCollector
+
+    %% Analysis Flows
+    resultCollector --> analyzer
+    metricAggregator --> analyzer
+    analyzer --> reporter
+
+    %% Integration Flows
+    diagManager --> metalCore
+    alerts --> fleetMgr
+    dashboard --> userAPI
+
+    %% Environmental Monitors
+    subgraph Environment["Environmental Monitoring"]
+        tempMonitor["Temperature Monitor"]
+        powerMonitor["Power Monitor"]
+        envMetrics["Environmental Metrics"]
+        physicalState["Physical State"]
+        
+        tempMonitor --> envMetrics
+        powerMonitor --> envMetrics
+        envMetrics --> physicalState
+    end
+
+    %% Predictive Diagnostics
+    subgraph Predictive["Predictive Diagnostics"]
+        modelTraining["Model Training"]
+        failurePrediction["Failure Prediction"]
+        maintenance["Maintenance Planning"]
+        
+        modelTraining --> failurePrediction
+        failurePrediction --> maintenance
+    end
+
+    %% Style Definitions
+    classDef primary fill:#f9f,stroke:#333,stroke-width:2px
+    classDef test fill:#bbf,stroke:#333,stroke-width:1px
+    classDef analysis fill:#bfb,stroke:#333,stroke-width:1px
+    classDef monitor fill:#fbb,stroke:#333,stroke-width:1px
+
+    class diagManager,reporter primary
+    class powerTests,thermalTests,gpioTests,storageTests,networkTests,securityTests test
+    class analyzer,predictor,trends analysis
+    class tempMonitor,powerMonitor,envMetrics monitor
+
+    %% Notes
+    subgraph Notes["Key Diagnostic Principles"]
+        note1["1. Physical Hardware First"]
+        note2["2. Predictive Maintenance"]
+        note3["3. Environmental Context"]
+        note4["4. Real-time Monitoring"]
+    end
+```
