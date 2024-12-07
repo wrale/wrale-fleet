@@ -1,341 +1,251 @@
 package thermal
 
 import (
-	"context"
-	"fmt"
-	"sync"
-	"time"
-	
-	"github.com/wrale/wrale-fleet/metal"
-	"github.com/wrale/wrale-fleet/metal/internal/types"
+    "context"
+    "fmt"
+    "sync"
+    "time"
+
+    "github.com/wrale/wrale-fleet/metal"
 )
 
-// Manager implements thermal management and monitoring
+// Manager handles thermal monitoring and control
 type Manager struct {
-	sync.RWMutex
-	cfg       Config
-	state     ThermalState
-	curve     *CoolingCurve
-	zones     map[string]ThermalZone
-	ctx       context.Context
-	cancel    context.CancelFunc
-	fanPWM    *types.PWMConfig
-	enabled   bool
+    mux      sync.RWMutex
+    gpio     metal.GPIO
+    fanPin   string
+    state    struct {
+        temperature float64
+        fanSpeed   uint32
+        enabled    bool
+    }
+
+    // Configuration
+    minTemp  float64
+    maxTemp  float64
+    
+    // Callbacks
+    onWarning  func(float64)
+    onCritical func(float64)
+
+    // Control
+    stopChan chan struct{}
+    running  bool
 }
 
 // New creates a new thermal manager
-func New(cfg Config) (metal.ThermalManager, error) {
-	if cfg.MonitorInterval == 0 {
-		cfg.MonitorInterval = defaultMonitorInterval
-	}
-	if cfg.DefaultProfile == "" {
-		cfg.DefaultProfile = ProfileBalance
-	}
-	if cfg.FanControlPin == "" {
-		return nil, fmt.Errorf("fan control pin required")
-	}
+func New(gpio metal.GPIO, fanPin string, opts ...metal.Option) (metal.ThermalManager, error) {
+    if gpio == nil {
+        return nil, fmt.Errorf("GPIO controller required")
+    }
 
-	ctx, cancel := context.WithCancel(context.Background())
-	m := &Manager{
-		cfg:     cfg,
-		ctx:     ctx,
-		cancel:  cancel,
-		zones:   make(map[string]ThermalZone),
-		enabled: true,
-		fanPWM: &types.PWMConfig{
-			Frequency:  25000,  // 25kHz
-			DutyCycle:  0,     // Start with fan off
-			Pull:      types.PullNone,
-			Resolution: 8,     // 8-bit resolution
-		},
-	}
+    m := &Manager{
+        gpio:     gpio,
+        fanPin:   fanPin,
+        stopChan: make(chan struct{}),
+        minTemp:  40.0, // Default thresholds
+        maxTemp:  80.0,
+    }
 
-	// Set up fan control
-	if err := cfg.GPIO.ConfigurePWM(cfg.FanControlPin, 18, m.fanPWM); err != nil {
-		return nil, fmt.Errorf("failed to configure fan PWM: %v", err)
-	}
+    // Configure fan PWM
+    if err := gpio.ConfigurePWM(fanPin, 0, &metal.PWMConfig{
+        Frequency:  25000,
+        DutyCycle:  0,
+        Resolution: 8,
+    }); err != nil {
+        return nil, fmt.Errorf("failed to configure fan PWM: %w", err)
+    }
 
-	// Configure throttle pin if provided
-	if cfg.ThrottlePin != "" {
-		if err := cfg.GPIO.ConfigurePin(cfg.ThrottlePin, 17, types.ModeOutput); err != nil {
-			return nil, fmt.Errorf("failed to configure throttle pin: %v", err)
-		}
-	}
+    // Apply options
+    for _, opt := range opts {
+        if err := opt(m); err != nil {
+            return nil, fmt.Errorf("option error: %w", err)
+        }
+    }
 
-	// Set initial profile
-	m.state.Profile = cfg.DefaultProfile
-
-	// Start monitoring
-	go m.monitor()
-
-	return m, nil
-}
-
-// GetThermalState returns current thermal state
-func (m *Manager) GetThermalState() (metal.ThermalState, error) {
-	m.RLock()
-	defer m.RUnlock()
-	return m.state, nil
+    return m, nil
 }
 
 // GetState implements Monitor interface
 func (m *Manager) GetState() interface{} {
-	m.RLock()
-	defer m.RUnlock()
-	return m.state
+    m.mux.RLock()
+    defer m.mux.RUnlock()
+    return m.state
 }
 
-// GetTemperatures returns current temperature readings
-func (m *Manager) GetTemperatures() (cpu, gpu, ambient float64, err error) {
-	m.RLock()
-	defer m.RUnlock()
-	return m.state.CPUTemp, m.state.GPUTemp, m.state.AmbientTemp, nil
-}
-
-// GetProfile returns current thermal profile
-func (m *Manager) GetProfile() (metal.ThermalProfile, error) {
-	m.RLock()
-	defer m.RUnlock()
-	return metal.ThermalProfile(m.state.Profile), nil
-}
-
-// SetFanSpeed sets fan speed percentage
-func (m *Manager) SetFanSpeed(speed uint32) error {
-	if speed > 100 {
-		return fmt.Errorf("fan speed must be 0-100")
-	}
-
-	m.Lock()
-	defer m.Unlock()
-
-	if !m.enabled {
-		return fmt.Errorf("thermal management disabled")
-	}
-
-	return m.cfg.GPIO.SetPWMDutyCycle(m.cfg.FanControlPin, speed)
-}
-
-// SetThrottling enables/disables CPU throttling
-func (m *Manager) SetThrottling(enabled bool) error {
-	if m.cfg.ThrottlePin == "" {
-		return fmt.Errorf("throttle pin not configured")
-	}
-
-	m.Lock()
-	defer m.Unlock()
-
-	if !m.enabled {
-		return fmt.Errorf("thermal management disabled")
-	}
-
-	if err := m.cfg.GPIO.SetPinState(m.cfg.ThrottlePin, enabled); err != nil {
-		return fmt.Errorf("failed to set throttling: %v", err)
-	}
-
-	m.state.Throttled = enabled
-	return nil
-}
-
-// SetProfile changes thermal management profile
-func (m *Manager) SetProfile(profile metal.ThermalProfile) error {
-	m.Lock()
-	defer m.Unlock()
-
-	if !m.enabled {
-		return fmt.Errorf("thermal management disabled")
-	}
-
-	m.state.Profile = Profile(profile)
-	return nil
-}
-
-// AddZone adds a thermal zone definition
-func (m *Manager) AddZone(zone metal.ThermalZone) error {
-	m.Lock()
-	defer m.Unlock()
-
-	if !m.enabled {
-		return fmt.Errorf("thermal management disabled")
-	}
-
-	m.zones[zone.Name] = ThermalZone{
-		Name:       zone.Name,
-		MaxTemp:    zone.MaxTemp,
-		TargetTemp: zone.TargetTemp,
-		Priority:   zone.Priority,
-		Sensors:    zone.Sensors,
-	}
-	return nil
-}
-
-// GetZone returns zone configuration
-func (m *Manager) GetZone(name string) (metal.ThermalZone, error) {
-	m.RLock()
-	defer m.RUnlock()
-
-	zone, exists := m.zones[name]
-	if !exists {
-		return metal.ThermalZone{}, fmt.Errorf("zone %s not found", name)
-	}
-	return metal.ThermalZone(zone), nil
-}
-
-// ListZones returns all thermal zones
-func (m *Manager) ListZones() ([]metal.ThermalZone, error) {
-	m.RLock()
-	defer m.RUnlock()
-
-	zones := make([]metal.ThermalZone, 0, len(m.zones))
-	for _, z := range m.zones {
-		zones = append(zones, metal.ThermalZone(z))
-	}
-	return zones, nil
-}
-
-// monitor runs the thermal monitoring loop
-func (m *Manager) monitor() {
-	ticker := time.NewTicker(m.cfg.MonitorInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case <-ticker.C:
-			if err := m.update(); err != nil {
-				// TODO: Better error handling
-				continue
-			}
-		}
-	}
-}
-
-// update reads sensors and updates thermal state
-func (m *Manager) update() error {
-	m.Lock()
-	defer m.Unlock()
-
-	// Update temperatures
-	if cpu, err := readTemp(m.cfg.CPUTempPath); err == nil {
-		m.state.CPUTemp = cpu
-	}
-	if gpu, err := readTemp(m.cfg.GPUTempPath); err == nil {
-		m.state.GPUTemp = gpu
-	}
-	if ambient, err := readTemp(m.cfg.AmbientTempPath); err == nil {
-		m.state.AmbientTemp = ambient
-	}
-
-	m.state.UpdatedAt = time.Now()
-
-	// Apply thermal policy
-	if err := m.applyPolicy(); err != nil {
-		return fmt.Errorf("failed to apply thermal policy: %v", err)
-	}
-
-	return nil
-}
-
-// applyPolicy implements thermal management logic
-func (m *Manager) applyPolicy() error {
-	// Get current max temperature
-	maxTemp := m.state.CPUTemp
-	if m.state.GPUTemp > maxTemp {
-		maxTemp = m.state.GPUTemp
-	}
-
-	// Check for critical temperature
-	if maxTemp >= defaultCriticalTemp {
-		if m.cfg.OnCritical != nil {
-			m.cfg.OnCritical(m.state)
-		}
-		if err := m.SetThrottling(true); err != nil {
-			return err
-		}
-		if err := m.SetFanSpeed(maxFanSpeed); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	// Check for warning temperature
-	if maxTemp >= defaultWarningTemp {
-		if m.cfg.OnWarning != nil {
-			m.cfg.OnWarning(m.state)
-		}
-	}
-
-	// Apply cooling curve if configured
-	if m.curve != nil {
-		speed := calculateFanSpeed(maxTemp, m.curve)
-		if err := m.SetFanSpeed(speed); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// Close stops thermal monitoring and releases resources
+// Close implements Monitor interface
 func (m *Manager) Close() error {
-	m.Lock()
-	defer m.Unlock()
+    m.mux.Lock()
+    defer m.mux.Unlock()
 
-	m.enabled = false
-	m.cancel()
+    if m.running {
+        close(m.stopChan)
+        m.running = false
+    }
 
-	// Stop fan
-	if err := m.cfg.GPIO.SetPWMDutyCycle(m.cfg.FanControlPin, 0); err != nil {
-		return fmt.Errorf("failed to stop fan: %v", err)
-	}
-
-	// Disable throttling
-	if m.cfg.ThrottlePin != "" {
-		if err := m.cfg.GPIO.SetPinState(m.cfg.ThrottlePin, false); err != nil {
-			return fmt.Errorf("failed to disable throttling: %v", err)
-		}
-	}
-
-	return nil
+    // Stop fan
+    return m.gpio.SetPWMDutyCycle(m.fanPin, 0)
 }
 
-// WatchEvents implements Monitor interface
-func (m *Manager) WatchEvents(ctx context.Context) (<-chan interface{}, error) {
-	ch := make(chan interface{}, 10)
-	go func() {
-		ticker := time.NewTicker(m.cfg.MonitorInterval)
-		defer ticker.Stop()
-		defer close(ch)
+// Temperature Control
 
-		var lastState ThermalState
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				m.RLock()
-				if m.state != lastState {
-					select {
-					case ch <- m.state:
-						lastState = m.state
-					default:
-					}
-				}
-				m.RUnlock()
-			}
-		}
-	}()
-	return ch, nil
+func (m *Manager) GetTemperature() (float64, error) {
+    m.mux.RLock()
+    defer m.mux.RUnlock()
+    return m.state.temperature, nil
 }
 
-// Helper functions
+func (m *Manager) SetCoolingMode(mode string) error {
+    m.mux.Lock()
+    defer m.mux.Unlock()
 
-func readTemp(path string) (float64, error) {
-	// TODO: Implement actual temperature reading
-	return 0, nil
+    switch mode {
+    case "active":
+        m.state.enabled = true
+    case "passive":
+        m.state.enabled = false
+        // Stop fan
+        if err := m.gpio.SetPWMDutyCycle(m.fanPin, 0); err != nil {
+            return fmt.Errorf("failed to stop fan: %w", err)
+        }
+        m.state.fanSpeed = 0
+    default:
+        return fmt.Errorf("unknown cooling mode: %s", mode)
+    }
+
+    return nil
 }
 
-func calculateFanSpeed(temp float64, curve *CoolingCurve) uint32 {
-	// TODO: Implement fan curve calculation
-	return minFanSpeed
+// Fan Control
+
+func (m *Manager) GetFanSpeed() (uint32, error) {
+    m.mux.RLock()
+    defer m.mux.RUnlock()
+    return m.state.fanSpeed, nil
+}
+
+func (m *Manager) SetFanSpeed(speed uint32) error {
+    if speed > 100 {
+        return fmt.Errorf("fan speed must be 0-100")
+    }
+
+    m.mux.Lock()
+    defer m.mux.Unlock()
+
+    if !m.state.enabled {
+        return fmt.Errorf("cooling is disabled")
+    }
+
+    if err := m.gpio.SetPWMDutyCycle(m.fanPin, speed); err != nil {
+        return fmt.Errorf("failed to set fan speed: %w", err)
+    }
+
+    m.state.fanSpeed = speed
+    return nil
+}
+
+// Event Handlers
+
+func (m *Manager) OnWarning(fn func(float64)) {
+    m.mux.Lock()
+    defer m.mux.Unlock()
+    m.onWarning = fn
+}
+
+func (m *Manager) OnCritical(fn func(float64)) {
+    m.mux.Lock()
+    defer m.mux.Unlock()
+    m.onCritical = fn
+}
+
+// Monitor temperature in background
+func (m *Manager) Monitor(ctx context.Context) error {
+    m.mux.Lock()
+    if m.running {
+        m.mux.Unlock()
+        return fmt.Errorf("already monitoring")
+    }
+    m.running = true
+    m.stopChan = make(chan struct{})
+    m.mux.Unlock()
+
+    ticker := time.NewTicker(time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return ctx.Err()
+        case <-m.stopChan:
+            return nil
+        case <-ticker.C:
+            if err := m.updateTemperature(); err != nil {
+                return fmt.Errorf("failed to update temperature: %w", err)
+            }
+        }
+    }
+}
+
+// Stop monitoring
+func (m *Manager) Stop() error {
+    m.mux.Lock()
+    defer m.mux.Unlock()
+
+    if !m.running {
+        return nil
+    }
+
+    close(m.stopChan)
+    m.running = false
+    return nil
+}
+
+// Internal helpers
+
+func (m *Manager) updateTemperature() error {
+    m.mux.Lock()
+    defer m.mux.Unlock()
+
+    // Read temperature (simulation for now)
+    temp := m.state.temperature
+    temp += 0.1 // Simulated temperature rise
+
+    // Check thresholds
+    if temp >= m.maxTemp {
+        if m.onCritical != nil {
+            m.onCritical(temp)
+        }
+        // Max cooling
+        if err := m.gpio.SetPWMDutyCycle(m.fanPin, 100); err != nil {
+            return fmt.Errorf("failed to set max cooling: %w", err)
+        }
+        m.state.fanSpeed = 100
+    } else if temp >= m.minTemp {
+        if m.onWarning != nil {
+            m.onWarning(temp)
+        }
+        // Scale fan 0-100% between min and max temp
+        speed := uint32((temp - m.minTemp) / (m.maxTemp - m.minTemp) * 100)
+        if err := m.gpio.SetPWMDutyCycle(m.fanPin, speed); err != nil {
+            return fmt.Errorf("failed to set fan speed: %w", err)
+        }
+        m.state.fanSpeed = speed
+    }
+
+    m.state.temperature = temp
+    return nil
+}
+
+// Set temperature thresholds
+func (m *Manager) SetThresholds(min, max float64) error {
+    if min >= max {
+        return fmt.Errorf("minimum temperature must be less than maximum")
+    }
+
+    m.mux.Lock()
+    defer m.mux.Unlock()
+
+    m.minTemp = min
+    m.maxTemp = max
+    return nil
 }
