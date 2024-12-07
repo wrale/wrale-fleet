@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	
-	core_secure "github.com/wrale/wrale-fleet/metal/core/secure"
-	core_thermal "github.com/wrale/wrale-fleet/metal/core/thermal"
+	core_secure "github.com/wrale/wrale-fleet/metal/secure"
+	core_thermal "github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 // Device information response

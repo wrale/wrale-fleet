@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	hw "github.com/wrale/wrale-fleet/metal/hw/secure"
+	hw "github.com/wrale/wrale-fleet/metal/secure"
 )
 
 // Monitor coordinates security monitoring and policy enforcement

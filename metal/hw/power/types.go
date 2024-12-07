@@ -3,7 +3,7 @@ package power
 import (
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/hw/gpio"
+	"github.com/wrale/wrale-fleet/metal/gpio"
 )
 
 // Interface defines the required methods for power management

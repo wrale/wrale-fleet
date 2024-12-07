@@ -5,7 +5,7 @@ import (
     "testing"
     "time"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/fleet/types"
 )
 
 func TestInventory(t *testing.T) {

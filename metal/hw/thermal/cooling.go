@@ -3,7 +3,7 @@ package thermal
 import (
 	"fmt"
 
-	"github.com/wrale/wrale-fleet/metal/hw/gpio"
+	"github.com/wrale/wrale-fleet/metal/gpio"
 )
 
 // Fan speed ranges

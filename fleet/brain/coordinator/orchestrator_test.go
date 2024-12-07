@@ -6,7 +6,7 @@ import (
     "testing"
     "time"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // mockMetalClient implements MetalClient interface for testing

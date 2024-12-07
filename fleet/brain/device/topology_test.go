@@ -4,7 +4,7 @@ import (
     "context"
     "testing"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/fleet/types"
 )
 
 func TestTopologyManager(t *testing.T) {

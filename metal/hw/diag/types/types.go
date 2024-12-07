@@ -3,9 +3,9 @@ package types
 import (
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/hw/power"
-	"github.com/wrale/wrale-fleet/metal/hw/thermal"
-	"github.com/wrale/wrale-fleet/metal/hw/secure"
+	"github.com/wrale/wrale-fleet/metal/power"
+	"github.com/wrale/wrale-fleet/metal/thermal"
+	"github.com/wrale/wrale-fleet/metal/secure"
 )
 
 // GPIOController defines interface for GPIO operations

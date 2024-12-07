@@ -4,8 +4,8 @@ import (
     "context"
     "testing"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/device"
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/fleet/device"
+    "github.com/wrale/wrale-fleet/fleet/types"
 )
 
 func TestOptimizer(t *testing.T) {

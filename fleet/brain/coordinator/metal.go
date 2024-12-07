@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/types"
+	"github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // defaultMetalClient implements the MetalClient interface

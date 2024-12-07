@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	hw "github.com/wrale/wrale-fleet/metal/hw/secure"
+	hw "github.com/wrale/wrale-fleet/metal/secure"
 )
 
 // FileStore implements StateStore using the filesystem

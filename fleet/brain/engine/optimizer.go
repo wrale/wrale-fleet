@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/device"
-	"github.com/wrale/wrale-fleet/fleet/brain/types"
+	"github.com/wrale/wrale-fleet/fleet/device"
+	"github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // Optimizer implements resource optimization logic

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/hw/diag/types"
+	"github.com/wrale/wrale-fleet/metal/diag/types"
 )
 
 // Manager handles hardware diagnostics and testing

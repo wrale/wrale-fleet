@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/types"
+	"github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // Agent implements the edge agent functionality

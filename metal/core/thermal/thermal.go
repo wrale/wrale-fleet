@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	hw "github.com/wrale/wrale-fleet/metal/hw/thermal"
+	hw "github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 // Default timing values for thermal management

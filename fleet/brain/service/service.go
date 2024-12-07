@@ -3,10 +3,10 @@ package service
 import (
     "context"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/coordinator"
-    "github.com/wrale/wrale-fleet/fleet/brain/device"
-    "github.com/wrale/wrale-fleet/fleet/brain/engine"
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/fleet/coordinator"
+    "github.com/wrale/wrale-fleet/fleet/device"
+    "github.com/wrale/wrale-fleet/fleet/engine"
+    "github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // Service provides the main brain service functionality

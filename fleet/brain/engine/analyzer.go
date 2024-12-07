@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/types"
+	"github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // Analyzer implements fleet analysis and decision making

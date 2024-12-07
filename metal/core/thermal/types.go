@@ -4,7 +4,7 @@ package thermal
 import (
 	"time"
 
-	hw "github.com/wrale/wrale-fleet/metal/hw/thermal"
+	hw "github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 // ThermalProfile defines thermal behavior requirements

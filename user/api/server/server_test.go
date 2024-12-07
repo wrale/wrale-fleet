@@ -9,7 +9,7 @@ import (
     "testing"
     "time"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/fleet/types"
     apitypes "github.com/wrale/wrale-fleet/user/api/types"
 )
 

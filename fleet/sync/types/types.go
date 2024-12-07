@@ -3,7 +3,7 @@ package types
 import (
 	"time"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/types"
+	"github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // StateVersion represents a version number for state

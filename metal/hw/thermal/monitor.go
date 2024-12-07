@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/hw/gpio"
+	"github.com/wrale/wrale-fleet/metal/gpio"
 )
 
 // Monitor handles thermal hardware monitoring and control

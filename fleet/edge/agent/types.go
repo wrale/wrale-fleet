@@ -3,7 +3,7 @@ package agent
 import (
 	"time"
 
-	braintypes "github.com/wrale/wrale-fleet/fleet/brain/types"
+	braintypes "github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // Command types

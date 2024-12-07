@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/device"
-	"github.com/wrale/wrale-fleet/fleet/brain/types"
+	"github.com/wrale/wrale-fleet/fleet/device"
+	"github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // ThermalManager implements fleet-wide thermal management

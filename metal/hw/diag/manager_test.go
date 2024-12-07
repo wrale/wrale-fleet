@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/hw/gpio"
+	"github.com/wrale/wrale-fleet/metal/gpio"
 )
 
 func NewMockGPIO() (*gpio.Controller, error) {

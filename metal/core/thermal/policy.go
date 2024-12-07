@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	hw "github.com/wrale/wrale-fleet/metal/hw/thermal"
+	hw "github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 // PolicyManager handles thermal policy enforcement

@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/hw/gpio"
-	"github.com/wrale/wrale-fleet/metal/hw/power"
-	"github.com/wrale/wrale-fleet/metal/hw/secure"
-	"github.com/wrale/wrale-fleet/metal/hw/thermal"
+	"github.com/wrale/wrale-fleet/metal/gpio"
+	"github.com/wrale/wrale-fleet/metal/power"
+	"github.com/wrale/wrale-fleet/metal/secure"
+	"github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 // Server represents the main fleet-metal server

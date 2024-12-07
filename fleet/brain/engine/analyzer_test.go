@@ -5,8 +5,8 @@ import (
     "testing"
     "time"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/device"
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/fleet/device"
+    "github.com/wrale/wrale-fleet/fleet/types"
 )
 
 func TestAnalyzer(t *testing.T) {

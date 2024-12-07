@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	hw "github.com/wrale/wrale-fleet/metal/hw/secure"
+	hw "github.com/wrale/wrale-fleet/metal/secure"
 )
 
 // Default timing values

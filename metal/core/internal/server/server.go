@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"sync"
 
-	core_secure "github.com/wrale/wrale-fleet/metal/core/secure"
-	core_thermal "github.com/wrale/wrale-fleet/metal/core/thermal"
+	core_secure "github.com/wrale/wrale-fleet/metal/secure"
+	core_thermal "github.com/wrale/wrale-fleet/metal/thermal"
 )
 
 // Config contains server configuration options

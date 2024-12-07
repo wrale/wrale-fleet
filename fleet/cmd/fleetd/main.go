@@ -10,8 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/wrale/wrale-fleet/fleet/brain/coordinator"
-	"github.com/wrale/wrale-fleet/fleet/brain/service"
+	"github.com/wrale/wrale-fleet/fleet/coordinator"
+	"github.com/wrale/wrale-fleet/fleet/service"
 )
 
 var (
