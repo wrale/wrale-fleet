@@ -36,19 +36,32 @@ const (
 	SyncMerge SyncOperation = "merge"
 )
 
+// VersionedState represents a versioned device state
+type VersionedState struct {
+	Version   StateVersion      `json:"version"`
+	State     types.DeviceState `json:"state"`
+	Timestamp time.Time         `json:"timestamp"`
+	Source    string           `json:"source"`
+}
+
 // StateChange represents a change in device state
 type StateChange struct {
-	DeviceID  DeviceID         `json:"device_id"`
-	OldState  types.DeviceState `json:"old_state,omitempty"`
-	NewState  types.DeviceState `json:"new_state"`
-	Timestamp time.Time        `json:"timestamp"`
-	Source    string          `json:"source"`
+	DeviceID    DeviceID          `json:"device_id"`
+	PrevVersion StateVersion      `json:"prev_version,omitempty"`
+	NewVersion  StateVersion      `json:"new_version"`
+	OldState    types.DeviceState `json:"old_state,omitempty"`
+	NewState    types.DeviceState `json:"new_state"`
+	Timestamp   time.Time         `json:"timestamp"`
+	Source      string           `json:"source"`
 }
 
 // ConfigData represents device configuration data
 type ConfigData struct {
 	Version     string                 `json:"version"`
-	UpdatedAt   time.Time             `json:"updated_at"`
+	Config      map[string]interface{} `json:"config"`
+	ValidFrom   time.Time              `json:"valid_from"`
+	ValidTo     time.Time              `json:"valid_to,omitempty"`
+	UpdatedAt   time.Time              `json:"updated_at"`
 	Settings    map[string]interface{} `json:"settings"`
 	Policies    map[string]interface{} `json:"policies"`
 	Constraints map[string]interface{} `json:"constraints"`
@@ -58,15 +71,18 @@ type ConfigData struct {
 type StateStore interface {
 	GetState(version StateVersion) (types.DeviceState, error)
 	SetState(state types.DeviceState) error
+	SaveState(state *VersionedState) error
+	ListVersions() ([]StateVersion, error)
 	GetHistory(limit int) ([]StateChange, error)
 	GetVersion() StateVersion
 }
 
 // ConflictResolver defines interface for resolving state conflicts
 type ConflictResolver interface {
-	DetectConflicts(states []types.DeviceState) bool
-	ResolveConflicts(states []types.DeviceState) (types.DeviceState, error)
-	ValidateState(state types.DeviceState) error
+	DetectConflicts(states []VersionedState) bool
+	ResolveConflicts(states []VersionedState) (*VersionedState, error)
+	ValidateState(state *VersionedState) error
+	ValidateResolution(state *VersionedState) error
 }
 
 // ConfigManager defines interface for configuration management
