@@ -3,6 +3,8 @@ package metal
 import (
 	"context"
 	"time"
+
+	"github.com/wrale/wrale-fleet/metal/internal/types"
 )
 
 // SecurityLevel indicates the required security posture
@@ -16,7 +18,7 @@ const (
 
 // TamperState represents the current tamper detection status
 type TamperState struct {
-	CommonState
+	types.CommonState
 	CaseOpen       bool          `json:"case_open"`
 	MotionDetected bool          `json:"motion_detected"`
 	VoltageNormal  bool          `json:"voltage_normal"`
@@ -32,7 +34,7 @@ type TimeWindow struct {
 
 // SecurityManager defines the interface for security management
 type SecurityManager interface {
-	Monitor
+	types.Monitor
 
 	// State Management
 	GetState() (TamperState, error)
@@ -60,7 +62,7 @@ type SecurityManager interface {
 
 // TamperEvent represents a security violation
 type TamperEvent struct {
-	CommonState
+	types.CommonState
 	Type        string        `json:"type"`
 	Severity    SecurityLevel `json:"severity"`
 	Description string        `json:"description"`
@@ -77,7 +79,7 @@ type StateStore interface {
 
 // SecurityManagerConfig holds configuration for security management
 type SecurityManagerConfig struct {
-	GPIO            GPIOController
+	GPIO            types.GPIOController
 	StateStore      StateStore
 	CaseSensor      string
 	MotionSensor    string

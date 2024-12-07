@@ -3,6 +3,8 @@ package metal
 import (
 	"context"
 	"time"
+
+	"github.com/wrale/wrale-fleet/metal/internal/types"
 )
 
 // TestType identifies the type of diagnostic test
@@ -27,7 +29,7 @@ const (
 
 // TestResult contains the outcome of a diagnostic test
 type TestResult struct {
-	CommonState
+	types.CommonState
 	Type        TestType    `json:"type"`
 	Component   string      `json:"component"`
 	Status      TestStatus  `json:"status"`
@@ -40,7 +42,7 @@ type TestResult struct {
 
 // DiagnosticManager defines the interface for hardware diagnostics
 type DiagnosticManager interface {
-	Monitor
+	types.Monitor
 
 	// Individual Tests
 	TestGPIO(ctx context.Context) error
@@ -72,16 +74,16 @@ type DiagnosticManager interface {
 
 // DiagnosticManagerConfig holds configuration for diagnostics
 type DiagnosticManagerConfig struct {
-	GPIO          GPIOController
-	PowerManager  PowerManager
-	ThermalManager ThermalManager
+	GPIO            types.GPIOController
+	PowerManager    PowerManager
+	ThermalManager  ThermalManager
 	SecurityManager SecurityManager
-	RetryAttempts int
-	LoadTestTime  time.Duration
-	MinVoltage    float64
-	TempRange     [2]float64
-	OnTestComplete func(TestResult)
-	OnTestStart   func(TestType, string)
+	RetryAttempts   int
+	LoadTestTime    time.Duration
+	MinVoltage      float64
+	TempRange       [2]float64
+	OnTestComplete  func(TestResult)
+	OnTestStart     func(TestType, string)
 }
 
 // DiagnosticOptions holds optional test configuration

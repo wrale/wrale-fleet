@@ -3,6 +3,8 @@ package metal
 import (
 	"context"
 	"time"
+
+	"github.com/wrale/wrale-fleet/metal/internal/types"
 )
 
 // ThermalProfile defines thermal behavior requirements
@@ -17,7 +19,7 @@ const (
 
 // ThermalState represents the current thermal status
 type ThermalState struct {
-	CommonState
+	types.CommonState
 	CPUTemp      float64        `json:"cpu_temp"`      // Celsius
 	GPUTemp      float64        `json:"gpu_temp"`      // Celsius
 	AmbientTemp  float64        `json:"ambient_temp"`  // Celsius
@@ -38,7 +40,7 @@ type ThermalZone struct {
 
 // ThermalManager defines the interface for thermal management
 type ThermalManager interface {
-	Monitor
+	types.Monitor
 
 	// State Management
 	GetState() (ThermalState, error)
@@ -66,7 +68,7 @@ type ThermalManager interface {
 
 // ThermalEvent represents a thermal incident
 type ThermalEvent struct {
-	CommonState
+	types.CommonState
 	Zone        string     `json:"zone"`
 	Type        string     `json:"type"`
 	Temperature float64    `json:"temperature"`
@@ -86,7 +88,7 @@ type CoolingCurve struct {
 
 // ThermalManagerConfig holds configuration for thermal management
 type ThermalManagerConfig struct {
-	GPIO            GPIOController
+	GPIO            types.GPIOController
 	MonitorInterval time.Duration
 	FanControlPin   string
 	ThrottlePin     string

@@ -3,6 +3,8 @@ package metal
 import (
 	"context"
 	"time"
+
+	"github.com/wrale/wrale-fleet/metal/internal/types"
 )
 
 // PowerSource identifies a power supply source
@@ -16,7 +18,7 @@ const (
 
 // PowerState represents the current power system state
 type PowerState struct {
-	CommonState
+	types.CommonState
 	BatteryLevel     float64                `json:"battery_level"`      // 0-100 percent
 	Charging         bool                    `json:"charging"`
 	Voltage          float64                `json:"voltage"`           // Current voltage
@@ -29,7 +31,7 @@ type PowerState struct {
 
 // PowerManager defines the interface for power management
 type PowerManager interface {
-	Monitor
+	types.Monitor
 
 	// State Management
 	GetState() (PowerState, error)
@@ -60,7 +62,7 @@ type PowerManager interface {
 
 // PowerEvent represents a power system event
 type PowerEvent struct {
-	CommonState
+	types.CommonState
 	Source    PowerSource `json:"source"`
 	Type      string     `json:"type"`
 	Reading   float64    `json:"reading"`
@@ -70,7 +72,7 @@ type PowerEvent struct {
 
 // PowerManagerConfig holds configuration for power management
 type PowerManagerConfig struct {
-	GPIO            GPIOController
+	GPIO            types.GPIOController
 	MonitorInterval time.Duration
 	PowerPins       map[PowerSource]string
 	VoltageMin      float64
