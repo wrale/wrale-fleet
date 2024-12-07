@@ -56,7 +56,7 @@ dev-tools: ## Install development tools
 	@go install github.com/swaggo/swag/cmd/swag@latest
 
 # Help system
-help: ## Show this help
+help: ## Show available targets
 	@echo "Wrale Fleet v$(BUILD_VERSION) - Main targets:"
 	@echo
 	@echo "Component Management:"
@@ -77,11 +77,14 @@ help: ## Show this help
 	@echo "Release:"
 	@echo "  release      - Create a new release (requires VERSION=v1.2.3)"
 	@echo
-	@echo "Component-specific help:"
+	@echo "Components:"
+	@echo "The following components are available:"
 	@for dir in $(COMPONENTS); do \
-		echo "\n$$dir:"; \
-		$(MAKE) -C $$dir help 2>/dev/null || echo "  No help available"; \
+		echo "  $$dir"; \
 	done
+	@echo
+	@echo "For component-specific help, run 'make help' in the component directory"
+	@echo "Example: cd fleet && make help"
 
 # Default target
 .DEFAULT_GOAL := help
