@@ -1,0 +1,84 @@
+```mermaid
+graph TB
+    subgraph ThermalSystem["Thermal Management System (metal/thermal)"]
+        direction TB
+        
+        subgraph ThermalCore["Thermal Core"]
+            thermalMgr["Thermal Manager"]
+            stateTracker["State Tracker"]
+            policyEngine["Policy Engine"]
+            safetyMonitor["Safety Monitor"]
+            
+            thermalMgr --> stateTracker
+            stateTracker --> policyEngine
+            policyEngine --> safetyMonitor
+        end
+
+        subgraph CoolingSystem["Cooling System"]
+            fanControl["Fan Control"]
+            coolingPolicy["Cooling Policy"]
+            airflow["Airflow Management"]
+            zoneControl["Zone Control"]
+            
+            fanControl --> coolingPolicy
+            coolingPolicy --> airflow
+            airflow --> zoneControl
+        end
+
+        subgraph Monitoring["Temperature Monitoring"]
+            sensorMgr["Sensor Manager"]
+            tempTracking["Temperature Tracking"]
+            heatMap["Heat Mapping"]
+            prediction["Thermal Prediction"]
+            
+            sensorMgr --> tempTracking
+            tempTracking --> heatMap
+            heatMap --> prediction
+        end
+
+        subgraph Protection["Thermal Protection"]
+            throttling["Thermal Throttling"]
+            shutdown["Emergency Shutdown"]
+            recovery["Thermal Recovery"]
+            alerts["Thermal Alerts"]
+            
+            throttling --> shutdown
+            throttling --> recovery
+            recovery --> alerts
+        end
+    end
+
+    subgraph ExternalSystems["External Systems"]
+        hwSensors["Hardware Sensors"]
+        powerMgmt["Power Management"]
+        metalCore["Metal Core"]
+    end
+
+    %% Integration Flows
+    hwSensors --> sensorMgr
+    powerMgmt --> thermalMgr
+    metalCore --> policyEngine
+
+    %% Control Flows
+    safetyMonitor --> throttling
+    prediction --> coolingPolicy
+    heatMap --> zoneControl
+
+    classDef core fill:#f9f,stroke:#333,stroke-width:2px
+    classDef cooling fill:#bbf,stroke:#333,stroke-width:1px
+    classDef monitor fill:#bfb,stroke:#333,stroke-width:1px
+    classDef protection fill:#fbb,stroke:#333,stroke-width:2px
+
+    class thermalMgr,stateTracker,policyEngine core
+    class fanControl,coolingPolicy,airflow cooling
+    class sensorMgr,tempTracking,heatMap monitor
+    class throttling,shutdown,recovery protection
+
+    %% Notes
+    subgraph Notes["Thermal Principles"]
+        note1["1. Temperature Safety"]
+        note2["2. Efficient Cooling"]
+        note3["3. Predictive Control"]
+        note4["4. Zone Management"]
+    end
+```

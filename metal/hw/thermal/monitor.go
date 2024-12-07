@@ -9,7 +9,7 @@ import (
 	"github.com/wrale/wrale-fleet-metal-hw/gpio"
 )
 
-// Monitor handles thermal monitoring and control
+// Monitor handles thermal hardware monitoring and control
 type Monitor struct {
 	mux   sync.RWMutex
 	state ThermalState
@@ -26,8 +26,7 @@ type Monitor struct {
 
 	// Configuration
 	monitorInterval time.Duration
-	onWarning       func(ThermalState)
-	onCritical      func(ThermalState)
+	onStateChange   func(ThermalState)
 }
 
 // New creates a new thermal monitor
@@ -49,8 +48,7 @@ func New(cfg Config) (*Monitor, error) {
 		gpuTemp:         cfg.GPUTempPath,
 		ambientTemp:     cfg.AmbientTempPath,
 		monitorInterval: cfg.MonitorInterval,
-		onWarning:       cfg.OnWarning,
-		onCritical:      cfg.OnCritical,
+		onStateChange:   cfg.OnStateChange,
 	}
 
 	if m.fanPin != "" {
@@ -69,7 +67,7 @@ func (m *Monitor) GetState() ThermalState {
 	return m.state
 }
 
-// Monitor starts monitoring thermal state in the background
+// Monitor starts continuous hardware monitoring
 func (m *Monitor) Monitor(ctx context.Context) error {
 	ticker := time.NewTicker(m.monitorInterval)
 	defer ticker.Stop()
@@ -84,15 +82,4 @@ func (m *Monitor) Monitor(ctx context.Context) error {
 			}
 		}
 	}
-}
-
-// SetFanSpeed sets the fan speed to a specific percentage
-func (m *Monitor) SetFanSpeed(speed uint32) error {
-	m.mux.Lock()
-	defer m.mux.Unlock()
-
-	if err := m.setFanSpeedLocked(speed); err != nil {
-		return fmt.Errorf("failed to set fan speed: %w", err)
-	}
-	return nil
 }

@@ -1,0 +1,102 @@
+```mermaid
+graph TB
+    subgraph FleetSystem["Fleet Management System (fleet/)"]
+        direction TB
+        
+        subgraph BrainSystem["Brain System"]
+            coordinator["Fleet Coordinator"]
+            orchestrator["Orchestrator"]
+            scheduler["Task Scheduler"]
+            stateManager["State Manager"]
+            
+            coordinator --> orchestrator
+            orchestrator --> scheduler
+            scheduler --> stateManager
+        end
+
+        subgraph EdgeSystem["Edge System"]
+            deviceMgr["Device Manager"]
+            deployMgr["Deployment Manager"]
+            healthCheck["Health Checker"]
+            resourceMgr["Resource Manager"]
+            
+            deviceMgr --> deployMgr
+            deployMgr --> healthCheck
+            healthCheck --> resourceMgr
+        end
+
+        subgraph SyncSystem["Sync System"]
+            syncMgr["Sync Manager"]
+            configSync["Config Sync"]
+            stateSync["State Sync"]
+            dataSync["Data Sync"]
+            
+            syncMgr --> configSync
+            configSync --> stateSync
+            stateSync --> dataSync
+        end
+
+        subgraph PhysicalOps["Physical Operations"]
+            locationMgr["Location Manager"]
+            powerControl["Power Control"]
+            thermalMgr["Thermal Manager"]
+            maintenanceMgr["Maintenance"]
+            
+            locationMgr --> powerControl
+            powerControl --> thermalMgr
+            thermalMgr --> maintenanceMgr
+        end
+
+        subgraph Integration["Integration Layer"]
+            metalClient["Metal Client"]
+            userClient["User Client"]
+            eventBus["Event Bus"]
+            metrics["Metrics System"]
+            
+            metalClient --> eventBus
+            userClient --> eventBus
+            eventBus --> metrics
+        end
+    end
+
+    subgraph External["External Systems"]
+        metal["metal/ Layer"]
+        user["user/ Layer"]
+        hardware["Physical Hardware"]
+    end
+
+    %% Integration Flows
+    metal --> metalClient
+    user --> userClient
+    hardware --> PhysicalOps
+
+    %% Control Flows
+    coordinator --> deviceMgr
+    orchestrator --> syncMgr
+    stateManager --> metrics
+
+    %% Physical Flows
+    locationMgr --> BrainSystem
+    powerControl --> EdgeSystem
+    thermalMgr --> SyncSystem
+
+    classDef brain fill:#f9f,stroke:#333,stroke-width:2px
+    classDef edge fill:#bbf,stroke:#333,stroke-width:1px
+    classDef sync fill:#bfb,stroke:#333,stroke-width:1px
+    classDef physical fill:#fbb,stroke:#333,stroke-width:2px
+    classDef integration fill:#ddd,stroke:#333,stroke-width:1px
+
+    class coordinator,orchestrator,scheduler brain
+    class deviceMgr,deployMgr,healthCheck edge
+    class syncMgr,configSync,stateSync sync
+    class locationMgr,powerControl,thermalMgr physical
+    class metalClient,userClient,eventBus integration
+
+    %% Notes
+    subgraph FleetPrinciples["Fleet Management Principles"]
+        note1["1. Physical-First Coordination"]
+        note2["2. Distributed Control"]
+        note3["3. State Consistency"]
+        note4["4. Safety Guarantees"]
+    end
+```
