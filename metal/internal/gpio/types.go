@@ -1,39 +1,51 @@
 package gpio
 
-import "periph.io/x/conn/v3/gpio"
+import (
+	"sync"
+	"time"
 
-// Pull specifies the pull up/down state for GPIO pins
-type Pull = gpio.Pull
-
-const (
-	// PullNone specifies no pull up/down
-	PullNone = gpio.Float
+	"github.com/wrale/wrale-fleet/metal/internal/types"
 )
 
-// PWMConfig holds PWM pin configuration
-type PWMConfig struct {
-	// PWM frequency in Hz
-	Frequency uint32
-
-	// Initial duty cycle (0-100)
-	DutyCycle uint32
-
-	// Pull up/down configuration
-	Pull gpio.Pull
+// simPin represents a simulated GPIO pin for testing
+type simPin struct {
+	mu        sync.RWMutex
+	value     bool
+	mode      types.PinMode
+	pwmConfig *types.PWMConfig
+	interrupt chan bool
 }
 
-// Options configures GPIO controller behavior
-type Options struct {
-	// SimulationMode bypasses hardware initialization
-	SimulationMode bool
+func newSimPin() *simPin {
+	return &simPin{
+		interrupt: make(chan bool, 1),
+	}
 }
 
-// Option is a function that configures Options
-type Option func(*Options)
+// pin represents a physical GPIO pin
+type pin struct {
+	name      string
+	mode      types.PinMode
+	pwmConfig *types.PWMConfig
+	value     bool
+}
 
-// WithSimulation enables simulation mode
-func WithSimulation() Option {
-	return func(opts *Options) {
-		opts.SimulationMode = true
+// Constants for pin configuration
+const (
+	defaultFrequency    = 1000  // Default PWM frequency in Hz
+	defaultDutyCycle    = 0     // Default duty cycle (0-100)
+	defaultResolution   = 8     // Default PWM resolution in bits
+	maxFrequency       = 50000 // Maximum PWM frequency in Hz
+	maxDutyCycle       = 100   // Maximum duty cycle
+	maxResolution      = 16    // Maximum PWM resolution in bits
+)
+
+// defaultPWMConfig returns standard PWM configuration
+func defaultPWMConfig() *types.PWMConfig {
+	return &types.PWMConfig{
+		Frequency:  defaultFrequency,
+		DutyCycle:  defaultDutyCycle,
+		Pull:      types.PullNone,
+		Resolution: defaultResolution,
 	}
 }

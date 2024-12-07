@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wrale/wrale-fleet/metal"
+	"github.com/wrale/wrale-fleet/metal/internal/types"
 )
 
 // Controller manages GPIO pins and their states
@@ -19,13 +20,6 @@ type Controller struct {
 
 	// Simulated state
 	simPins map[string]*simPin
-}
-
-type pin struct {
-	name      string
-	mode      metal.PinMode
-	pwmConfig *metal.PWMConfig
-	value     bool
 }
 
 // New creates a new GPIO controller
@@ -48,7 +42,7 @@ func New(opts ...metal.Option) (metal.GPIO, error) {
 }
 
 // ConfigurePin sets up a GPIO pin
-func (c *Controller) ConfigurePin(name string, pinNum uint, mode metal.PinMode) error {
+func (c *Controller) ConfigurePin(name string, pinNum uint, mode types.PinMode) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
@@ -66,7 +60,7 @@ func (c *Controller) ConfigurePin(name string, pinNum uint, mode metal.PinMode) 
 }
 
 // ConfigurePWM sets up a PWM output
-func (c *Controller) ConfigurePWM(name string, pinNum uint, config *metal.PWMConfig) error {
+func (c *Controller) ConfigurePWM(name string, pinNum uint, config *types.PWMConfig) error {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
@@ -76,7 +70,7 @@ func (c *Controller) ConfigurePWM(name string, pinNum uint, config *metal.PWMCon
 
 	p := &pin{
 		name:      name,
-		mode:      metal.ModePWM,
+		mode:      types.ModePWM,
 		pwmConfig: config,
 	}
 
@@ -94,7 +88,7 @@ func (c *Controller) SetPinState(name string, state bool) error {
 		return fmt.Errorf("pin %s not found", name)
 	}
 
-	if p.mode != metal.ModeOutput {
+	if p.mode != types.ModeOutput {
 		return fmt.Errorf("pin %s not configured for output", name)
 	}
 
@@ -125,7 +119,7 @@ func (c *Controller) SetPWMDutyCycle(name string, duty uint32) error {
 		return fmt.Errorf("pin %s not found", name)
 	}
 
-	if p.mode != metal.ModePWM {
+	if p.mode != types.ModePWM {
 		return fmt.Errorf("pin %s not configured for PWM", name)
 	}
 
@@ -133,7 +127,7 @@ func (c *Controller) SetPWMDutyCycle(name string, duty uint32) error {
 		return fmt.Errorf("pin %s PWM not configured", name)
 	}
 
-	if duty > 100 {
+	if duty > maxDutyCycle {
 		return fmt.Errorf("duty cycle must be 0-100")
 	}
 
@@ -142,7 +136,7 @@ func (c *Controller) SetPWMDutyCycle(name string, duty uint32) error {
 }
 
 // WatchPin sets up pin change monitoring
-func (c *Controller) WatchPin(name string, mode metal.PinMode) (<-chan bool, error) {
+func (c *Controller) WatchPin(name string, mode types.PinMode) (<-chan bool, error) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
@@ -183,11 +177,91 @@ func (c *Controller) Close() error {
 
 	// Reset all pins to safe state
 	for _, p := range c.pins {
-		if p.mode == metal.ModeOutput {
+		if p.mode == types.ModeOutput {
 			p.value = false
 		}
 	}
 
 	c.enabled = false
 	return nil
+}
+
+// CreatePinGroup creates a group of pins
+func (c *Controller) CreatePinGroup(name string, pins []uint) error {
+	// TODO: Implement pin grouping
+	return nil
+}
+
+// SetGroupState sets state for a pin group
+func (c *Controller) SetGroupState(name string, states []bool) error {
+	// TODO: Implement group state setting
+	return nil
+}
+
+// GetGroupState gets state for a pin group
+func (c *Controller) GetGroupState(name string) ([]bool, error) {
+	// TODO: Implement group state getting
+	return nil, nil
+}
+
+// GetPinMode gets the mode of a pin
+func (c *Controller) GetPinMode(name string) (types.PinMode, error) {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	p, exists := c.pins[name]
+	if !exists {
+		return "", fmt.Errorf("pin %s not found", name)
+	}
+
+	return p.mode, nil
+}
+
+// GetPinConfig gets the PWM config of a pin
+func (c *Controller) GetPinConfig(name string) (*types.PWMConfig, error) {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	p, exists := c.pins[name]
+	if !exists {
+		return nil, fmt.Errorf("pin %s not found", name)
+	}
+
+	if p.mode != types.ModePWM {
+		return nil, fmt.Errorf("pin %s not in PWM mode", name)
+	}
+
+	return p.pwmConfig, nil
+}
+
+// ListPins returns all configured pin names
+func (c *Controller) ListPins() []string {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+
+	pins := make([]string, 0, len(c.pins))
+	for name := range c.pins {
+		pins = append(pins, name)
+	}
+	return pins
+}
+
+// Simulation control
+func (c *Controller) SetSimulated(simulated bool) {
+	c.simulation = simulated
+}
+
+func (c *Controller) IsSimulated() bool {
+	return c.simulation
+}
+
+// Monitor interface
+func (c *Controller) GetState() interface{} {
+	// Return current GPIO state
+	return nil
+}
+
+func (c *Controller) WatchEvents(ctx context.Context) (<-chan interface{}, error) {
+	// Return GPIO event channel
+	return nil, nil
 }
