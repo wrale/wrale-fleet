@@ -2,74 +2,54 @@ package diag
 
 import (
 	"time"
-	
+
 	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 	"github.com/wrale/wrale-fleet/metal/hw/power"
 	"github.com/wrale/wrale-fleet/metal/hw/thermal"
 	"github.com/wrale/wrale-fleet/metal/hw/secure"
 )
 
-// TestType represents the type of diagnostic test
-type TestType string
+// TestType identifies the type of diagnostic test
+type TestType int
 
 const (
-	// TestGPIO represents GPIO diagnostic test
-	TestGPIO TestType = "gpio"
-	// TestPower represents power diagnostic test 
-	TestPower TestType = "power"
-	// TestThermal represents thermal diagnostic test
-	TestThermal TestType = "thermal"
-	// TestSecurity represents security diagnostic test
-	TestSecurity TestType = "security"
+	TestGPIO TestType = iota
+	TestPower
+	TestThermal
+	TestSecurity
 )
 
-// TestStatus represents the status of a test result
-type TestStatus string
+// TestStatus represents the result status of a test
+type TestStatus int
 
 const (
-	// StatusPass indicates test passed
-	StatusPass TestStatus = "pass"
-	// StatusFail indicates test failed 
-	StatusFail TestStatus = "fail"
-	// StatusWarning indicates test warning
-	StatusWarning TestStatus = "warning"
-	// StatusSkipped indicates test was skipped
-	StatusSkipped TestStatus = "skipped"
+	StatusPass TestStatus = iota
+	StatusFail
+	StatusWarning
 )
 
-// Config represents diagnostic configuration
-type Config struct {
-	// Hardware controllers
-	GPIO         *gpio.Controller       // GPIO controller
-	GPIOPins     map[string]int        // Map of pin names to numbers
-	Power        power.Manager         // Power subsystem manager
-	Thermal      thermal.Monitor       // Thermal subsystem monitor
-	Security     secure.Manager        // Security subsystem manager
-
-	// Test configuration
-	EnabledTests  []TestType           // List of enabled test types
-	Thresholds    map[string]float64   // Test-specific thresholds
-	RetryAttempts int                  // Number of test retries
-	TestInterval  time.Duration        // Interval between tests
-
-	// Hardware specific settings
-	LoadTestTime  time.Duration        // Duration for load tests
-	MinVoltage    float64             // Minimum acceptable voltage
-	TempRange     [2]float64          // Acceptable temperature range [min, max]
-
-	// Callbacks
-	OnTestComplete func(TestResult)    // Callback for test completion
+// TestResult captures the outcome of a diagnostic test
+type TestResult struct {
+	Type        TestType
+	Component   string
+	Status      TestStatus
+	Description string
+	Reading     float64
+	Expected    float64
+	Error       error
+	Timestamp   time.Time
 }
 
-// TestResult represents the result of a diagnostic test
-type TestResult struct {
-	Type          TestType            // Type of test performed
-	Status        TestStatus          // Test result status
-	Timestamp     time.Time           // When the test was performed
-	Component     string              // Component being tested
-	Description   string              // Test description
-	Reading       float64             // Actual reading (if applicable)
-	Expected      float64             // Expected value (if applicable)
-	Error         error               // Error details if test failed
-	Measurements  map[string]float64  // Additional measurements
+// Config defines the configuration for the diagnostics manager
+type Config struct {
+	GPIO          gpio.Controller
+	Power         *power.Manager
+	Thermal       *thermal.Monitor
+	Security      *secure.Manager
+	GPIOPins      map[string]int
+	RetryAttempts int
+	LoadTestTime  time.Duration
+	MinVoltage    float64
+	TempRange     [2]float64
+	OnTestComplete func(TestResult)
 }
