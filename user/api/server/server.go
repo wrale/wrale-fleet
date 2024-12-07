@@ -10,7 +10,7 @@ import (
 
     "github.com/gorilla/mux"
     
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/fleet/types"
     "github.com/wrale/wrale-fleet/user/api/service"
     apitypes "github.com/wrale/wrale-fleet/user/api/types"
 )

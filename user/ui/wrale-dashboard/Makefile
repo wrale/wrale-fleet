@@ -11,7 +11,7 @@ HELP_EXTRA := "Development Note: Run 'make dev' to start development server with
 
 # Include UI base template
 include $(MAKEFILES_DIR)/templates/ui.mk
-$(eval $(UI_BASE_TEMPLATE))
+$(eval $(UI_TEMPLATE))
 
 # Component-specific targets
 .PHONY: storybook

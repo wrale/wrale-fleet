@@ -3,7 +3,7 @@ package agent
 import (
 	"time"
 
-	braintypes "github.com/wrale/wrale-fleet/fleet/brain/types"
+	braintypes "github.com/wrale/wrale-fleet/fleet/types"
 )
 
 // Command types
@@ -66,7 +66,7 @@ type CommandResult struct {
 // MetalClient interface for metal layer communication
 type MetalClient interface {
 	GetMetrics() (braintypes.DeviceMetrics, error)
-	GetThermalState() (*braintypes.ThermalMetrics, error)
+	GetThermalState() (*braintypes.DeviceMetrics, error)
 	UpdateThermalPolicy(policy braintypes.ThermalPolicy) error
 	SetFanSpeed(speed uint32) error
 	SetThrottling(enabled bool) error
@@ -80,7 +80,7 @@ type MetalClient interface {
 type BrainClient interface {
 	GetCommands() ([]Command, error)
 	SyncState(state braintypes.DeviceState) error
-	SyncThermalState(state *braintypes.ThermalMetrics) error
+	SyncThermalState(state *braintypes.DeviceMetrics) error
 	ReportCommandResult(result CommandResult) error
 	ReportHealth(healthy bool, diagnostics map[string]interface{}) error
 }

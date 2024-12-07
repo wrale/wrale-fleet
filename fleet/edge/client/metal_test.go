@@ -2,49 +2,63 @@ package client
 
 import (
 	"testing"
-	"time"
 
-	"github.com/wrale/wrale-fleet/metal/hw/power"
+	"github.com/wrale/wrale-fleet/metal/power"
 )
 
-func TestMetalClient_Basic(t *testing.T) {
-	client := NewMetalClient("http://localhost:8080")
-
-	t.Run("Power State Updates", func(t *testing.T) {
-		powerState := &power.PowerState{
-			State:     "standby",
-			UpdatedAt: time.Now(),
-		}
-
-		if err := client.UpdatePowerState(powerState); err != nil {
-			t.Errorf("Failed to update power state: %v", err)
-		}
-
-		// Get current state to verify
-		state, err := client.GetPowerState()
-		if err != nil {
-			t.Errorf("Failed to get power state: %v", err)
-		}
-
-		if state.State != powerState.State {
-			t.Errorf("Power state mismatch - got: %v, want: %v",
-				state.State, powerState.State)
-		}
-	})
+type mockPowerManager struct {
+	state power.PowerState
 }
 
-func TestMetalClient_ErrorHandling(t *testing.T) {
-	// Use invalid URL to force errors
-	client := NewMetalClient("http://invalid-host:9999")
+// Ensure mockPowerManager implements necessary interface
+var _ power.Manager = (*mockPowerManager)(nil)
 
-	t.Run("Power State Error", func(t *testing.T) {
-		powerState := &power.PowerState{
-			State:     "standby",
-			UpdatedAt: time.Now(),
-		}
+func (m *mockPowerManager) GetState() power.PowerState {
+	return m.state
+}
 
-		if err := client.UpdatePowerState(powerState); err == nil {
-			t.Error("Expected error for invalid host")
-		}
-	})
+func TestGetPowerState(t *testing.T) {
+	mockPower := &mockPowerManager{
+		state: power.PowerState{
+			Voltage: 5.0,
+			Current: 1.0,
+		},
+	}
+
+	client := NewMetalClient(mockPower)
+	if client == nil {
+		t.Fatal("failed to create metal client")
+	}
+
+	state, err := client.GetPowerState()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	if state == nil {
+		t.Fatal("expected non-nil state")
+	}
+
+	if state.Voltage != 5.0 {
+		t.Errorf("expected voltage 5.0, got %v", state.Voltage)
+	}
+
+	if state.Current != 1.0 {
+		t.Errorf("expected current 1.0, got %v", state.Current)
+	}
+}
+
+func TestGetPowerStateNilManager(t *testing.T) {
+	client := NewMetalClient(nil)
+	if client == nil {
+		t.Fatal("failed to create metal client")
+	}
+
+	state, err := client.GetPowerState()
+	if err == nil {
+		t.Error("expected error for nil power manager")
+	}
+	if state != nil {
+		t.Error("expected nil state for nil power manager")
+	}
 }
