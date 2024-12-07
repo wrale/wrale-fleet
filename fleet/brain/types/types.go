@@ -12,12 +12,14 @@ type TaskID string
 
 // Task represents a scheduled operation
 type Task struct {
-	ID       TaskID    `json:"id"`
-	Type     string    `json:"type"`
-	Priority int       `json:"priority"`
-	Deadline time.Time `json:"deadline"`
-	Device   DeviceID  `json:"device"`
-	Payload  interface{} `json:"payload"`
+	ID        TaskID      `json:"id"`
+	Type      string      `json:"type"`
+	Priority  int         `json:"priority"`
+	Deadline  time.Time   `json:"deadline"`
+	DeviceIDs []DeviceID  `json:"device_ids"` // Multiple devices
+	Operation string      `json:"operation"`   // Operation type
+	Device    DeviceID    `json:"device"`     // Single device (legacy)
+	Payload   interface{} `json:"payload"`
 }
 
 // DeviceState represents current device state
