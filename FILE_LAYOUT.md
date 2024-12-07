@@ -1,4 +1,4 @@
-# Wrale Fleet v1.0 Layout Guide
+# Wrale Fleet Layout Guide
 
 ## 1. Top-Level Structure
 
