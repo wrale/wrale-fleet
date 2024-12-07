@@ -1,31 +1,46 @@
 # Metal Daemon Makefile
 # Hardware access and control service implementation
 
-COMPONENT_NAME := wrale-metal
-COMPONENT_DESCRIPTION := Metal Hardware Layer
-MAKEFILES_DIR := ../Makefiles
+.PHONY: all build test verify clean test-hw sim verify-hw
 
 # Build configuration
-MAIN_PACKAGE := ./cmd/metald
 BINARY_NAME := metald
+BUILD_DIR := build
 
-include $(MAKEFILES_DIR)/templates/go/daemon.mk
-$(eval $(GO_DAEMON_TEMPLATE))
+all: verify build test
 
-# Hardware testing targets
-.PHONY: test-hw sim verify-hw
+build: ## Build metal daemon
+	@echo "Building metal daemon..."
+	@go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/metald
 
-test-hw: ## Run hardware-specific tests (requires real hardware)
-	$(call show_progress,"Running hardware tests...")
-	$(GO_ENV) $(GO) test -v -tags=hardware \
-		-timeout=10m ./hw/... ./gpio/... ./thermal/...
+test: ## Run tests
+	@echo "Testing metal package..."
+	@go test -race ./...
 
-sim: ## Run tests with hardware simulation
-	$(call show_progress,"Running simulated tests...")
-	$(GO_ENV) $(GO) test -v -tags=simulation ./...
+verify: ## Run verification
+	@echo "Verifying metal package..."
+	@go vet ./...
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run --timeout=5m; \
+	fi
 
-verify-hw: ## Verify hardware configuration
-	$(call show_progress,"Verifying hardware setup...")
+clean: ## Clean build artifacts
+	@echo "Cleaning metal package..."
+	@rm -rf $(BUILD_DIR)
+	@rm -f coverage.out
+	@go clean
+
+# Hardware-specific targets
+test-hw: ## Run hardware tests (requires device)
+	@echo "Running hardware tests..."
+	@go test -v -tags=hardware ./...
+
+sim: ## Run with hardware simulation
+	@echo "Running simulated tests..."
+	@go test -v -tags=simulation ./...
+
+verify-hw: build ## Verify hardware setup
+	@echo "Verifying hardware configuration..."
 	@if [ -x "$(BUILD_DIR)/$(BINARY_NAME)" ]; then \
 		sudo $(BUILD_DIR)/$(BINARY_NAME) verify; \
 	else \
