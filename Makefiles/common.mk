@@ -66,8 +66,15 @@ deps: ## Download and tidy dependencies
 verify: fmt lint test coverage ## Run all verifications
 
 # Helper function to generate help output
+# This version properly handles duplicates and template includes
 define HELP_FUNCTION
-    @grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+    @echo "$(shell basename $(CURDIR)) - Available targets:"
+    @echo
+    @echo "Standard targets:"
+    @grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILES_DIR)/templates/*.mk | sed 's/^[^:]*://g' | sort -u | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+    @echo
+    @echo "Component targets:"
+    @grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -v "$(MAKEFILES_DIR)" | sort -u | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 endef
 
 # Version information target
