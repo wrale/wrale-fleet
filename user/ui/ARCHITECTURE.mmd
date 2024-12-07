@@ -1,0 +1,120 @@
+```mermaid
+graph TB
+    %% UI Layer Overview
+    subgraph UILayer["User Interface Layer (user/ui)"]
+        direction TB
+        
+        %% Core Application
+        subgraph Core["Core Application"]
+            router["Next.js Router"]
+            layout["Layout System"]
+            errorBoundary["Error Boundaries"]
+            loadingState["Loading States"]
+            
+            router --> layout
+            layout --> errorBoundary
+            layout --> loadingState
+        end
+
+        %% Physical Management UI
+        subgraph PhysicalUI["Physical Management"]
+            physicalMap["Physical Map"]
+            rackView["Rack View"]
+            deviceGrid["Device Grid"]
+            locationMgr["Location Manager"]
+            
+            physicalMap --> rackView
+            rackView --> deviceGrid
+            deviceGrid --> locationMgr
+        end
+
+        %% Device Management
+        subgraph DeviceUI["Device Management"]
+            deviceList["Device List"]
+            deviceDetails["Device Details"]
+            deviceMetrics["Device Metrics"]
+            deviceControl["Device Controls"]
+            
+            deviceList --> deviceDetails
+            deviceDetails --> deviceMetrics
+            deviceMetrics --> deviceControl
+        end
+
+        %% Monitoring & Analytics
+        subgraph Monitoring["Monitoring"]
+            dashboard["Dashboard"]
+            analytics["Analytics"]
+            alerts["Alert System"]
+            metrics["Metrics Display"]
+            
+            dashboard --> analytics
+            analytics --> alerts
+            alerts --> metrics
+        end
+
+        %% Settings & Configuration
+        subgraph Settings["Settings"]
+            configUI["Configuration"]
+            maintenance["Maintenance"]
+            network["Network"]
+            policies["Policies"]
+            
+            configUI --> maintenance
+            maintenance --> network
+            network --> policies
+        end
+    end
+
+    %% External Systems
+    subgraph Integration["Integration"]
+        apiClient["API Client"]
+        metalService["Metal Service"]
+        realtime["Real-time Updates"]
+    end
+
+    %% State Management
+    subgraph State["State Management"]
+        deviceState["Device State"]
+        uiState["UI State"]
+        errorState["Error State"]
+    end
+
+    %% Services Layer
+    subgraph Services["Services"]
+        validation["Validation"]
+        formHandling["Form Handling"]
+        errorHandling["Error Handling"]
+    end
+
+    %% Data Flow
+    apiClient --> deviceState
+    metalService --> physicalMap
+    realtime --> metrics
+
+    %% Style Definitions
+    classDef core fill:#f9f,stroke:#333,stroke-width:2px
+    classDef physical fill:#fbb,stroke:#333,stroke-width:2px
+    classDef monitoring fill:#bbf,stroke:#333,stroke-width:1px
+    classDef service fill:#bfb,stroke:#333,stroke-width:1px
+
+    class router,layout core
+    class physicalMap,rackView,deviceGrid physical
+    class dashboard,analytics,metrics monitoring
+    class validation,formHandling,errorHandling service
+
+    %% Notes
+    subgraph UIPrinciples["UI Principles"]
+        note1["1. Physical-First Visualization"]
+        note2["2. Real-time Updates"]
+        note3["3. Safety-Conscious Controls"]
+        note4["4. Intuitive Operation"]
+    end
+
+    %% Components
+    subgraph Components["Shared Components"]
+        forms["Form Components"]
+        tables["Table Components"]
+        charts["Chart Components"]
+        modals["Modal Components"]
+    end
+```
