@@ -3,40 +3,49 @@ SHELL := /bin/bash
 
 # Components in build order
 COMPONENTS := shared metal sync fleet user user/ui/wrale-dashboard
+
+# Version info
 BUILD_VERSION ?= $(shell git describe --tags --always --dirty)
 DOCKER_COMPOSE ?= docker compose
-
-# Environment
 ENV ?= development
 
-.PHONY: all build clean test verify setup dev-env docker-up docker-down release help
+.PHONY: all build clean test verify docker-up docker-down setup dev-env release help $(COMPONENTS)
 
-# Run make in each component directory
-define run_component
-	@echo "==> $1: Running $2..."
-	@$(MAKE) -C $1 $2 || exit 1
-endef
+# Component targets
+$(COMPONENTS):
+	@echo "==> Building $@..."
+	@$(MAKE) -C $@ $(TARGET)
 
-define run_components
-	@for dir in $(COMPONENTS); do \
-		$(call run_component,$$dir,$1); \
-	done
-endef
-
+# Main targets that operate on all components
 all: ## Build everything
-	$(call run_components,all)
+	@for dir in $(COMPONENTS); do \
+		echo "==> $$dir: Building..."; \
+		$(MAKE) -C $$dir all || exit 1; \
+	done
 
 build: ## Build all components
-	$(call run_components,build)
+	@for dir in $(COMPONENTS); do \
+		echo "==> $$dir: Building..."; \
+		$(MAKE) -C $$dir build || exit 1; \
+	done
 
 clean: ## Clean all components
-	$(call run_components,clean)
+	@for dir in $(COMPONENTS); do \
+		echo "==> $$dir: Cleaning..."; \
+		$(MAKE) -C $$dir clean || exit 1; \
+	done
 
 test: ## Run all tests
-	$(call run_components,test)
+	@for dir in $(COMPONENTS); do \
+		echo "==> $$dir: Testing..."; \
+		$(MAKE) -C $$dir test || exit 1; \
+	done
 
 verify: ## Run all verifications
-	$(call run_components,verify)
+	@for dir in $(COMPONENTS); do \
+		echo "==> $$dir: Verifying..."; \
+		$(MAKE) -C $$dir verify || exit 1; \
+	done
 
 # Development environment
 setup: ## Set up development environment
