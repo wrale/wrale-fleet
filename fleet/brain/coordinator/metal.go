@@ -2,7 +2,6 @@ package coordinator
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/wrale/wrale-fleet/fleet/brain/types"
