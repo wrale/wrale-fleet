@@ -2,23 +2,7 @@ package metal
 
 import "context"
 
-// Base Monitor interface
-type Monitor interface {
-    // GetState returns current state
-    GetState() interface{}
-    
-    // Close releases resources
-    Close() error
-}
-
-// EventMonitor extends Monitor with event capabilities
-type EventMonitor interface {
-    Monitor
-    WatchEvents(ctx context.Context) (<-chan interface{}, error)
-}
-
 // GPIO Management
-
 type GPIO interface {
     Monitor
     
@@ -40,14 +24,9 @@ type GPIO interface {
     GetPinMode(name string) (PinMode, error)
     GetPinConfig(name string) (*PWMConfig, error)
     ListPins() []string
-    
-    // Simulation control
-    SetSimulated(simulated bool)
-    IsSimulated() bool
 }
 
 // Power Management
-
 type PowerManager interface {
     Monitor
     
@@ -79,7 +58,6 @@ type PowerManager interface {
 }
 
 // Thermal Management
-
 type ThermalManager interface {
     Monitor
     
@@ -108,7 +86,6 @@ type ThermalManager interface {
 }
 
 // Security Management
-
 type SecurityManager interface {
     Monitor
     EventMonitor
@@ -138,7 +115,6 @@ type SecurityManager interface {
 }
 
 // Diagnostics Management
-
 type DiagnosticManager interface {
     Monitor
     
@@ -166,62 +142,7 @@ type DiagnosticManager interface {
     OnTestComplete(func(TestResult))
 }
 
-// Configuration Types
-
-type DiagnosticManagerConfig struct {
-    GPIO            GPIO
-    PowerManager    PowerManager
-    ThermalManager  ThermalManager
-    SecurityManager SecurityManager
-    RetryAttempts   int
-    LoadTestTime    DurationLimit
-    MinVoltage      float64
-    TempRange       [2]float64
-    OnTestStart     func(TestType, string)
-    OnTestComplete  func(TestResult)
-}
-
-type PowerManagerConfig struct {
-    GPIO            GPIO
-    MonitorInterval Duration
-    PowerPins       map[PowerSource]string
-    VoltageMin      float64
-    VoltageMax      float64
-    CurrentMin      float64
-    CurrentMax      float64
-    OnCritical      func(PowerState)
-    OnWarning       func(PowerState)
-}
-
-type ThermalManagerConfig struct {
-    GPIO            GPIO
-    MonitorInterval Duration
-    FanControlPin   string
-    ThrottlePin     string
-    CPUTempPath     string
-    GPUTempPath     string
-    AmbientTempPath string
-    DefaultProfile  ThermalProfile
-    Curve           *CoolingCurve
-    OnWarning       func(ThermalEvent)
-    OnCritical      func(ThermalEvent)
-}
-
-type SecurityManagerConfig struct {
-    GPIO            GPIO
-    StateStore      StateStore
-    CaseSensor      string
-    MotionSensor    string
-    VoltageSensor   string
-    DefaultLevel    SecurityLevel
-    QuietHours      []TimeWindow
-    VoltageMin      float64
-    Sensitivity     float64
-    OnTamper        func(TamperEvent)
-    OnViolation     func(TamperEvent)
-}
-
-// StateStore defines interface for persisting security state
+// StateStore provides persistent storage capabilities
 type StateStore interface {
     SaveState(ctx context.Context, deviceID string, state interface{}) error
     LoadState(ctx context.Context, deviceID string) (interface{}, error)
