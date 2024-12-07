@@ -55,7 +55,7 @@ func main() {
 
 	// Set up logging
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Printf("Starting wrale-fleet service (Version=%s, BuildTime=%s, GitCommit=%s)", 
+	log.Printf("Starting wrale-fleet service (Version=%s, BuildTime=%s, GitCommit=%s)",
 		Version, BuildTime, GitCommit)
 
 	// Set up signal handling
@@ -76,7 +76,7 @@ func main() {
 
 	// Initialize HTTP server
 	srv := &server{brainSvc: brainSvc}
-	
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", srv.healthHandler)
 	mux.HandleFunc("/devices", srv.deviceListHandler)
