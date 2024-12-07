@@ -21,6 +21,11 @@ type Agent struct {
     resultChan  chan CommandResult
     stopChan    chan struct{}
     mu          sync.RWMutex
+
+    // Thermal management
+    thermalState     types.ThermalState
+    lastThermalSync  time.Time
+    thermalUpdateMux sync.RWMutex
 }
 
 // NewAgent creates a new edge agent instance
@@ -54,6 +59,7 @@ func (a *Agent) Start(ctx context.Context) error {
     go a.stateLoop(ctx)
     go a.commandLoop(ctx)
     go a.healthLoop(ctx)
+    go a.thermalLoop(ctx) // New thermal management loop
 
     return nil
 }
@@ -61,6 +67,48 @@ func (a *Agent) Start(ctx context.Context) error {
 // Stop gracefully stops the agent
 func (a *Agent) Stop() {
     close(a.stopChan)
+}
+
+// thermalLoop manages thermal state updates
+func (a *Agent) thermalLoop(ctx context.Context) {
+    ticker := time.NewTicker(5 * time.Second) // More frequent updates for thermal
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-a.stopChan:
+            return
+        case <-ticker.C:
+            if err := a.updateThermalState(ctx); err != nil {
+                a.handleError("thermal_update", err)
+            }
+        }
+    }
+}
+
+// updateThermalState gets and syncs thermal state
+func (a *Agent) updateThermalState(ctx context.Context) error {
+    // Get latest thermal state
+    thermalState, err := a.metalClient.GetThermalState()
+    if err != nil {
+        return fmt.Errorf("failed to get thermal state: %w", err)
+    }
+
+    a.thermalUpdateMux.Lock()
+    a.thermalState = thermalState
+    a.lastThermalSync = time.Now()
+    a.thermalUpdateMux.Unlock()
+
+    // Sync with brain if in normal mode
+    if a.getMode() == ModeNormal {
+        if err := a.brainClient.SyncThermalState(thermalState); err != nil {
+            return fmt.Errorf("failed to sync thermal state: %w", err)
+        }
+    }
+
+    return nil
 }
 
 // stateLoop periodically updates and syncs device state
@@ -76,7 +124,6 @@ func (a *Agent) stateLoop(ctx context.Context) {
             return
         case <-ticker.C:
             if err := a.updateAndSyncState(ctx); err != nil {
-                // Log error but continue operation
                 a.handleError("state_sync", err)
             }
         }
@@ -136,6 +183,133 @@ func (a *Agent) commandLoop(ctx context.Context) {
     }
 }
 
+// executeCommand executes a command and returns the result
+func (a *Agent) executeCommand(ctx context.Context, cmd Command) CommandResult {
+    result := CommandResult{
+        CommandID: cmd.ID,
+        CompletedAt: time.Now(),
+    }
+
+    switch cmd.Type {
+    // Existing command handlers
+    case CmdUpdateState:
+        if err := a.updateAndSyncState(ctx); err != nil {
+            result.Error = err
+        } else {
+            result.Success = true
+        }
+
+    case CmdExecuteTask:
+        if task, ok := cmd.Payload.(string); ok {
+            if err := a.metalClient.ExecuteOperation(task); err != nil {
+                result.Error = err
+            } else {
+                result.Success = true
+            }
+        } else {
+            result.Error = fmt.Errorf("invalid task payload")
+        }
+
+    // Thermal command handlers
+    case CmdUpdateThermalPolicy:
+        if policy, ok := cmd.Payload.(types.ThermalPolicy); ok {
+            if err := a.metalClient.UpdateThermalPolicy(policy); err != nil {
+                result.Error = err
+            } else {
+                result.Success = true
+            }
+        } else {
+            result.Error = fmt.Errorf("invalid thermal policy payload")
+        }
+
+    case CmdSetFanSpeed:
+        if speed, ok := cmd.Payload.(uint32); ok {
+            if err := a.metalClient.SetFanSpeed(speed); err != nil {
+                result.Error = err
+            } else {
+                result.Success = true
+            }
+        } else {
+            result.Error = fmt.Errorf("invalid fan speed payload")
+        }
+
+    case CmdSetThrottling:
+        if enabled, ok := cmd.Payload.(bool); ok {
+            if err := a.metalClient.SetThrottling(enabled); err != nil {
+                result.Error = err
+            } else {
+                result.Success = true
+            }
+        } else {
+            result.Error = fmt.Errorf("invalid throttling payload")
+        }
+
+    case CmdGetThermalState:
+        if err := a.updateThermalState(ctx); err != nil {
+            result.Error = err
+        } else {
+            result.Success = true
+            a.thermalUpdateMux.RLock()
+            result.Payload = a.thermalState
+            a.thermalUpdateMux.RUnlock()
+        }
+
+    // Mode management
+    case CmdEnterSafeMode:
+        a.setMode(ModeSafe)
+        result.Success = true
+
+    case CmdExitSafeMode:
+        a.setMode(ModeNormal)
+        result.Success = true
+
+    default:
+        result.Error = fmt.Errorf("unknown command type: %s", cmd.Type)
+    }
+
+    return result
+}
+
+// updateAndSyncState updates and syncs the complete device state
+func (a *Agent) updateAndSyncState(ctx context.Context) error {
+    // Get latest metrics
+    metrics, err := a.metalClient.GetMetrics()
+    if err != nil {
+        return fmt.Errorf("failed to get metrics: %w", err)
+    }
+
+    // Get thermal state
+    thermalState, err := a.metalClient.GetThermalState()
+    if err != nil {
+        return fmt.Errorf("failed to get thermal state: %w", err)
+    }
+
+    // Update local state
+    a.mu.Lock()
+    a.state.DeviceState.Metrics = metrics
+    a.state.LastSync = time.Now()
+    a.mu.Unlock()
+
+    // Update thermal state
+    a.thermalUpdateMux.Lock()
+    a.thermalState = thermalState
+    a.lastThermalSync = time.Now()
+    a.thermalUpdateMux.Unlock()
+
+    // Sync with brain if in normal mode
+    if a.getMode() == ModeNormal {
+        if err := a.brainClient.SyncState(a.state.DeviceState); err != nil {
+            return fmt.Errorf("failed to sync state: %w", err)
+        }
+        if err := a.brainClient.SyncThermalState(thermalState); err != nil {
+            return fmt.Errorf("failed to sync thermal state: %w", err)
+        }
+    }
+
+    // Store updated state
+    return a.stateStore.UpdateState(a.state)
+}
+
 // healthLoop monitors device health
 func (a *Agent) healthLoop(ctx context.Context) {
     ticker := time.NewTicker(time.Second * 30)
@@ -163,86 +337,6 @@ func (a *Agent) healthLoop(ctx context.Context) {
             a.updateHealth(healthy, diagnostics)
         }
     }
-}
-
-// updateAndSyncState updates local state and syncs with brain
-func (a *Agent) updateAndSyncState(ctx context.Context) error {
-    // Get latest metrics
-    metrics, err := a.metalClient.GetMetrics()
-    if err != nil {
-        return fmt.Errorf("failed to get metrics: %w", err)
-    }
-
-    // Update local state
-    a.mu.Lock()
-    a.state.DeviceState.Metrics = metrics
-    a.state.LastSync = time.Now()
-    a.mu.Unlock()
-
-    // Sync with brain if in normal mode
-    if a.getMode() == ModeNormal {
-        if err := a.brainClient.SyncState(a.state.DeviceState); err != nil {
-            return fmt.Errorf("failed to sync state: %w", err)
-        }
-    }
-
-    // Store updated state
-    return a.stateStore.UpdateState(a.state)
-}
-
-// executeCommand executes a command and returns the result
-func (a *Agent) executeCommand(ctx context.Context, cmd Command) CommandResult {
-    result := CommandResult{
-        CommandID: cmd.ID,
-        CompletedAt: time.Now(),
-    }
-
-    switch cmd.Type {
-    case CmdUpdateState:
-        // Handle state update
-        if err := a.updateAndSyncState(ctx); err != nil {
-            result.Error = err
-        } else {
-            result.Success = true
-        }
-
-    case CmdExecuteTask:
-        // Execute operation on metal layer
-        if task, ok := cmd.Payload.(string); ok {
-            if err := a.metalClient.ExecuteOperation(task); err != nil {
-                result.Error = err
-            } else {
-                result.Success = true
-            }
-        } else {
-            result.Error = fmt.Errorf("invalid task payload")
-        }
-
-    case CmdUpdateConfig:
-        // Update configuration
-        if config, ok := cmd.Payload.(map[string]interface{}); ok {
-            if err := a.stateStore.UpdateConfig(config); err != nil {
-                result.Error = err
-            } else {
-                result.Success = true
-            }
-        } else {
-            result.Error = fmt.Errorf("invalid config payload")
-        }
-
-    case CmdEnterSafeMode:
-        a.setMode(ModeSafe)
-        result.Success = true
-
-    case CmdExitSafeMode:
-        a.setMode(ModeNormal)
-        result.Success = true
-
-    default:
-        result.Error = fmt.Errorf("unknown command type: %s", cmd.Type)
-    }
-
-    return result
 }
 
 // updateHealth updates the agent's health status

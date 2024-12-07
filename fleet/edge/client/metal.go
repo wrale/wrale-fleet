@@ -38,6 +38,53 @@ func (c *MetalClient) GetMetrics() (types.DeviceMetrics, error) {
     return metrics, nil
 }
 
+// GetThermalState retrieves current thermal state
+func (c *MetalClient) GetThermalState() (types.ThermalState, error) {
+    var state types.ThermalState
+    url := fmt.Sprintf("%s/api/v1/thermal/state", c.baseURL)
+
+    if err := c.doRequest("GET", url, nil, &state); err != nil {
+        return state, fmt.Errorf("failed to get thermal state: %w", err)
+    }
+
+    return state, nil
+}
+
+// UpdateThermalPolicy updates the thermal management policy
+func (c *MetalClient) UpdateThermalPolicy(policy types.ThermalPolicy) error {
+    url := fmt.Sprintf("%s/api/v1/thermal/policy", c.baseURL)
+    
+    if err := c.doRequest("PUT", url, policy, nil); err != nil {
+        return fmt.Errorf("failed to update thermal policy: %w", err)
+    }
+
+    return nil
+}
+
+// SetFanSpeed sets the cooling fan speed
+func (c *MetalClient) SetFanSpeed(speed uint32) error {
+    url := fmt.Sprintf("%s/api/v1/thermal/fan", c.baseURL)
+    payload := map[string]uint32{"speed": speed}
+
+    if err := c.doRequest("PUT", url, payload, nil); err != nil {
+        return fmt.Errorf("failed to set fan speed: %w", err)
+    }
+
+    return nil
+}
+
+// SetThrottling enables or disables thermal throttling
+func (c *MetalClient) SetThrottling(enabled bool) error {
+    url := fmt.Sprintf("%s/api/v1/thermal/throttle", c.baseURL)
+    payload := map[string]bool{"enabled": enabled}
+
+    if err := c.doRequest("PUT", url, payload, nil); err != nil {
+        return fmt.Errorf("failed to set throttling: %w", err)
+    }
+
+    return nil
+}
+
 // UpdatePowerState updates the device power state
 func (c *MetalClient) UpdatePowerState(state string) error {
     url := fmt.Sprintf("%s/api/v1/power/state", c.baseURL)
