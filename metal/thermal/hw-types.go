@@ -1,3 +1,5 @@
+// TODO: Need to merge with core's types.go
+
 package thermal
 
 import (

@@ -1,3 +1,5 @@
+// TODO: Need to merge functionality with core's thermal.go
+
 package thermal
 
 import (
