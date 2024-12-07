@@ -29,6 +29,10 @@ func TestGetPowerState(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
+	if state == nil {
+		t.Fatal("expected non-nil state")
+	}
+
 	if state.Voltage != 5.0 {
 		t.Errorf("expected voltage 5.0, got %v", state.Voltage)
 	}

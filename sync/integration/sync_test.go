@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wrale/wrale-fleet/sync/manager"
 	"github.com/stretchr/testify/assert"
+	"github.com/wrale/wrale-fleet/sync/manager"
 )
 
 func setupTestSyncManager() *manager.SyncManager {
