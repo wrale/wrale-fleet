@@ -1,6 +1,7 @@
 package manager
 
 import "time"
+import "sync"
 
 // Config holds sync manager configuration
 type Config struct {
