@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/wrale/wrale-fleet/fleet/sync/types"
+	"github.com/wrale/wrale-fleet/fleet/brain/types"
+	synctypes "github.com/wrale/wrale-fleet/fleet/sync/types"
 )
 
 func TestResolver(t *testing.T) {
@@ -13,17 +14,34 @@ func TestResolver(t *testing.T) {
 		resolver := NewResolver(60) // 60 second timeout
 		assert.NotNil(t, resolver)
 
+		now := time.Now()
 		// Create test states
-		states := []types.VersionedState{
+		deviceState1 := types.DeviceState{
+			Status: "running",
+			Metrics: types.DeviceMetrics{
+				Temperature: 45.0,
+				PowerUsage: 100,
+			},
+		}
+		
+		deviceState2 := types.DeviceState{
+			Status: "running",
+			Metrics: types.DeviceMetrics{
+				Temperature: 46.0,
+				PowerUsage: 102,
+			},
+		}
+
+		states := []synctypes.VersionedState{
 			{
-				Version:   1,
-				Timestamp: time.Now().Add(-30 * time.Second).Unix(),
-				State:     map[string]interface{}{"key": "value1"},
+				Version:   synctypes.StateVersion(1),
+				Timestamp: now.Add(-30 * time.Second),
+				State:     deviceState1,
 			},
 			{
-				Version:   2,
-				Timestamp: time.Now().Unix(),
-				State:     map[string]interface{}{"key": "value2"},
+				Version:   synctypes.StateVersion(2),
+				Timestamp: now,
+				State:     deviceState2,
 			},
 		}
 
@@ -31,23 +49,23 @@ func TestResolver(t *testing.T) {
 		resolved, err := resolver.ResolveStateConflict(states)
 		assert.NoError(t, err)
 		assert.NotNil(t, resolved)
-		assert.Equal(t, int64(2), resolved.Version)
+		assert.Equal(t, synctypes.StateVersion(2), resolved.Version)
 
 		// Test validation
 		assert.True(t, resolver.ValidateState(resolved))
 
 		// Test old state validation
-		oldState := &types.VersionedState{
-			Version:   1,
-			Timestamp: time.Now().Add(-2 * time.Hour).Unix(),
-			State:     map[string]interface{}{"key": "old"},
+		oldState := &synctypes.VersionedState{
+			Version:   synctypes.StateVersion(1),
+			Timestamp: now.Add(-2 * time.Hour),
+			State:     deviceState1,
 		}
 		assert.False(t, resolver.ValidateState(oldState))
 	})
 
 	t.Run("test empty states", func(t *testing.T) {
 		resolver := NewResolver(60)
-		resolved, err := resolver.ResolveStateConflict([]types.VersionedState{})
+		resolved, err := resolver.ResolveStateConflict([]synctypes.VersionedState{})
 		assert.NoError(t, err)
 		assert.Nil(t, resolved)
 	})

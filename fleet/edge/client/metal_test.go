@@ -71,13 +71,16 @@ func TestMetalClient(t *testing.T) {
 				t.Errorf("Expected POST request, got %s", r.Method)
 			}
 
-			var payload map[string]string
+			var payload struct {
+				Operation string                 `json:"operation"`
+				Params   map[string]interface{} `json:"params"`
+			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Errorf("Failed to decode request body: %v", err)
 			}
 
-			if op := payload["operation"]; op != "test_operation" {
-				t.Errorf("Expected operation 'test_operation', got '%s'", op)
+			if payload.Operation != "test_operation" {
+				t.Errorf("Expected operation 'test_operation', got '%s'", payload.Operation)
 			}
 
 			w.WriteHeader(http.StatusOK)
@@ -85,7 +88,8 @@ func TestMetalClient(t *testing.T) {
 		defer server.Close()
 
 		client := NewMetalClient(server.URL)
-		if err := client.ExecuteOperation("test_operation"); err != nil {
+		params := map[string]interface{}{}
+		if err := client.ExecuteOperation("test_operation", params); err != nil {
 			t.Errorf("ExecuteOperation failed: %v", err)
 		}
 	})
@@ -158,7 +162,8 @@ func TestMetalClient(t *testing.T) {
 			t.Error("Expected error from UpdatePowerState")
 		}
 
-		if err := client.ExecuteOperation("test"); err == nil {
+		params := map[string]interface{}{}
+		if err := client.ExecuteOperation("test", params); err == nil {
 			t.Error("Expected error from ExecuteOperation")
 		}
 

@@ -8,12 +8,12 @@ import (
 
 // PowerState represents the power state of a device
 type PowerState struct {
-	State          string    `json:"state"`
-	AvailablePower float64   `json:"available_power"`
-	PowerSource    string    `json:"power_source"`
-	Voltage        float64   `json:"voltage"`
-	Current        float64   `json:"current"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	State          string                `json:"state"`
+	AvailablePower map[PowerSource]bool  `json:"available_power"`
+	PowerSource    string                `json:"power_source"`
+	Voltage        float64               `json:"voltage"`
+	Current        float64               `json:"current"`
+	UpdatedAt      time.Time             `json:"updated_at"`
 }
 
 // PowerSource represents the type of power source
@@ -44,4 +44,5 @@ type Config struct {
 	CurrentADCPath  string                  `json:"current_adc_path"`
 	MonitorInterval time.Duration           `json:"monitor_interval"`
 	OnPowerChange   func(PowerState)        `json:"-"`
+	OnPowerCritical func(PowerState)        `json:"-"`
 }
