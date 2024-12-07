@@ -3,6 +3,11 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+
+	core_secure "github.com/wrale/wrale-fleet/metal/core/secure"
+	core_thermal "github.com/wrale/wrale-fleet/metal/core/thermal"
+	hw_secure "github.com/wrale/wrale-fleet/metal/hw/secure"
+	hw_thermal "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Device information response
@@ -54,7 +59,7 @@ func (s *Server) handleThermalPolicy(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(policy)
 
 	case http.MethodPut:
-		var policy thermal.Policy
+		var policy hw_thermal.Policy
 		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
@@ -100,7 +105,7 @@ func (s *Server) handleSecurityPolicy(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(policy)
 
 	case http.MethodPut:
-		var policy secure.Policy
+		var policy hw_secure.Policy
 		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return

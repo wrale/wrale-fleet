@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/wrale/wrale-fleet/metal/core/secure"
-	"github.com/wrale/wrale-fleet/metal/core/thermal"
-	"github.com/wrale/wrale-fleet/metal/hw/secure"
-	"github.com/wrale/wrale-fleet/metal/hw/thermal"
+	core_secure "github.com/wrale/wrale-fleet/metal/core/secure"
+	core_thermal "github.com/wrale/wrale-fleet/metal/core/thermal"
+	hw_secure "github.com/wrale/wrale-fleet/metal/hw/secure"
+	hw_thermal "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Config contains server configuration options
@@ -26,8 +26,8 @@ type Server struct {
 	srv    *http.Server
 	
 	// Managers for different subsystems
-	thermalMgr  *thermal.Manager
-	securityMgr *secure.Manager
+	thermalMgr  *hw_thermal.Manager
+	securityMgr *hw_secure.Manager
 	
 	// State
 	mu       sync.RWMutex
@@ -41,12 +41,12 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Initialize managers
-	thermalMgr, err := thermal.NewManager()
+	thermalMgr, err := hw_thermal.NewManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create thermal manager: %w", err)
 	}
 
-	securityMgr, err := secure.NewManager()
+	securityMgr, err := hw_secure.NewManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security manager: %w", err)
 	}
