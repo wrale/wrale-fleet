@@ -20,7 +20,7 @@ type Manager struct {
 
 // New creates a new hardware diagnostics manager
 func New(cfg types.Config) (*Manager, error) {
-	if cfg.GPIO == (*gpio.Controller)(nil) {
+	if cfg.GPIO == nil {
 		return nil, fmt.Errorf("GPIO controller required")
 	}
 

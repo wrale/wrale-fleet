@@ -10,23 +10,19 @@ import (
 func setupTestSyncManager() (*manager.SyncManager, error) {
 	config := manager.Config{
 		StoragePath:   "/tmp/test-sync",
-		RetryInterval: time.Second,
 		MaxRetries:    3,
 		Timeout:       5 * time.Second,
+		RetryInterval: time.Second,
 	}
-
 	return manager.New(config)
 }
 
 func TestSyncManager(t *testing.T) {
-	syncMgr, err := setupTestSyncManager()
+	syncManager, err := setupTestSyncManager()
 	if err != nil {
-		t.Fatalf("Failed to create sync manager: %v", err)
+		t.Fatalf("failed to create sync manager: %v", err)
 	}
-
-	t.Run("Basic Operations", func(t *testing.T) {
-		if syncMgr == nil {
-			t.Fatal("Sync manager should not be nil")
-		}
-	})
+	if syncManager == nil {
+		t.Fatal("sync manager is nil")
+	}
 }
