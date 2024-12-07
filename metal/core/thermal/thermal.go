@@ -2,8 +2,21 @@ package thermal
 
 import (
 	"fmt"
+	"time"
 
 	hw "github.com/wrale/wrale-fleet/metal/hw/thermal"
+)
+
+// Default timing values for thermal management
+const (
+	// Minimum delay between temperature readings to prevent sensor oversampling
+	minResponseDelay = 100 * time.Millisecond
+
+	// Delay before issuing warnings to filter out temporary spikes
+	defaultWarningDelay = 5 * time.Second
+
+	// Delay before taking critical action to allow for potential recovery
+	defaultCriticalDelay = 1 * time.Second
 )
 
 // HardwareMonitor wraps the low-level hardware thermal monitor

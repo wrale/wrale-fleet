@@ -81,6 +81,35 @@ type Event struct {
 	Details   interface{} `json:"details"`
 }
 
+// SecurityEvent represents a specific security-related occurrence
+// Used for detailed event tracking and analysis
+type SecurityEvent struct {
+	Timestamp time.Time
+	Type      string
+	Source    string
+	Severity  string
+	State     hw.TamperState
+	Context   map[string]interface{}
+}
+
+// TamperAttempt represents a detected pattern of potentially malicious activity
+type TamperAttempt struct {
+	StartTime  time.Time
+	EndTime    time.Time
+	EventCount int
+	Pattern    string
+	Severity   string
+}
+
+// StateTransition records a change in the system's security state
+type StateTransition struct {
+	Timestamp time.Time
+	FromState hw.TamperState
+	ToState   hw.TamperState
+	Trigger   string
+	Context   map[string]interface{}
+}
+
 // StateStore defines the interface for persisting security state
 type StateStore interface {
 	// SaveState persists the current security state
@@ -91,4 +120,10 @@ type StateStore interface {
 
 	// LogEvent records a security event
 	LogEvent(ctx context.Context, deviceID string, eventType string, details interface{}) error
+}
+
+// HandleStateUpdate updates the security state with context
+func (pm *PolicyManager) HandleStateUpdate(ctx context.Context, state hw.TamperState) error {
+	// Implementation details would go here
+	return nil
 }
