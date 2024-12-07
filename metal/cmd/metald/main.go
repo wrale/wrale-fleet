@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/wrale/wrale-fleet/metal/hardware"
 	"github.com/wrale/wrale-fleet/metal/internal/server"
 	"github.com/wrale/wrale-fleet/metal/secure"
 	"github.com/wrale/wrale-fleet/metal/thermal"
@@ -28,12 +29,12 @@ func main() {
 	defer cancel()
 
 	// Initialize hardware monitors
-	thermalMonitor, err := thermal.NewHardwareMonitor()
+	thermalMonitor, err := hardware.NewThermalMonitor(*deviceID)
 	if err != nil {
 		log.Fatalf("Failed to create thermal monitor: %v", err)
 	}
 
-	securityMonitor, err := secure.NewHardwareMonitor()
+	securityMonitor, err := hardware.NewSecureMonitor(*deviceID)
 	if err != nil {
 		log.Fatalf("Failed to create security monitor: %v", err)
 	}
