@@ -6,14 +6,6 @@ import (
 	"time"
 )
 
-// Config defines configuration for the sync manager
-type Config struct {
-	StoragePath   string
-	MaxRetries    int
-	Timeout       time.Duration
-	RetryInterval time.Duration
-}
-
 // SyncManager handles state synchronization
 type SyncManager struct {
 	config Config
