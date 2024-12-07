@@ -1,28 +1,28 @@
 # Go-specific template
 include $(MAKEFILES_DIR)/templates/base.mk
 
+# Define Go-specific build commands
+BUILD_CMD = mkdir -p $(BUILD_DIR) && $(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PACKAGE)
+TEST_CMD = $(GOTEST) $(TESTFLAGS) ./...
+VERIFY_CMD = $(MAKE) fmt && $(MAKE) lint && $(GOTEST) $(TESTFLAGS) ./...
+
 # Define the Go template
 define GO_TEMPLATE
 $(BASE_TEMPLATE)
 
-.PHONY: build test test-unit test-bench coverage
+.PHONY: fmt lint test-bench coverage docker-build docker-push
 
-build: ## Build the binary
-	mkdir -p $(BUILD_DIR)
-	$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PACKAGE)
+fmt: ## Format Go code
+	$(GOFMT) ./...
 
-test: test-unit ## Run tests
-	@echo "Tests completed successfully"
-
-test-unit: ## Run unit tests
-	$(GOTEST) $(TESTFLAGS) ./...
+lint: ## Run linter
+	$(GOLINT) $(LINTFLAGS)
 
 test-bench: ## Run benchmarks
 	$(GOTEST) $(BENCHFLAGS) ./...
 
 coverage: ## Generate test coverage
 	$(GOTEST) $(TESTFLAGS) $(COVERFLAGS) ./...
-	go tool cover -html=coverage.out
 
 docker-build: ## Build Docker image
 	$(DOCKER) build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .

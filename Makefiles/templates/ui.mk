@@ -1,5 +1,5 @@
 # UI-specific template (Next.js)
-# Handles npm/node targets without conflicts
+include $(MAKEFILES_DIR)/templates/base.mk
 
 # Node/NPM configuration
 NODE ?= node
@@ -8,29 +8,17 @@ NEXT ?= $(NPM) run
 BUILD_DIR ?= .next
 DIST_DIR ?= dist
 
-# Override some common targets for npm usage
-clean-cmd ?= rm -rf $(BUILD_DIR) $(DIST_DIR) node_modules/.cache
-build-cmd ?= $(NPM) run build
-test-cmd ?= $(NPM) test
-lint-cmd ?= $(NPM) run lint
+# Override base commands with npm equivalents
+CLEAN_CMD ?= rm -rf $(BUILD_DIR) $(DIST_DIR) node_modules/.cache
+BUILD_CMD ?= $(NPM) install && $(NPM) run build
+TEST_CMD ?= $(NPM) test
+VERIFY_CMD ?= $(NPM) run lint
 
-# Define the UI base template
-define UI_BASE_TEMPLATE
+# Define the UI template with npm-specific targets
+define UI_TEMPLATE
+$(BASE_TEMPLATE)
 
-.PHONY: clean build test lint dev analyze deploy storybook install-deps
-
-# Standard UI targets with configurable commands
-clean: ## Clean build artifacts
-	$(clean-cmd)
-
-build: install-deps ## Build the application
-	$(build-cmd)
-
-test: install-deps ## Run tests
-	$(test-cmd)
-
-lint: install-deps ## Run linter
-	$(lint-cmd)
+.PHONY: dev analyze deploy install-deps lint-fix
 
 install-deps: ## Install dependencies
 	$(NPM) install
@@ -44,18 +32,7 @@ analyze: build ## Analyze bundle size
 deploy: build ## Deploy to production
 	$(NEXT) deploy
 
-# Pre/post hooks for help target
-help-pre:
-	@echo "$(COMPONENT_NAME) - $(COMPONENT_DESCRIPTION)"
-	@echo
-	@echo "NPM Version:  $$($(NPM) -v)"
-	@echo "Node Version: $$($(NODE) -v)"
-	@echo
-
-help-post:
-	@if [ "$(HELP_EXTRA)" != "" ]; then \
-		echo; \
-		echo "$(HELP_EXTRA)"; \
-	fi
+lint-fix: install-deps ## Run linter with auto-fix
+	$(NPM) run lint -- --fix
 
 endef

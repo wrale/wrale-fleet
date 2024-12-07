@@ -7,8 +7,7 @@ COMPONENT_DESCRIPTION := Fleet Service - Manages fleet coordination and orchestr
 MAKEFILES_DIR := ../Makefiles
 MAIN_PACKAGE := ./cmd/fleetd
 
-# Build configuration
-BUILD_CMD = mkdir -p $(BUILD_DIR) && $(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PACKAGE)
+# Extend test command to include integration tests
 TEST_CMD = $(GOTEST) $(TESTFLAGS) ./... && $(MAKE) test-integration
 
 include $(MAKEFILES_DIR)/templates/service.mk
