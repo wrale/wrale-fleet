@@ -1,0 +1,95 @@
+```mermaid
+graph TB
+    subgraph ConfigSystem["Configuration System (shared/config)"]
+        direction TB
+        
+        subgraph CoreConfig["Core Configuration"]
+            configMgr["Config Manager"]
+            envConfig["Environment Config"]
+            defaults["Default Settings"]
+            validator["Config Validator"]
+            
+            configMgr --> envConfig
+            configMgr --> defaults
+            configMgr --> validator
+        end
+
+        subgraph Physical["Physical Configuration"]
+            hwConfig["Hardware Config"]
+            resourceLimits["Resource Limits"]
+            safetyBounds["Safety Bounds"]
+            thresholds["Thresholds"]
+            
+            hwConfig --> resourceLimits
+            resourceLimits --> safetyBounds
+            safetyBounds --> thresholds
+        end
+
+        subgraph Storage["Config Storage"]
+            fileStore["File Storage"]
+            memStore["Memory Storage"]
+            distStore["Distributed Storage"]
+            cache["Config Cache"]
+            
+            fileStore --> memStore
+            memStore --> distStore
+            distStore --> cache
+        end
+
+        subgraph Loading["Config Loading"]
+            loader["Config Loader"]
+            parser["Config Parser"]
+            merger["Config Merger"]
+            resolver["Dependency Resolver"]
+            
+            loader --> parser
+            parser --> merger
+            merger --> resolver
+        end
+    end
+
+    subgraph Consumers["Config Consumers"]
+        metal["metal/ Layer"]
+        fleet["fleet/ Layer"]
+        user["user/ Layer"]
+    end
+
+    subgraph Sources["Config Sources"]
+        files["Config Files"]
+        env["Environment"]
+        flags["Command Flags"]
+    end
+
+    %% Integration Flows
+    files --> loader
+    env --> envConfig
+    flags --> merger
+
+    %% Consumer Flows
+    configMgr --> metal
+    configMgr --> fleet
+    configMgr --> user
+
+    %% Validation Flows
+    hwConfig --> validator
+    safetyBounds --> validator
+    resourceLimits --> validator
+
+    classDef core fill:#f9f,stroke:#333,stroke-width:2px
+    classDef physical fill:#fbb,stroke:#333,stroke-width:2px
+    classDef storage fill:#bbf,stroke:#333,stroke-width:1px
+    classDef load fill:#bfb,stroke:#333,stroke-width:1px
+
+    class configMgr,envConfig,defaults core
+    class hwConfig,resourceLimits,safetyBounds physical
+    class fileStore,memStore,distStore storage
+    class loader,parser,merger load
+
+    %% Notes
+    subgraph ConfigPrinciples["Configuration Principles"]
+        note1["1. Physical Safety First"]
+        note2["2. Validation Required"]
+        note3["3. Layered Override"]
+        note4["4. Safe Defaults"]
+    end
+```
