@@ -6,33 +6,27 @@ COMPONENT_NAME := wrale-fleet
 MAKEFILES_DIR := ../Makefiles
 MAIN_PACKAGE := ./cmd/fleetd
 
+# Override template variables
+BUILD_CMD = mkdir -p $(BUILD_DIR) && $(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PACKAGE)
+TEST_CMD = $(GOTEST) $(TESTFLAGS) ./... && $(MAKE) test-integration
+
 include $(MAKEFILES_DIR)/templates/service.mk
 $(eval $(SERVICE_TEMPLATE))
 
-# Standard targets
-.PHONY: all build test clean
-
-all: ## Build everything (clean, verify, build)
-	$(MAKE) clean verify build
-
-build: ## Build the fleet service binary
-	mkdir -p $(BUILD_DIR)
-	$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PACKAGE)
-
-test: ## Run all tests (unit, integration)
-	$(GOTEST) $(TESTFLAGS) ./...
-	$(MAKE) test-integration
-
-clean: ## Clean build artifacts
-	rm -rf $(BUILD_DIR) $(DIST_DIR)
-	rm -f coverage.out
-
 # Component-specific targets
-.PHONY: integration-test
+.PHONY: integration-test verify-fleet coverage
 
 integration-test: ## Run fleet integration tests
 	@echo "Running $(COMPONENT_NAME) integration tests..."
 	$(GOTEST) -v -tags=integration ./integration/...
+
+verify-fleet: verify ## Run fleet-specific verifications
+	@echo "Running fleet-specific verifications..."
+	./scripts/verify-fleet.sh
+
+coverage: ## Generate test coverage report
+	$(GOTEST) $(TESTFLAGS) $(COVERFLAGS) ./...
+	go tool cover -html=coverage.out
 
 help: ## Show available targets
 	@echo "$(COMPONENT_NAME) - Fleet Service"

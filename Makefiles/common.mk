@@ -65,9 +65,21 @@ deps: ## Download and tidy dependencies
 
 verify: fmt lint test coverage ## Run all verifications
 
-# Helper function to process help targets
-define help_single_mk
-$(shell grep -h -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(1) 2>/dev/null | sort -u | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}')
+# Helper function to extract and format help text for targets
+# $(1) - file to process
+# $(2) - "standard" or "component" to determine the source
+define format_help_text
+$(shell awk -F':.*?## *' '/^[0-9A-Za-z._-]+:.*?##/{printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}' $(1) | sort -u)
+endef
+
+# Helper function to collect help from template makefiles
+define collect_template_help
+$(foreach mk,$(MAKEFILES_DIR)/templates/*.mk,$(call format_help_text,$(mk),standard))
+endef
+
+# Helper function to collect help from component makefile
+define collect_component_help
+$(call format_help_text,$(MAKEFILE_LIST),component)
 endef
 
 # Helper function to generate help output
@@ -75,10 +87,10 @@ define HELP_FUNCTION
 	@echo "$(COMPONENT_NAME) - Available targets:"
 	@echo
 	@echo "Standard targets:"
-	@$(foreach mk,$(MAKEFILES_DIR)/templates/*.mk,$(call help_single_mk,$(mk)))
+	@$(call collect_template_help) | sort -u
 	@echo
 	@echo "Component targets:"
-	@$(call help_single_mk,$(MAKEFILE_LIST))
+	@$(call collect_component_help) | sort -u
 endef
 
 # Version information target
