@@ -1,48 +1,34 @@
 # Metal Daemon Makefile
-# Manages the metal daemon service that provides hardware access and control.
+# Hardware access and control service implementation
 
-COMPONENT_NAME := metald
-COMPONENT_DESCRIPTION := Metal Daemon - Hardware access and control service
+COMPONENT_NAME := wrale-metal
+COMPONENT_DESCRIPTION := Metal Hardware Layer
 MAKEFILES_DIR := ../Makefiles
-MAIN_PACKAGE := ./cmd/metald
 
-# Daemon configuration
-DAEMON_USER := root
-DAEMON_GROUP := root
-DAEMON_CONFIG_DIR := /etc/wrale/metal
-DAEMON_DATA_DIR := /var/lib/wrale/metal
+# Build configuration
+MAIN_PACKAGE := ./cmd/metald
+BINARY_NAME := metald
 
 include $(MAKEFILES_DIR)/templates/go/daemon.mk
 $(eval $(GO_DAEMON_TEMPLATE))
 
-# Component-specific targets
-.PHONY: test-hardware verify-hardware systemd
+# Hardware testing targets
+.PHONY: test-hw sim verify-hw
 
-test-hardware: ## Run hardware-specific tests (requires device setup)
-	@echo "Running hardware tests..."
-	@if [ -n "$(HARDWARE_DEVICE)" ]; then \
-		$(GO_ENV) $(GO) test -v -tags=hardware \
-			--timeout=10m ./... \
-			-args -device=$(HARDWARE_DEVICE); \
-	else \
-		echo "HARDWARE_DEVICE must be set for hardware testing"; \
-		exit 1; \
-	fi
+test-hw: ## Run hardware-specific tests (requires real hardware)
+	$(call show_progress,"Running hardware tests...")
+	$(GO_ENV) $(GO) test -v -tags=hardware \
+		-timeout=10m ./hw/... ./gpio/... ./thermal/...
 
-verify-hardware: ## Verify hardware configuration
-	@echo "Verifying hardware setup..."
+sim: ## Run tests with hardware simulation
+	$(call show_progress,"Running simulated tests...")
+	$(GO_ENV) $(GO) test -v -tags=simulation ./...
+
+verify-hw: ## Verify hardware configuration
+	$(call show_progress,"Verifying hardware setup...")
 	@if [ -x "$(BUILD_DIR)/$(BINARY_NAME)" ]; then \
-		$(BUILD_DIR)/$(BINARY_NAME) verify --check-only; \
+		sudo $(BUILD_DIR)/$(BINARY_NAME) verify; \
 	else \
-		echo "Build required before hardware verification"; \
+		echo "Build required before verification"; \
 		exit 1; \
 	fi
-
-systemd: ## Generate systemd service file
-	@echo "Generating systemd service file..."
-	@mkdir -p systemd
-	@sed "s|{{BINARY}}|/usr/local/sbin/$(BINARY_NAME)|g; \
-		s|{{CONFIG}}|$(DAEMON_CONFIG_DIR)/config.yaml|g; \
-		s|{{USER}}|$(DAEMON_USER)|g; \
-		s|{{GROUP}}|$(DAEMON_GROUP)|g" \
-		systemd/metald.service.template > systemd/metald.service

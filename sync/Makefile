@@ -1,30 +1,33 @@
 # Sync Service Makefile
-# Manages the sync service that provides state synchronization and conflict resolution.
+# State synchronization and conflict resolution implementation
 
-COMPONENT_NAME := sync
-COMPONENT_DESCRIPTION := Sync Service - State synchronization and conflict resolution
+COMPONENT_NAME := wrale-sync
+COMPONENT_DESCRIPTION := Sync Service Layer
 MAKEFILES_DIR := ../Makefiles
-MAIN_PACKAGE := ./cmd/syncd
 
-# Service configuration
-SERVICE_PORT := 9090
-SERVICE_CONFIG_DIR := /etc/wrale/sync
+# Build configuration
+MAIN_PACKAGE := ./cmd/syncd
+BINARY_NAME := syncd
 
 include $(MAKEFILES_DIR)/templates/go/service.mk
 $(eval $(GO_SERVICE_TEMPLATE))
 
-# Component-specific targets
-.PHONY: test-integration verify-state
+# Specialized test targets
+.PHONY: test-integration verify-state test-consistency
 
 test-integration: ## Run integration tests
-	@echo "Running sync integration tests..."
+	$(call show_progress,"Running integration tests...")
 	$(GO_ENV) $(GO) test -v -tags=integration ./integration/...
 
-verify-state: ## Verify state consistency
-	@echo "Verifying state consistency..."
+test-consistency: ## Run state consistency tests
+	$(call show_progress,"Running consistency tests...")
+	$(GO_ENV) $(GO) test -v ./manager/... -run "TestConsistency"
+
+verify-state: ## Verify state store integrity
+	$(call show_progress,"Verifying state store...")
 	@if [ -x "$(BUILD_DIR)/$(BINARY_NAME)" ]; then \
-		$(BUILD_DIR)/$(BINARY_NAME) verify --check-state-only; \
+		$(BUILD_DIR)/$(BINARY_NAME) verify; \
 	else \
-		echo "Build required before state verification"; \
+		echo "Build required before verification"; \
 		exit 1; \
 	fi
