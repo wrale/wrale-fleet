@@ -6,17 +6,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/metal/gpio"
+	"github.com/wrale/wrale-fleet/metal"
 )
 
 // Manager handles power-related operations
 type Manager struct {
 	mux   sync.RWMutex
-	state PowerState
+	state metal.PowerState
 
 	// Hardware interface
-	gpio      *gpio.Controller
-	powerPins map[PowerSource]string
+	gpio      metal.GPIO
+	powerPins map[metal.PowerSource]string
 
 	// ADC paths
 	batteryADC string
@@ -25,7 +25,7 @@ type Manager struct {
 
 	// Configuration
 	monitorInterval time.Duration
-	onPowerCritical func(PowerState)
+	onPowerCritical func(metal.PowerState)
 }
 
 // New creates a new power manager
@@ -47,14 +47,17 @@ func New(cfg Config) (*Manager, error) {
 		currentADC:      cfg.CurrentADCPath,
 		monitorInterval: cfg.MonitorInterval,
 		onPowerCritical: cfg.OnPowerCritical,
-		state: PowerState{
-			AvailablePower: make(map[PowerSource]bool),
+		state: metal.PowerState{
+			CommonState: metal.CommonState{
+				UpdatedAt: time.Now(),
+			},
+			AvailablePower: make(map[metal.PowerSource]bool),
 		},
 	}
 
 	// Initialize power source pins
 	for source, pin := range cfg.PowerPins {
-		if err := m.gpio.ConfigurePin(pin, nil, gpio.PullNone); err != nil {
+		if err := m.gpio.ConfigurePin(pin, 0, metal.ModeInput); err != nil {
 			return nil, fmt.Errorf("failed to configure power pin %s: %w", pin, err)
 		}
 		m.state.AvailablePower[source] = false
@@ -64,7 +67,7 @@ func New(cfg Config) (*Manager, error) {
 }
 
 // GetState returns the current power state
-func (m *Manager) GetState() PowerState {
+func (m *Manager) GetState() metal.PowerState {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
 	return m.state
