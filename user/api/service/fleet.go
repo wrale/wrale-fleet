@@ -3,8 +3,7 @@ package service
 import (
     "context"
     "fmt"
-    "log"
-    "google.golang.org/grpc"
+    "time"
 
     "github.com/wrale/wrale-fleet/fleet/brain/service"
     "github.com/wrale/wrale-fleet/fleet/brain/types"
@@ -13,89 +12,92 @@ import (
 
 // FleetService implements fleet-wide operations
 type FleetService struct {
-    brainSvc *service.Service
-    conn     *grpc.ClientConn
+    brain *service.Service
 }
 
 // NewFleetService creates a new fleet service
-func NewFleetService(fleetEndpoint string) *FleetService {
-    // Connect to fleet brain service
-    conn, err := grpc.Dial(fleetEndpoint, grpc.WithInsecure())
-    if err != nil {
-        log.Fatalf("Failed to connect to fleet brain: %v", err)
-    }
-
+func NewFleetService(brain *service.Service) *FleetService {
     return &FleetService{
-        brainSvc: service.NewClient(conn),
-        conn: conn,
+        brain: brain,
     }
 }
 
-// Close releases resources
-func (s *FleetService) Close() error {
-    if s.conn != nil {
-        return s.conn.Close()
-    }
-    return nil
-}
-
-// GetFleetMetrics returns system-wide metrics
+// GetFleetMetrics returns fleet-wide metrics
 func (s *FleetService) GetFleetMetrics() (*apitypes.FleetMetrics, error) {
     ctx := context.Background()
 
-    // Get fleet-wide metrics from brain
-    metrics, err := s.brainSvc.GetFleetMetrics(ctx)
+    // Get analysis from brain
+    analysis, err := s.brain.AnalyzeFleet(ctx)
     if err != nil {
         return nil, fmt.Errorf("failed to get fleet metrics: %w", err)
     }
 
-    return &apitypes.FleetMetrics{
-        TotalDevices:   metrics.TotalDevices,
-        ActiveDevices:  metrics.ActiveDevices,
-        CPUUsage:       metrics.CPUUsage,
-        MemoryUsage:    metrics.MemoryUsage,
-        PowerUsage:     metrics.PowerUsage,
-        AverageLatency: metrics.AverageLatency,
-    }, nil
+    // Convert to API metrics
+    metrics := &apitypes.FleetMetrics{
+        TotalDevices:  analysis.TotalDevices,
+        ActiveDevices: analysis.HealthyDevices,
+    }
+
+    // Extract resource usage
+    if usage, ok := analysis.ResourceUsage[types.ResourceCPU]; ok {
+        metrics.CPUUsage = usage
+    }
+    if usage, ok := analysis.ResourceUsage[types.ResourceMemory]; ok {
+        metrics.MemoryUsage = usage
+    }
+    if usage, ok := analysis.ResourceUsage[types.ResourcePower]; ok {
+        metrics.PowerUsage = usage
+    }
+
+    return metrics, nil
 }
 
 // ExecuteFleetCommand executes a fleet-wide operation
 func (s *FleetService) ExecuteFleetCommand(req *apitypes.FleetCommandRequest) error {
     ctx := context.Background()
 
-    // Create fleet task
+    // Create task with no specific devices
     task := types.Task{
+        ID:        types.TaskID(fmt.Sprintf("fleet-%d", time.Now().UnixNano())),
         Operation: req.Operation,
-        Priority:  1, // Fleet operations get high priority
+        Priority:  1,
+        CreatedAt: time.Now(),
     }
 
+    // If device selector is provided, get matching devices
     if req.DeviceSelector != nil {
-        // Get matching device IDs
-        devices, err := s.brainSvc.QueryDevices(ctx, *req.DeviceSelector)
-        if err != nil {
-            return fmt.Errorf("failed to query devices: %w", err)
-        }
-        for _, device := range devices {
-            task.DeviceIDs = append(task.DeviceIDs, device.ID)
+        // Extract devices matching location (only location supported for now)
+        if req.DeviceSelector.Location != "" {
+            devices, err := s.brain.GetDevicesInZone(ctx, req.DeviceSelector.Location)
+            if err != nil {
+                return fmt.Errorf("failed to get devices in zone: %w", err)
+            }
+            for _, device := range devices {
+                task.DeviceIDs = append(task.DeviceIDs, device.ID)
+            }
         }
     }
 
-    // Execute fleet-wide task
-    if err := s.brainSvc.ExecuteFleetTask(ctx, task); err != nil {
-        return fmt.Errorf("failed to execute fleet command: %w", err)
+    // Schedule and execute task
+    if err := s.brain.ScheduleTask(ctx, task); err != nil {
+        return fmt.Errorf("failed to schedule fleet task: %w", err)
+    }
+
+    if err := s.brain.ExecuteTask(ctx, task); err != nil {
+        return fmt.Errorf("failed to execute fleet task: %w", err)
     }
 
     return nil
 }
 
-// GetFleetConfig returns fleet-wide configuration
+// GetFleetConfig gets fleet-wide configuration
 func (s *FleetService) GetFleetConfig() (map[string]interface{}, error) {
-    ctx := context.Background()
-    return s.brainSvc.GetFleetConfig(ctx)
+    // TODO: Implement fleet-wide configuration in brain service
+    return map[string]interface{}{}, nil
 }
 
 // UpdateFleetConfig updates fleet-wide configuration
 func (s *FleetService) UpdateFleetConfig(config map[string]interface{}) error {
-    ctx := context.Background()
-    return s.brainSvc.UpdateFleetConfig(ctx, config)
+    // TODO: Implement fleet-wide configuration in brain service
+    return nil
 }

@@ -7,6 +7,7 @@ import (
     "time"
 
     "github.com/wrale/wrale-fleet/fleet/brain/service"
+    "github.com/wrale/wrale-fleet/fleet/brain/coordinator"
     "github.com/wrale/wrale-fleet/fleet/brain/types"
     apitypes "github.com/wrale/wrale-fleet/user/api/types"
 )
@@ -118,7 +119,9 @@ func (s *DeviceService) ExecuteCommand(id types.DeviceID, req *apitypes.DeviceCo
     ctx := context.Background()
 
     // Create task
+    taskID := types.TaskID(fmt.Sprintf("cmd-%d", time.Now().UnixNano()))
     task := types.Task{
+        ID:        taskID,
         Type:      types.TaskType(req.Operation),
         DeviceIDs: []types.DeviceID{id},
         Operation: req.Operation,
@@ -137,20 +140,21 @@ func (s *DeviceService) ExecuteCommand(id types.DeviceID, req *apitypes.DeviceCo
     }
 
     // Get result task
-    entry, err := s.brain.GetTask(ctx, task.ID)
+    entry, err := s.brain.GetTask(ctx, taskID)
     if err != nil {
         return nil, fmt.Errorf("failed to get task result: %w", err)
     }
 
     // Convert to API response
     resp := &apitypes.CommandResponse{
-        ID:        string(task.ID),
-        Status:    entry.Status,
-        StartTime: entry.StartedAt.Time(),
+        ID:        taskID,
+        Status:    string(entry.State),
+    }
+    if entry.StartedAt != nil {
+        resp.StartTime = *entry.StartedAt
     }
     if entry.EndedAt != nil {
-        endTime := entry.EndedAt.Time()
-        resp.EndTime = &endTime
+        resp.EndTime = entry.EndedAt
     }
     if entry.Error != nil {
         resp.Error = entry.Error.Error()
