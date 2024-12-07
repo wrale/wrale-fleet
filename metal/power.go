@@ -34,7 +34,7 @@ type PowerManager interface {
 	types.Monitor
 
 	// State Management
-	GetState() (PowerState, error)
+	GetPowerState() (PowerState, error)
 	GetSource() (PowerSource, error)
 	GetVoltage() (float64, error)
 	GetCurrent() (float64, error)

@@ -37,7 +37,7 @@ type SecurityManager interface {
 	types.Monitor
 
 	// State Management
-	GetState() (TamperState, error)
+	GetTamperState() (TamperState, error)
 	GetSecurityLevel() (SecurityLevel, error)
 	ValidateState() error
 	

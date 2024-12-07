@@ -43,7 +43,7 @@ type ThermalManager interface {
 	types.Monitor
 
 	// State Management
-	GetState() (ThermalState, error)
+	GetThermalState() (ThermalState, error)
 	GetTemperatures() (cpu, gpu, ambient float64, err error)
 	GetProfile() (ThermalProfile, error)
 	
