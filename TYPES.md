@@ -5,25 +5,32 @@ This document outlines the type system design principles and inheritance pattern
 ## Type System Principles
 
 ### 1. Layer Boundaries
-- Each architectural layer (Metal, Fleet, User) maintains its own type definitions
+- Each architectural layer (Metal, Fleet, Sync, User) maintains its own type definitions
 - Types are transformed at layer boundaries
 - No direct type sharing across non-adjacent layers
 - Clear interface contracts between layers
+- Shared types available through shared package
 
 ### 2. Type Hierarchy
 
 ```
 User Layer (Presentation)
     ↑
+    ├── TypeScript Types (UI)
+    ├── API Types (REST)
     ├── View Models
-    ├── API DTOs
-    ├── UI State Types
+    |
+Sync Layer (Consensus)
+    ↑
+    ├── Versioned State
+    ├── Sync Operations
+    ├── Config Management
     |
 Fleet Layer (Coordination)
     ↑
     ├── Device Models
     ├── Fleet State
-    ├── Orchestration Types
+    ├── Task Types
     |
 Metal Layer (Hardware)
     ↑
@@ -40,11 +47,17 @@ Metal Layer (Hardware)
 - Events are transformed into structured notifications
 - Errors are wrapped with context
 
-#### Fleet → User
-- Device models are mapped to view models
-- State is transformed for UI consumption
-- Metrics are formatted for visualization
-- Events are enriched with user context
+#### Fleet → Sync
+- Device states are versioned
+- Changes are tracked with metadata
+- Conflicts are detected and resolved
+- Configuration is distributed
+
+#### Sync → User
+- Versioned states are transformed to view models
+- Changes are propagated via WebSocket
+- Events are enriched with sync status
+- Configuration is validated
 
 ### 4. Type Safety
 
@@ -59,63 +72,84 @@ Metal Layer (Hardware)
    - Fleet constraints
    - Operational limits
 
-3. User Input Validation (User)
+3. Sync Validation
+   - State versioning
+   - Conflict detection
+   - Configuration validation
+
+4. User Input Validation
    - Schema validation
    - Permission checks
    - User constraints
 
 ### 5. Interface Contracts
 
-#### Hardware Interface
+#### Hardware Interface (Metal)
 ```go
-// Example contract pattern
-type HardwareController interface {
-    Initialize() error
-    GetState() State
-    Configure(Config) error
-    Monitor() <-chan Event
+// From metal/types/types.go
+type DeviceManager interface {
+    GetDevice(ctx context.Context, deviceID DeviceID) (*DeviceState, error)
+    ListDevices(ctx context.Context) ([]DeviceState, error)
+    GetDevicesInZone(ctx context.Context, zone string) ([]DeviceState, error)
 }
 ```
 
 #### Fleet Interface
 ```go
-// Example contract pattern
-type FleetController interface {
-    ManageDevice(DeviceID) error
-    GetDeviceState(DeviceID) DeviceState
-    UpdateConfiguration(DeviceConfig) error
-    SubscribeEvents() <-chan FleetEvent
+// From fleet/types/types.go
+type StateManager interface {
+    GetDeviceState(ctx context.Context, deviceID DeviceID) (*DeviceState, error)
+    UpdateDeviceState(ctx context.Context, state DeviceState) error
+    ListDevices(ctx context.Context) ([]DeviceState, error)
+    RemoveDevice(ctx context.Context, deviceID DeviceID) error
+    AddDevice(ctx context.Context, state DeviceState) error
 }
 ```
 
-#### User Interface
+#### Sync Interface
 ```go
-// Example contract pattern
-type UserInterface interface {
-    GetDevices() []DeviceViewModel
-    UpdateDevice(DeviceUpdateDTO) error
-    SubscribeUpdates() <-chan UIEvent
+// From sync/types/types.go
+type StateStore interface {
+    GetState(version StateVersion) (*VersionedState, error)
+    SetState(deviceID DeviceID, state types.DeviceState) error
+    SaveState(state *VersionedState) error
+    ListVersions() ([]StateVersion, error)
+    GetHistory(limit int) ([]StateChange, error)
+    GetVersion() StateVersion
 }
 ```
 
-## Data Flow Patterns
+#### User Interface (API)
+```go
+// From user/api/types/types.go
+type DeviceService interface {
+    List(ctx context.Context) ([]Device, error)
+    Get(ctx context.Context, id string) (*Device, error)
+    Create(ctx context.Context, device *Device) error
+    Update(ctx context.Context, device *Device) error
+    Delete(ctx context.Context, id string) error
+    SendCommand(ctx context.Context, id string, cmd *DeviceCommand) error
+}
+```
 
-### 1. State Propagation
-```
-Hardware State → Metal State → Fleet State → View State
-     (raw)         (typed)      (enriched)    (formatted)
-```
+#### UI Types (TypeScript)
+```typescript
+// From user/ui/wrale-dashboard/src/types/device.ts
+export interface Device {
+    id: string
+    status: string
+    location: Location
+    metrics: DeviceMetrics
+    config: DeviceConfig
+    lastUpdate: string
+}
 
-### 2. Command Flow
-```
-User Command → Fleet Command → Metal Command → Hardware Command
-   (request)     (validated)    (translated)     (executed)
-```
-
-### 3. Event Flow
-```
-Hardware Event → Metal Event → Fleet Event → UI Event
-    (signal)      (typed)       (enriched)    (displayed)
+export interface DeviceMetrics {
+    temperature: number
+    powerUsage: number
+    cpuLoad: number
+    memoryUsage: number
+}
 ```
 
 ## Type Translation
@@ -132,12 +166,43 @@ Hardware Event → Metal Event → Fleet Event → UI Event
 - Transform to target format
 - Apply security boundaries
 
+### 3. Shared Types
+```go
+// From shared/types/types.go
+type DeviceID string
+
+type NodeType string
+
+const (
+    NodeEdge    NodeType = "EDGE"
+    NodeControl NodeType = "CONTROL"
+    NodeSensor  NodeType = "SENSOR"
+)
+
+type Capability string
+
+const (
+    CapGPIO      Capability = "GPIO"
+    CapPWM       Capability = "PWM"
+    CapI2C       Capability = "I2C"
+    CapSPI       Capability = "SPI"
+    CapAnalog    Capability = "ANALOG"
+    CapMotion    Capability = "MOTION"
+    CapThermal   Capability = "THERMAL"
+    CapPower     Capability = "POWER"
+    CapSecurity  Capability = "SECURITY"
+)
+```
+
 ## Implementation Guidelines
 
 ### 1. Type Definition Location
-- Hardware types in respective hw/* packages
+- Hardware types in metal/types package
 - Fleet types in fleet/types package
-- User types in ui/types and api/types
+- Sync types in sync/types package
+- API types in user/api/types package
+- UI types in user/ui/wrale-dashboard/src/types
+- Shared types in shared/types package
 
 ### 2. Type Conversion
 - Use explicit conversion functions
@@ -157,7 +222,7 @@ Hardware Event → Metal Event → Fleet Event → UI Event
 - Ensure type safety
 - Validate contracts
 
-## Future Considerations
+## Evolution Guidelines
 
 ### 1. Type Evolution
 - Version types at boundaries
