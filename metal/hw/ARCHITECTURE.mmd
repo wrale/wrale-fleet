@@ -1,0 +1,116 @@
+```mermaid
+graph TB
+    %% Hardware Layer Overview
+    subgraph HardwareLayer["Hardware Layer (hw/)"]
+        direction TB
+        
+        %% GPIO Management
+        subgraph GPIO["GPIO Controller"]
+            gpioCtrl["Controller"]
+            gpioInt["Interrupt Handler"]
+            gpioPWM["PWM Controller"]
+            
+            gpioCtrl --> gpioInt
+            gpioCtrl --> gpioPWM
+        end
+
+        %% Power Management
+        subgraph Power["Power Management"]
+            powerMgr["Power Manager"]
+            powerMon["Power Monitor"]
+            powerState["State Handler"]
+            
+            powerMgr --> powerMon
+            powerMgr --> powerState
+        end
+
+        %% Thermal Management
+        subgraph Thermal["Thermal Control"]
+            thermalMon["Thermal Monitor"]
+            cooling["Cooling Controller"]
+            thermalState["State Machine"]
+            
+            thermalMon --> cooling
+            thermalMon --> thermalState
+        end
+
+        %% Security Management
+        subgraph Security["Security Control"]
+            secureMgr["Security Manager"]
+            secureMonitor["Security Monitor"]
+            tamperDetect["Tamper Detection"]
+            
+            secureMgr --> secureMonitor
+            secureMgr --> tamperDetect
+        end
+
+        %% Diagnostics
+        subgraph Diagnostics["Diagnostics"]
+            diagMgr["Diagnostics Manager"]
+            hwTests["Hardware Tests"]
+            metrics["Metrics Collection"]
+            
+            diagMgr --> hwTests
+            diagMgr --> metrics
+        end
+    end
+
+    %% Physical Hardware Interaction
+    subgraph PhysicalHardware["Physical Hardware Components"]
+        cpu["CPU/SoC"]
+        gpio["GPIO Pins"]
+        fan["Cooling Fan"]
+        psu["Power Supply"]
+        temp["Temperature Sensors"]
+        case["Case Sensors"]
+    end
+
+    %% Connections to Physical Hardware
+    gpio <--> gpioCtrl
+    psu <--> powerMon
+    temp <--> thermalMon
+    fan <--> cooling
+    case <--> tamperDetect
+    cpu --> metrics
+
+    %% External Interfaces
+    subgraph ExternalAPI["External Interfaces"]
+        metalCore["metal/core Integration"]
+        hwAPI["Hardware API"]
+        eventStream["Event Stream"]
+    end
+
+    %% Integration Points
+    GPIO --> hwAPI
+    Power --> hwAPI
+    Thermal --> hwAPI
+    Security --> hwAPI
+    Diagnostics --> hwAPI
+    
+    hwAPI --> metalCore
+    eventStream --> metalCore
+
+    %% Event Flow
+    thermalMon -- "Temperature Events" --> eventStream
+    powerMon -- "Power Events" --> eventStream
+    secureMonitor -- "Security Events" --> eventStream
+    diagMgr -- "Diagnostic Events" --> eventStream
+
+    %% Style Definitions
+    classDef manager fill:#f9f,stroke:#333,stroke-width:2px
+    classDef monitor fill:#bbf,stroke:#333,stroke-width:1px
+    classDef hardware fill:#fbb,stroke:#333,stroke-width:2px
+    classDef interface fill:#bfb,stroke:#333,stroke-width:1px
+
+    class powerMgr,secureMgr,diagMgr manager
+    class powerMon,thermalMon,secureMonitor monitor
+    class cpu,gpio,fan,psu,temp,case hardware
+    class hwAPI,eventStream,metalCore interface
+
+    %% Notes
+    note["Key Hardware Interactions:
+    1. Direct GPIO Access
+    2. Real-time Monitoring
+    3. Event-driven Updates
+    4. Hardware Safety Controls"]
+```
