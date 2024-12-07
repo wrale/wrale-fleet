@@ -1,147 +1,93 @@
-// Package types defines the API data structures and interfaces
 package types
 
 import (
-    "time"
+	"context"
+	"time"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+	"github.com/gorilla/websocket"
 )
 
-// API Requests
-
-// DeviceCreateRequest represents a request to register a new device
-type DeviceCreateRequest struct {
-    ID       types.DeviceID          `json:"id"`
-    Location types.PhysicalLocation  `json:"location"`
-    Config   map[string]interface{}  `json:"config"`
-}
-
-// DeviceUpdateRequest represents a request to update device state
-type DeviceUpdateRequest struct {
-    Status   string                  `json:"status,omitempty"`
-    Location *types.PhysicalLocation `json:"location,omitempty"`
-    Config   map[string]interface{}  `json:"config,omitempty"`
-}
-
-// DeviceCommandRequest represents a device operation request
-type DeviceCommandRequest struct {
-    Operation string                 `json:"operation"`
-    Params    map[string]interface{} `json:"params,omitempty"`
-    Timeout   *time.Duration         `json:"timeout,omitempty"`
-}
-
-// FleetCommandRequest represents a fleet-wide operation request
-type FleetCommandRequest struct {
-    Operation string                 `json:"operation"`
-    Devices   []types.DeviceID      `json:"devices"`
-    Params    map[string]interface{} `json:"params,omitempty"`
-    Timeout   *time.Duration         `json:"timeout,omitempty"`
-}
-
-// ConfigUpdateRequest represents a configuration update request
-type ConfigUpdateRequest struct {
-    Config    map[string]interface{} `json:"config"`
-    ValidFrom *time.Time            `json:"valid_from,omitempty"`
-    ValidTo   *time.Time            `json:"valid_to,omitempty"`
-    Devices   []types.DeviceID      `json:"devices,omitempty"`
-}
-
-// API Responses
-
-// APIResponse represents a standard API response
+// APIResponse wraps all API responses
 type APIResponse struct {
-    Success bool        `json:"success"`
-    Data    interface{} `json:"data,omitempty"`
-    Error   *APIError   `json:"error,omitempty"`
+	Success bool        `json:"success"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   *APIError   `json:"error,omitempty"`
 }
 
 // APIError represents an API error response
 type APIError struct {
-    Code    string `json:"code"`
-    Message string `json:"message"`
-    Details string `json:"details,omitempty"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
-// DeviceResponse represents a device state response
-type DeviceResponse struct {
-    ID         types.DeviceID          `json:"id"`
-    Status     string                  `json:"status"`
-    Location   types.PhysicalLocation  `json:"location"`
-    Metrics    types.DeviceMetrics     `json:"metrics"`
-    Config     map[string]interface{}  `json:"config"`
-    LastUpdate time.Time               `json:"last_update"`
+// Device represents a managed device
+type Device struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	Status      string    `json:"status"`
+	LastSeen    time.Time `json:"last_seen"`
+	Metadata    Metadata  `json:"metadata"`
 }
 
-// CommandResponse represents an operation response
-type CommandResponse struct {
-    ID        string      `json:"id"`
-    Status    string      `json:"status"`
-    StartTime time.Time   `json:"start_time"`
-    EndTime   *time.Time  `json:"end_time,omitempty"`
-    Result    interface{} `json:"result,omitempty"`
-    Error     string      `json:"error,omitempty"`
+// DeviceCommand represents a command sent to a device
+type DeviceCommand struct {
+	Type    string                 `json:"type"`
+	Payload map[string]interface{} `json:"payload"`
 }
 
-// WebSocket Messages
-
-// WSMessage represents a websocket message
-type WSMessage struct {
-    Type    string      `json:"type"`
-    Payload interface{} `json:"payload"`
+// FleetMetrics contains fleet-wide metrics
+type FleetMetrics struct {
+	TotalDevices      int       `json:"total_devices"`
+	ActiveDevices     int       `json:"active_devices"`
+	AverageUptime     float64   `json:"average_uptime"`
+	TotalErrors       int       `json:"total_errors"`
+	LastUpdated       time.Time `json:"last_updated"`
 }
 
-// WSStateUpdate represents a state update message
-type WSStateUpdate struct {
-    DeviceID types.DeviceID      `json:"device_id"`
-    State    types.DeviceState   `json:"state"`
-    Time     time.Time           `json:"time"`
+// FleetConfig contains fleet-wide configuration
+type FleetConfig struct {
+	UpdateInterval  time.Duration          `json:"update_interval"`
+	PolicyDefaults map[string]interface{} `json:"policy_defaults"`
 }
 
-// WSMetricsUpdate represents a metrics update message
-type WSMetricsUpdate struct {
-    DeviceID types.DeviceID       `json:"device_id"`
-    Metrics  types.DeviceMetrics  `json:"metrics"`
-    Time     time.Time            `json:"time"`
+// FleetCommand represents a fleet-wide command
+type FleetCommand struct {
+	Type    string                 `json:"type"`
+	Targets []string              `json:"targets"`
+	Payload map[string]interface{} `json:"payload"`
 }
 
-// WSAlertMessage represents an alert message
-type WSAlertMessage struct {
-    DeviceID types.DeviceID `json:"device_id,omitempty"`
-    Level    string         `json:"level"`
-    Message  string         `json:"message"`
-    Time     time.Time      `json:"time"`
-}
+// Metadata contains device metadata
+type Metadata map[string]interface{}
 
-// Service Interfaces
+// Service interfaces
 
-// DeviceService defines the interface for device operations
+// DeviceService handles device operations
 type DeviceService interface {
-    CreateDevice(req *DeviceCreateRequest) (*DeviceResponse, error)
-    GetDevice(id types.DeviceID) (*DeviceResponse, error)
-    UpdateDevice(id types.DeviceID, req *DeviceUpdateRequest) (*DeviceResponse, error)
-    ListDevices() ([]*DeviceResponse, error)
-    DeleteDevice(id types.DeviceID) error
-    ExecuteCommand(id types.DeviceID, req *DeviceCommandRequest) (*CommandResponse, error)
+	List(ctx context.Context) ([]Device, error)
+	Get(ctx context.Context, id string) (*Device, error)
+	Create(ctx context.Context, device *Device) error
+	Update(ctx context.Context, device *Device) error
+	Delete(ctx context.Context, id string) error
+	SendCommand(ctx context.Context, id string, cmd *DeviceCommand) error
 }
 
-// FleetService defines the interface for fleet-wide operations
+// FleetService handles fleet-wide operations
 type FleetService interface {
-    ExecuteFleetCommand(req *FleetCommandRequest) (*CommandResponse, error)
-    GetFleetMetrics() (map[string]interface{}, error)
-    UpdateConfig(req *ConfigUpdateRequest) error
-    GetConfig(devices []types.DeviceID) (map[types.DeviceID]map[string]interface{}, error)
+	GetMetrics(ctx context.Context) (*FleetMetrics, error)
+	GetConfig(ctx context.Context) (*FleetConfig, error)
+	UpdateConfig(ctx context.Context, config *FleetConfig) error
+	SendCommand(ctx context.Context, cmd *FleetCommand) error
 }
 
-// WebSocketService defines the interface for real-time updates 
+// WebSocketService handles real-time updates
 type WebSocketService interface {
-    Subscribe(deviceIDs []types.DeviceID, updates chan<- *WSMessage) error
-    Unsubscribe(updates chan<- *WSMessage) error
-    Broadcast(msg *WSMessage) error
+	HandleConnection(conn *websocket.Conn) error
 }
 
-// AuthService defines the interface for authentication/authorization
+// AuthService handles authentication and authorization
 type AuthService interface {
-    Authenticate(token string) (bool, error)
-    Authorize(token string, resource string, action string) (bool, error)
-    GenerateToken(userID string, roles []string) (string, error)
+	Authenticate(token string) (bool, error)
+	Authorize(token string, path string, method string) (bool, error)
 }
