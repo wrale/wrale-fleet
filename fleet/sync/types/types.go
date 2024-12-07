@@ -32,7 +32,7 @@ type SyncOperation struct {
 const (
 	// SyncPush indicates pushing state to devices
 	SyncPush = "push"
-	// SyncPull indicates pulling state from devices
+	// SyncPull indicates pulling state from devices 
 	SyncPull = "pull"
 	// SyncMerge indicates merging conflicting states
 	SyncMerge = "merge"
@@ -40,10 +40,12 @@ const (
 
 // VersionedState represents a versioned device state
 type VersionedState struct {
-	Version   StateVersion      `json:"version"`
-	State     types.DeviceState `json:"state"`
-	Timestamp time.Time         `json:"timestamp"`
-	Source    string            `json:"source"`
+	Version    StateVersion      `json:"version"`
+	State      types.DeviceState `json:"state"`
+	Timestamp  time.Time         `json:"timestamp"`
+	UpdatedAt  time.Time         `json:"updated_at"`
+	UpdatedBy  string            `json:"updated_by"`
+	Source     string           `json:"source"`
 }
 
 // StateChange represents a change in device state
@@ -54,7 +56,8 @@ type StateChange struct {
 	OldState    *types.DeviceState `json:"old_state,omitempty"`
 	NewState    types.DeviceState  `json:"new_state"`
 	Timestamp   time.Time          `json:"timestamp"`
-	Source      string             `json:"source"`
+	Source      string            `json:"source"`
+	Changes     []string          `json:"changes,omitempty"`
 }
 
 // ConfigData represents device configuration data
@@ -79,7 +82,7 @@ type StateStore interface {
 	GetVersion() StateVersion
 }
 
-// ConflictResolver defines interface for resolving state conflicts
+// ConflictResolver defines interface for resolving state conflicts 
 type ConflictResolver interface {
 	DetectConflicts(states []*VersionedState) ([]*VersionedState, error)
 	ResolveConflicts(states []*VersionedState) (*VersionedState, error)
