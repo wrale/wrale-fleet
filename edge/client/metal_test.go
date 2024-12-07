@@ -10,6 +10,9 @@ type mockPowerManager struct {
 	state *power.State
 }
 
+// Ensure mockPowerManager implements necessary interface
+var _ power.Manager = (*mockPowerManager)(nil)
+
 func (m *mockPowerManager) GetState() *power.State {
 	return m.state
 }
@@ -23,6 +26,9 @@ func TestGetPowerState(t *testing.T) {
 	}
 
 	client := NewMetalClient(mockPower)
+	if client == nil {
+		t.Fatal("failed to create metal client")
+	}
 
 	state, err := client.GetPowerState()
 	if err != nil {
@@ -39,5 +45,20 @@ func TestGetPowerState(t *testing.T) {
 
 	if state.Current != 1.0 {
 		t.Errorf("expected current 1.0, got %v", state.Current)
+	}
+}
+
+func TestGetPowerStateNilManager(t *testing.T) {
+	client := NewMetalClient(nil)
+	if client == nil {
+		t.Fatal("failed to create metal client")
+	}
+
+	state, err := client.GetPowerState()
+	if err == nil {
+		t.Error("expected error for nil power manager")
+	}
+	if state != nil {
+		t.Error("expected nil state for nil power manager")
 	}
 }
