@@ -7,6 +7,7 @@ import (
     "time"
 
     "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Agent implements the edge agent functionality

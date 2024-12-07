@@ -3,7 +3,8 @@ package agent
 import (
     "time"
 
-    "github.com/wrale/wrale-fleet/fleet/brain/types"
+    braintypes "github.com/wrale/wrale-fleet/fleet/brain/types"
+    "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Command types
@@ -39,7 +40,7 @@ type AgentConfig struct {
 
 // AgentState holds current agent state
 type AgentState struct {
-    DeviceState types.DeviceState
+    DeviceState braintypes.DeviceState
     Mode        OperationMode
     IsHealthy   bool
     LastError   error
@@ -59,6 +60,7 @@ type CommandResult struct {
     CommandID   string
     Success     bool
     Error       error
+    Payload     interface{}   // Added Payload field
     CompletedAt time.Time
     Payload     interface{} // Stores command-specific response data
 }
