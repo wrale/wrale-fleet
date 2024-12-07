@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wrale/wrale-fleet/fleet/brain/coordinator"
 	"github.com/wrale/wrale-fleet/fleet/brain/types"
 )
 
@@ -19,11 +20,14 @@ const (
 	HealthStatusUnknown   HealthStatus = "unknown"
 )
 
-// Inventory manages device registration and tracking
+// Inventory manages device registration and tracking.
+// It implements coordinator.StateManager interface.
 type Inventory struct {
 	devices map[types.DeviceID]*DeviceInfo
 	mu      sync.RWMutex
 }
+
+var _ coordinator.StateManager = (*Inventory)(nil) // Verify interface implementation
 
 // DeviceInfo extends DeviceState with additional inventory information
 type DeviceInfo struct {
@@ -40,7 +44,27 @@ func NewInventory() *Inventory {
 	}
 }
 
-// RegisterDevice adds a new device to the inventory
+// GetDeviceState implements StateManager.GetDeviceState
+func (i *Inventory) GetDeviceState(ctx context.Context, deviceID types.DeviceID) (*types.DeviceState, error) {
+	return i.GetDevice(ctx, deviceID)
+}
+
+// UpdateDeviceState implements StateManager.UpdateDeviceState
+func (i *Inventory) UpdateDeviceState(ctx context.Context, state types.DeviceState) error {
+	return i.UpdateState(ctx, state)
+}
+
+// AddDevice implements StateManager.AddDevice
+func (i *Inventory) AddDevice(ctx context.Context, state types.DeviceState) error {
+	return i.RegisterDevice(ctx, state)
+}
+
+// RemoveDevice implements StateManager.RemoveDevice
+func (i *Inventory) RemoveDevice(ctx context.Context, deviceID types.DeviceID) error {
+	return i.UnregisterDevice(ctx, deviceID)
+}
+
+// RegisterDevice adds a new device to the inventory (deprecated: use AddDevice)
 func (i *Inventory) RegisterDevice(ctx context.Context, state types.DeviceState) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -57,7 +81,7 @@ func (i *Inventory) RegisterDevice(ctx context.Context, state types.DeviceState)
 	return nil
 }
 
-// UnregisterDevice removes a device from the inventory
+// UnregisterDevice removes a device from the inventory (deprecated: use RemoveDevice)
 func (i *Inventory) UnregisterDevice(ctx context.Context, deviceID types.DeviceID) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -70,7 +94,7 @@ func (i *Inventory) UnregisterDevice(ctx context.Context, deviceID types.DeviceI
 	return nil
 }
 
-// GetDevice retrieves device information
+// GetDevice retrieves device information (prefer GetDeviceState for new code)
 func (i *Inventory) GetDevice(ctx context.Context, deviceID types.DeviceID) (*types.DeviceState, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
@@ -110,15 +134,26 @@ func (i *Inventory) ListDevices(ctx context.Context) ([]types.DeviceState, error
 	return devices, nil
 }
 
-// determineHealth evaluates device health based on metrics
+// determineHealth evaluates device health based on metrics and thermal state
 func determineHealth(state types.DeviceState) HealthStatus {
-	// Basic health checks for v1.0
-	if state.Metrics.Temperature > 80 { // Example threshold
-		return HealthStatusUnhealthy
+	if state.Metrics.ThermalMetrics != nil {
+		// Check thermal state first
+		if state.Metrics.ThermalMetrics.CPUTemp > 80 {
+			return HealthStatusUnhealthy
+		}
+		if state.Metrics.ThermalMetrics.IsThrottled {
+			return HealthStatusDegraded
+		}
 	}
-	if state.Metrics.CPULoad > 90 { // Example threshold
+
+	// Check other metrics
+	if state.Metrics.CPULoad > 90 {
 		return HealthStatusDegraded
 	}
+	if state.Metrics.MemoryUsage > 95 {
+		return HealthStatusDegraded
+	}
+	
 	return HealthStatusHealthy
 }
 

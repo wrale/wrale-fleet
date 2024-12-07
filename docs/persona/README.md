@@ -8,8 +8,8 @@ This document tracks validation status of critical user journeys for each person
 
 ### Fleet Administrator - Infrastructure
 Prerequisites: None
-- [ ] Package Build Journey
-  - [ ] Build fleet services
+- [WIP] Package Build Journey
+  - [WIP] Build fleet services
   - [ ] Build edge agent
   - [ ] Build metal daemon
   - [ ] Package verification

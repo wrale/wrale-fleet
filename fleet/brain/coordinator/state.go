@@ -9,21 +9,30 @@ import (
 	"github.com/wrale/wrale-fleet/fleet/brain/types"
 )
 
-// StateManager handles the fleet-wide state management
-type StateManager struct {
+// StateManager defines the interface for managing device state
+type StateManager interface {
+	GetDeviceState(ctx context.Context, deviceID types.DeviceID) (*types.DeviceState, error)
+	UpdateDeviceState(ctx context.Context, state types.DeviceState) error
+	ListDevices(ctx context.Context) ([]types.DeviceState, error)
+	RemoveDevice(ctx context.Context, deviceID types.DeviceID) error
+	AddDevice(ctx context.Context, state types.DeviceState) error
+}
+
+// DefaultStateManager provides basic state management implementation
+type DefaultStateManager struct {
 	deviceStates map[types.DeviceID]types.DeviceState
 	mu           sync.RWMutex
 }
 
 // NewStateManager creates a new state manager instance
-func NewStateManager() *StateManager {
-	return &StateManager{
+func NewStateManager() *DefaultStateManager {
+	return &DefaultStateManager{
 		deviceStates: make(map[types.DeviceID]types.DeviceState),
 	}
 }
 
 // GetDeviceState retrieves the current state of a device
-func (sm *StateManager) GetDeviceState(ctx context.Context, deviceID types.DeviceID) (*types.DeviceState, error) {
+func (sm *DefaultStateManager) GetDeviceState(ctx context.Context, deviceID types.DeviceID) (*types.DeviceState, error) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
@@ -34,7 +43,7 @@ func (sm *StateManager) GetDeviceState(ctx context.Context, deviceID types.Devic
 }
 
 // UpdateDeviceState updates the state of a device
-func (sm *StateManager) UpdateDeviceState(ctx context.Context, state types.DeviceState) error {
+func (sm *DefaultStateManager) UpdateDeviceState(ctx context.Context, state types.DeviceState) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -44,7 +53,7 @@ func (sm *StateManager) UpdateDeviceState(ctx context.Context, state types.Devic
 }
 
 // ListDevices returns all known devices and their states
-func (sm *StateManager) ListDevices(ctx context.Context) ([]types.DeviceState, error) {
+func (sm *DefaultStateManager) ListDevices(ctx context.Context) ([]types.DeviceState, error) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
@@ -56,10 +65,20 @@ func (sm *StateManager) ListDevices(ctx context.Context) ([]types.DeviceState, e
 }
 
 // RemoveDevice removes a device from state tracking
-func (sm *StateManager) RemoveDevice(ctx context.Context, deviceID types.DeviceID) error {
+func (sm *DefaultStateManager) RemoveDevice(ctx context.Context, deviceID types.DeviceID) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	delete(sm.deviceStates, deviceID)
+	return nil
+}
+
+// AddDevice adds a new device to state tracking
+func (sm *DefaultStateManager) AddDevice(ctx context.Context, state types.DeviceState) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	state.LastUpdated = time.Now()
+	sm.deviceStates[state.ID] = state
 	return nil
 }
