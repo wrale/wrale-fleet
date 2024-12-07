@@ -18,11 +18,11 @@ type MetalClient struct {
 
 // MetricsResponse represents system metrics from the metal layer
 type MetricsResponse struct {
-	CPU       float64 `json:"cpu"`
-	Memory    float64 `json:"memory"`
-	Disk      float64 `json:"disk"`
-	Network   float64 `json:"network"`
-	Timestamp int64   `json:"timestamp"`
+	Temperature float64 `json:"temperature"`
+	PowerUsage  float64 `json:"power_usage"`
+	CPULoad     float64 `json:"cpu_load"`
+	MemoryUsage float64 `json:"memory_usage"`
+	Timestamp   int64   `json:"timestamp"`
 }
 
 // NewMetalClient creates a new metal client with the given base URL
@@ -68,30 +68,6 @@ func (c *MetalClient) UpdatePowerState(state power.State) error {
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to update power state: got status %d", resp.StatusCode)
-	}
-	return nil
-}
-
-// ExecuteOperation executes a given operation on the device
-func (c *MetalClient) ExecuteOperation(operation string) error {
-	url := fmt.Sprintf("%s/operations", c.baseURL)
-	req, err := http.NewRequest(http.MethodPost, url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
-	}
-
-	q := req.URL.Query()
-	q.Add("operation", operation)
-	req.URL.RawQuery = q.Encode()
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute operation: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to execute operation: got status %d", resp.StatusCode)
 	}
 	return nil
 }
