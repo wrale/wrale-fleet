@@ -126,4 +126,53 @@ type StateStore interface {
 func (pm *PolicyManager) HandleStateUpdate(ctx context.Context, state hw.TamperState) error {
 	// Implementation details would go here
 	return nil
+}//// The following was merged into this file from legacy secure/hw-types.go.. Please preserve it but fix the file.
+// TODO: Need to merge with core's types.go
+
+package secure
+
+import (
+	"context"
+	"time"
+
+	"github.com/wrale/wrale-fleet/metal/gpio"
+)
+
+// TamperState represents the current tamper detection status
+type TamperState struct {
+	CaseOpen       bool
+	MotionDetected bool
+	VoltageNormal  bool
+	LastCheck      time.Time
+}
+
+// Config holds the configuration for the security manager
+type Config struct {
+	GPIO          *gpio.Controller
+	CaseSensor    string
+	MotionSensor  string
+	VoltageSensor string
+	DeviceID      string
+	StateStore    StateStore
+	OnTamper      func(TamperState)
+}
+
+// StateStore defines the interface for persisting security state
+type StateStore interface {
+	// SaveState persists the current security state
+	SaveState(ctx context.Context, deviceID string, state TamperState) error
+
+	// LoadState retrieves the last known security state
+	LoadState(ctx context.Context, deviceID string) (TamperState, error)
+
+	// LogEvent records a security event
+	LogEvent(ctx context.Context, deviceID string, eventType string, details interface{}) error
+}
+
+// Event represents a security event
+type Event struct {
+	DeviceID  string
+	Type      string
+	Timestamp time.Time
+	Details   interface{}
 }

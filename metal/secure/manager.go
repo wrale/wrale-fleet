@@ -1,3 +1,4 @@
+//// The following was merged into this file from legacy secure/hw-manager.go.. Please preserve it but fix the file.
 // TODO: Need to merge with core's monitor.go/policy.go
 
 package secure
