@@ -21,51 +21,6 @@ type Manager struct {
 	results []TestResult
 }
 
-// Config contains the diagnostics manager configuration
-type Config struct {
-	GPIO         *gpio.Controller       // GPIO controller
-	GPIOPins     map[string]int        // Map of pin names to numbers
-	Power        power.Manager         // Power subsystem manager
-	Thermal      thermal.Monitor       // Thermal subsystem monitor
-	Security     secure.Manager        // Security subsystem manager
-	Retries      int                   // Number of test retries
-	LoadTestTime time.Duration         // Duration for load tests
-	MinVoltage   float64              // Minimum acceptable voltage
-	TempRange    [2]float64           // Acceptable temperature range [min, max]
-	OnTestComplete func(TestResult)    // Callback for test completion
-}
-
-// TestResult contains the result of a diagnostic test
-type TestResult struct {
-	Type        TestType    // Type of test performed
-	Component   string      // Component being tested
-	Status      TestStatus  // Test result status
-	Description string      // Test description
-	Reading     float64     // Actual reading (if applicable)
-	Expected    float64     // Expected value (if applicable) 
-	Error       error       // Error details if test failed
-	Timestamp   time.Time   // When the test was performed
-}
-
-// TestType identifies the type of diagnostic test
-type TestType string
-
-const (
-	TestGPIO     TestType = "gpio"
-	TestPower    TestType = "power"
-	TestThermal  TestType = "thermal"
-	TestSecurity TestType = "security"
-)
-
-// TestStatus represents the result status of a diagnostic test
-type TestStatus string
-
-const (
-	StatusPass    TestStatus = "pass"
-	StatusFail    TestStatus = "fail"
-	StatusWarning TestStatus = "warning"
-)
-
 // New creates a new hardware diagnostics manager
 func New(cfg Config) (*Manager, error) {
 	if cfg.GPIO == nil {
@@ -73,8 +28,8 @@ func New(cfg Config) (*Manager, error) {
 	}
 
 	// Set defaults
-	if cfg.Retries == 0 {
-		cfg.Retries = 3
+	if cfg.RetryAttempts == 0 {
+		cfg.RetryAttempts = 3
 	}
 	if cfg.LoadTestTime == 0 {
 		cfg.LoadTestTime = 30 * time.Second
@@ -306,14 +261,14 @@ func (m *Manager) RunAll(ctx context.Context) error {
 	}
 
 	for _, test := range tests {
-		for retry := 0; retry < m.cfg.Retries; retry++ {
+		for retry := 0; retry < m.cfg.RetryAttempts; retry++ {
 			err := test.fn(ctx)
 			if err == nil {
 				break
 			}
-			if retry == m.cfg.Retries-1 {
+			if retry == m.cfg.RetryAttempts-1 {
 				return fmt.Errorf("%s tests failed after %d retries: %w",
-					test.name, m.cfg.Retries, err)
+					test.name, m.cfg.RetryAttempts, err)
 			}
 			time.Sleep(time.Second) // Wait between retries
 		}

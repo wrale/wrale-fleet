@@ -12,10 +12,10 @@ func TestMetalClient_Basic(t *testing.T) {
 
 	t.Run("Power State Updates", func(t *testing.T) {
 		powerState := &power.PowerState{
-			State: "standby",
+			State:     "standby",
 			UpdatedAt: time.Now(),
 		}
-		
+
 		if err := client.UpdatePowerState(powerState); err != nil {
 			t.Errorf("Failed to update power state: %v", err)
 		}
@@ -39,7 +39,7 @@ func TestMetalClient_ErrorHandling(t *testing.T) {
 
 	t.Run("Power State Error", func(t *testing.T) {
 		powerState := &power.PowerState{
-			State: "standby",
+			State:     "standby",
 			UpdatedAt: time.Now(),
 		}
 
