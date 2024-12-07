@@ -15,6 +15,8 @@ require (
 replace (
 	github.com/wrale/wrale-fleet => ../
 	github.com/wrale/wrale-fleet/fleet/brain => ./brain
+	github.com/wrale/wrale-fleet/fleet/brain/coordinator => ./brain/coordinator
+	github.com/wrale/wrale-fleet/fleet/brain/types => ./brain/types
 	github.com/wrale/wrale-fleet/metal => ../metal
 	github.com/wrale/wrale-fleet/metal/hw => ../metal/hw
 )
