@@ -2,147 +2,226 @@
 
 ⚠️ **IMPORTANT**: This document must only be updated by human operators to maintain accurate validation status.
 
-This document tracks the validation status of critical user journeys for each persona. Journeys are ordered by dependency - each journey typically requires successful validation of its prerequisites.
+This document tracks validation status of critical user journeys for each persona. Journeys are ordered by strict dependency - each requires all prerequisites to be validated first.
 
-## Phase 1: Bootstrap
+## Phase 1: Infrastructure Setup
 
-### Hardware Operator - Bootstrap
+### Fleet Administrator - Infrastructure
 Prerequisites: None
-- [ ] Device Bootstrap Journey
-  - [ ] Physical device connection
-  - [ ] Power-on sequence
-  - [ ] OS installation
-  - [ ] Agent installation
-  - [ ] Initial device enrollment
-  - [ ] Basic connectivity test
+- [ ] Package Build Journey
+  - [ ] Build fleet services
+  - [ ] Build edge agent
+  - [ ] Build metal daemon
+  - [ ] Package verification
+  - [ ] Docker image creation
+
+- [ ] Core Services Deployment Journey
+  - [ ] Database setup
+  - [ ] Message queue setup
+  - [ ] Core service deployment
+  - [ ] Health check validation
+  - [ ] Basic service metrics
+
+- [ ] API Services Deployment Journey
+  - [ ] API gateway deployment
+  - [ ] Service discovery setup
+  - [ ] API endpoint verification
+  - [ ] Authentication service
+  - [ ] API metrics collection
+
+- [ ] Dashboard Deployment Journey
+  - [ ] UI service deployment
+  - [ ] Static asset serving
+  - [ ] API integration check
+  - [ ] Basic page loading
+  - [ ] Browser compatibility
+
+## Phase 2: Fleet Initialization
+
+### Fleet Administrator - Initial Setup
+Prerequisites: All Infrastructure
+- [ ] Initial Fleet Configuration Journey
+  - [ ] Fleet database initialization
+  - [ ] Default policy creation
+  - [ ] Service account setup
+  - [ ] Monitoring configuration
+  - [ ] Backup configuration
+
+### Security Administrator - Initial Setup
+Prerequisites: Initial Fleet Configuration
+- [ ] Initial Access Setup Journey
+  - [ ] Root credentials secured
+  - [ ] Initial admin account
+  - [ ] Basic role definitions
+  - [ ] Auth service validation
+  - [ ] Access logging setup
+
+### Hardware Operator - First Device
+Prerequisites: Initial Access Setup
+- [ ] First Device Bootstrap Journey
+  - [ ] Metal daemon installation
+  - [ ] Edge agent installation
+  - [ ] Initial device connection
+  - [ ] Registration workflow
+  - [ ] Basic connectivity check
 
 - [ ] Basic Management Journey
-  - [ ] Device appears in UI
-  - [ ] Basic metrics collection works
-  - [ ] Simple commands execute (ping, version)
-  - [ ] Status updates propagate
-  - [ ] Basic health check passes
+  - [ ] Device visibility in UI
+  - [ ] Basic command execution
+  - [ ] Status reporting works
+  - [ ] Initial health check
+  - [ ] Simple metrics flow
 
-## Phase 2: Core Features
+## Phase 3: Single Device Features
 
-### Hardware Operator - Core Operations
+### Hardware Operator - Basic Features
 Prerequisites: Basic Management
-- [ ] Thermal Management Journey
-  - [ ] Temperature monitoring works
-  - [ ] Fan control responds
-  - [ ] Thermal alerts trigger
-  - [ ] Alert resolution workflow completes
-  - [ ] Thermal metrics recorded
+- [ ] Basic Metrics Journey
+  - [ ] CPU metrics
+  - [ ] Memory metrics
+  - [ ] Disk metrics
+  - [ ] Network metrics
+  - [ ] Process metrics
 
 ### Fleet Administrator - Basic Policy
 Prerequisites: Basic Management
-- [ ] Basic Policy Management Journey
-  - [ ] Policy creation works
-  - [ ] Policy validation checks
-  - [ ] Policy distribution succeeds
-  - [ ] Basic enforcement verified
-  - [ ] Policy update propagates
+- [ ] Basic Policy Journey
+  - [ ] Policy creation
+  - [ ] Policy application
+  - [ ] Enforcement check
+  - [ ] Policy update flow
+  - [ ] Policy metrics
 
-### Security Administrator - Fundamentals
+### Security Administrator - Access Control
 Prerequisites: Basic Management
 - [ ] Basic Access Control Journey
-  - [ ] User roles defined
-  - [ ] Role assignment works
-  - [ ] Permission checks enforce
-  - [ ] Access logging works
-  - [ ] Basic audit trail exists
+  - [ ] Role enforcement
+  - [ ] Permission checking
+  - [ ] Resource isolation
+  - [ ] Audit logging
+  - [ ] Access metrics
 
-## Phase 3: Advanced Features
+### Hardware Operator - Thermal
+Prerequisites: Basic Metrics, Basic Policy
+- [ ] Thermal Management Journey
+  - [ ] Temperature monitoring
+  - [ ] Fan control
+  - [ ] Thermal alerts
+  - [ ] Cool-down procedures
+  - [ ] Thermal metrics
 
-### Hardware Operator - Advanced Operations
+## Phase 4: Multi-Device Features
+
+### Fleet Administrator - Scaling
+Prerequisites: Basic Management
+- [ ] Multi-Device Enrollment Journey
+  - [ ] Bulk enrollment
+  - [ ] Device grouping
+  - [ ] Fleet-wide status
+  - [ ] Group operations
+  - [ ] Scale metrics
+
+### Fleet Administrator - Fleet Policy
+Prerequisites: Multi-Device Enrollment, Thermal Management
+- [ ] Fleet-wide Policy Journey
+  - [ ] Policy templates
+  - [ ] Bulk policy apply
+  - [ ] Cross-device rules
+  - [ ] Policy hierarchy
+  - [ ] Policy analytics
+
+### Hardware Operator - Power
 Prerequisites: Thermal Management
 - [ ] Power Management Journey
-  - [ ] Power monitoring works
-  - [ ] Power limits enforce
-  - [ ] Power alerts trigger
-  - [ ] Power optimization responds
-  - [ ] Power metrics recorded
+  - [ ] Power monitoring
+  - [ ] Usage optimization
+  - [ ] Power capping
+  - [ ] Alert handling
+  - [ ] Power analytics
 
-### Fleet Administrator - Advanced Policy
-Prerequisites: Basic Policy, Thermal Management
-- [ ] Thermal Policy Journey
-  - [ ] Fleet-wide thermal policy creation
-  - [ ] Policy distribution across fleet
-  - [ ] Cross-device thermal balancing
-  - [ ] Policy enforcement at scale
-  - [ ] Policy effectiveness metrics
-
+### Fleet Administrator - Optimization
+Prerequisites: Fleet-wide Policy, Power Management
 - [ ] Resource Optimization Journey
-  - [ ] Fleet-wide metrics collection
-  - [ ] Resource usage analysis
-  - [ ] Optimization recommendations
-  - [ ] Policy adjustments
-  - [ ] Optimization effectiveness
+  - [ ] Load balancing
+  - [ ] Resource distribution
+  - [ ] Usage optimization
+  - [ ] Cost optimization
+  - [ ] Efficiency metrics
 
-### Security Administrator - Advanced
-Prerequisites: Basic Access Control
-- [ ] Audit & Compliance Journey
-  - [ ] Comprehensive audit trails
-  - [ ] Compliance reporting
-  - [ ] Security metrics
-  - [ ] Incident investigation
-  - [ ] Forensics data collection
+## Phase 5: Maintenance
 
-## Phase 4: Maintenance
-
-### Maintenance Technician
-Prerequisites: Basic Management, Thermal Management
+### Maintenance Technician - Basics
+Prerequisites: Basic Management
 - [ ] Basic Diagnostics Journey
-  - [ ] Diagnostic tools function
-  - [ ] Error reporting works
-  - [ ] Component testing executes
-  - [ ] Service data collection
-  - [ ] Diagnostic history records
+  - [ ] Health checks
+  - [ ] Error diagnosis
+  - [ ] Component testing
+  - [ ] Log analysis
+  - [ ] Diagnostic reporting
+
+### Maintenance Technician - Services
+Prerequisites: Basic Diagnostics + Relevant Features
+- [ ] Thermal Service Journey
+  - [ ] Cooling inspection
+  - [ ] Temperature calibration
+  - [ ] Fan maintenance
+  - [ ] Thermal testing
+  - [ ] Service logging
+
+- [ ] Power Service Journey
+  - [ ] Power inspection
+  - [ ] Load testing
+  - [ ] Efficiency check
+  - [ ] Component testing
+  - [ ] Service metrics
 
 - [ ] Scheduled Service Journey
-  - [ ] Maintenance scheduling works
-  - [ ] Service window enforcement
-  - [ ] Task tracking functions
+  - [ ] Maintenance planning
+  - [ ] Service windows
+  - [ ] Task tracking
   - [ ] Completion verification
-  - [ ] Service history records
+  - [ ] Service history
 
-## Phase 5: Network
+## Phase 6: Network
 
-### Network Administrator
+### Network Administrator - Connectivity
 Prerequisites: Basic Management
 - [ ] Basic Connectivity Journey
-  - [ ] Network monitoring works
-  - [ ] Connection management
-  - [ ] Basic troubleshooting
-  - [ ] Network metrics collection
-  - [ ] Status reporting
+  - [ ] Network validation
+  - [ ] Route verification
+  - [ ] Latency checking
+  - [ ] Bandwidth testing
+  - [ ] Connection metrics
 
+### Network Administrator - Fleet Communication
+Prerequisites: Multi-Device Enrollment
 - [ ] Fleet Communication Journey
-  - [ ] Inter-device communication
-  - [ ] Network optimization
-  - [ ] Traffic management
-  - [ ] Performance monitoring
+  - [ ] Inter-device routing
+  - [ ] Protocol validation
+  - [ ] Security verification
+  - [ ] Failover testing
   - [ ] Communication metrics
 
+### Network Administrator - Performance
+Prerequisites: Fleet Communication
 - [ ] Performance Optimization Journey
   - [ ] Network analysis
-  - [ ] Route optimization
-  - [ ] Latency management
-  - [ ] Bandwidth optimization
+  - [ ] Traffic optimization
+  - [ ] Latency tuning
+  - [ ] Throughput optimization
   - [ ] Performance metrics
 
 ## Validation Guidelines
 
-1. Each journey must be tested end-to-end
-2. All sub-steps must be completed in sequence
-3. Only a human operator may mark items as complete
-4. Prerequisites must be validated before starting a journey
-5. Failed validations must include:
-   - Detailed failure description
-   - Steps to reproduce
-   - System state at time of failure
-   - Any error messages or logs
-   - Impact on dependent journeys
+1. Each journey must be validated end-to-end
+2. All prerequisites must be complete before starting
+3. Only human operators may mark items complete
+4. Failed validations must include:
+   - Failure description
+   - Reproduction steps
+   - System state
+   - Error messages/logs
+   - Impact analysis
 
 ## Progress Updates
 
@@ -151,7 +230,3 @@ Prerequisites: Basic Management
 **Journey Tested**: [Journey Name]
 **Result**: [Success/Failure]
 **Notes**: [Brief description of validation results or issues found]
-
-## Dependencies Diagram
-
-See `journey-dag.md` for a visual representation of journey dependencies.
