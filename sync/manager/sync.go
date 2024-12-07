@@ -6,12 +6,6 @@ import (
 	"time"
 )
 
-// SyncManager handles state synchronization
-type SyncManager struct {
-	config Config
-	mu     sync.RWMutex
-}
-
 // New creates a new sync manager instance
 func New(config Config) (*SyncManager, error) {
 	if config.StoragePath == "" {
@@ -31,5 +25,6 @@ func New(config Config) (*SyncManager, error) {
 
 	return &SyncManager{
 		config: config,
+		mu:     sync.RWMutex{},
 	}, nil
 }

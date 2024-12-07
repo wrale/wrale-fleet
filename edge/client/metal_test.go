@@ -7,19 +7,19 @@ import (
 )
 
 type mockPowerManager struct {
-	state *power.PowerState
+	state power.PowerState
 }
 
 // Ensure mockPowerManager implements necessary interface
 var _ power.Manager = (*mockPowerManager)(nil)
 
-func (m *mockPowerManager) GetState() *power.PowerState {
+func (m *mockPowerManager) GetState() power.PowerState {
 	return m.state
 }
 
 func TestGetPowerState(t *testing.T) {
 	mockPower := &mockPowerManager{
-		state: &power.PowerState{
+		state: power.PowerState{
 			Voltage: 5.0,
 			Current: 1.0,
 		},

@@ -18,9 +18,10 @@ func NewMetalClient(powerMgr *power.Manager) *MetalClient {
 }
 
 // GetPowerState retrieves current power system state
-func (c *MetalClient) GetPowerState() (*power.State, error) {
+func (c *MetalClient) GetPowerState() (*power.PowerState, error) {
 	if c.powerManager == nil {
 		return nil, fmt.Errorf("power manager not initialized")
 	}
-	return c.powerManager.GetState(), nil
+	state := c.powerManager.GetState()
+	return &state, nil
 }
