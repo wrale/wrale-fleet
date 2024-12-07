@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/wrale/wrale-fleet-metal-hw/gpio"
+	"github.com/wrale/wrale-fleet/metal/hw/gpio"
 )
 
 // TamperState represents the current tamper detection status
