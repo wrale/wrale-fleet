@@ -10,8 +10,6 @@ import (
 
 	core_secure "github.com/wrale/wrale-fleet/metal/core/secure"
 	core_thermal "github.com/wrale/wrale-fleet/metal/core/thermal"
-	hw_secure "github.com/wrale/wrale-fleet/metal/hw/secure"
-	hw_thermal "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Config contains server configuration options
@@ -25,9 +23,9 @@ type Server struct {
 	config Config
 	srv    *http.Server
 	
-	// Managers for different subsystems
-	thermalMgr  *hw_thermal.Manager
-	securityMgr *hw_secure.Manager
+	// Core managers
+	thermalMgr  *core_thermal.PolicyManager
+	securityMgr *core_secure.PolicyManager
 	
 	// State
 	mu       sync.RWMutex
@@ -40,16 +38,20 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("device ID is required")
 	}
 
-	// Initialize managers
-	thermalMgr, err := hw_thermal.NewManager()
+	// Initialize hardware level components
+	hwThermal, err := core_thermal.NewHardwareMonitor()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create thermal manager: %w", err)
+		return nil, fmt.Errorf("failed to create thermal monitor: %w", err)
 	}
 
-	securityMgr, err := hw_secure.NewManager()
+	hwSecurity, err := core_secure.NewHardwareMonitor()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create security manager: %w", err)
+		return nil, fmt.Errorf("failed to create security monitor: %w", err)
 	}
+
+	// Initialize core policy managers
+	thermalMgr := core_thermal.NewPolicyManager(cfg.DeviceID, hwThermal, core_thermal.DefaultPolicy())
+	securityMgr := core_secure.NewPolicyManager(cfg.DeviceID, hwSecurity, core_secure.DefaultPolicy())
 
 	s := &Server{
 		config:     cfg,
@@ -81,14 +83,6 @@ func New(cfg Config) (*Server, error) {
 
 // Run starts the server and blocks until context cancellation
 func (s *Server) Run(ctx context.Context) error {
-	// Start subsystem managers
-	if err := s.thermalMgr.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start thermal manager: %w", err)
-	}
-	if err := s.securityMgr.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start security manager: %w", err)
-	}
-
 	// Start HTTP server
 	errCh := make(chan error, 1)
 	go func() {
@@ -111,10 +105,6 @@ func (s *Server) Run(ctx context.Context) error {
 		if err := s.srv.Shutdown(context.Background()); err != nil {
 			log.Printf("Error shutting down HTTP server: %v", err)
 		}
-
-		// Stop managers
-		s.thermalMgr.Stop()
-		s.securityMgr.Stop()
 
 		return nil
 	}

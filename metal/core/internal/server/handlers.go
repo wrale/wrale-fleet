@@ -3,11 +3,9 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-
+	
 	core_secure "github.com/wrale/wrale-fleet/metal/core/secure"
 	core_thermal "github.com/wrale/wrale-fleet/metal/core/thermal"
-	hw_secure "github.com/wrale/wrale-fleet/metal/hw/secure"
-	hw_thermal "github.com/wrale/wrale-fleet/metal/hw/thermal"
 )
 
 // Device information response
@@ -38,38 +36,24 @@ func (s *Server) handleGetThermalStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	status, err := s.thermalMgr.GetStatus()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(status)
+	metrics := s.thermalMgr.GetMetrics()
+	json.NewEncoder(w).Encode(metrics)
 }
 
 // handleThermalPolicy handles getting/updating thermal policy
 func (s *Server) handleThermalPolicy(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		policy, err := s.thermalMgr.GetPolicy()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(policy)
+		json.NewEncoder(w).Encode(s.thermalMgr.GetPolicy())
 
 	case http.MethodPut:
-		var policy hw_thermal.Policy
+		var policy core_thermal.ThermalPolicy
 		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		if err := s.thermalMgr.UpdatePolicy(policy); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
+		s.thermalMgr.UpdatePolicy(policy)
 		w.WriteHeader(http.StatusOK)
 
 	default:
@@ -84,38 +68,24 @@ func (s *Server) handleGetSecurityStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	status, err := s.securityMgr.GetStatus()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(status)
+	metrics := s.securityMgr.GetMetrics()
+	json.NewEncoder(w).Encode(metrics)
 }
 
 // handleSecurityPolicy handles getting/updating security policy
 func (s *Server) handleSecurityPolicy(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		policy, err := s.securityMgr.GetPolicy()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(policy)
+		json.NewEncoder(w).Encode(s.securityMgr.GetPolicy())
 
 	case http.MethodPut:
-		var policy hw_secure.Policy
+		var policy core_secure.SecurityPolicy
 		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		if err := s.securityMgr.UpdatePolicy(policy); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
+		s.securityMgr.UpdatePolicy(policy)
 		w.WriteHeader(http.StatusOK)
 
 	default:
