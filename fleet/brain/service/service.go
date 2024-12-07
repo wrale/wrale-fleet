@@ -45,32 +45,42 @@ func NewService(metalClient coordinator.MetalClient) *Service {
 // Device Management
 
 func (s *Service) RegisterDevice(ctx context.Context, state types.DeviceState) error {
-    return s.inventory.RegisterDevice(ctx, state)
+    return s.inventory.AddDevice(ctx, state)
 }
 
 func (s *Service) UnregisterDevice(ctx context.Context, deviceID types.DeviceID) error {
-    return s.inventory.UnregisterDevice(ctx, deviceID)
+    return s.inventory.RemoveDevice(ctx, deviceID)
 }
 
 func (s *Service) UpdateDeviceState(ctx context.Context, state types.DeviceState) error {
     return s.inventory.UpdateState(ctx, state)
 }
 
-func (s *Service) UpdateThermalState(ctx context.Context, deviceID types.DeviceID, state types.ThermalState) error {
-    if err := s.inventory.UpdateThermalState(ctx, deviceID, state); err != nil {
+func (s *Service) UpdateDeviceThermal(ctx context.Context, deviceID types.DeviceID, metrics *types.ThermalMetrics) error {
+    // Get current device state
+    device, err := s.inventory.GetDevice(ctx, deviceID)
+    if err != nil {
         return err
     }
 
-    // Analyze thermal state for alerts and optimizations
-    return s.thermalMgr.ProcessThermalUpdate(ctx, deviceID, state)
+    // Update thermal metrics
+    device.Metrics.ThermalMetrics = metrics
+
+    // Update device state
+    if err := s.inventory.UpdateState(ctx, *device); err != nil {
+        return err
+    }
+
+    // Process thermal update
+    return s.thermalMgr.UpdateDeviceThermal(ctx, deviceID, metrics)
 }
 
 func (s *Service) GetDeviceState(ctx context.Context, deviceID types.DeviceID) (*types.DeviceState, error) {
     return s.inventory.GetDevice(ctx, deviceID)
 }
 
-func (s *Service) GetThermalState(ctx context.Context, deviceID types.DeviceID) (*types.ThermalState, error) {
-    return s.inventory.GetThermalState(ctx, deviceID)
+func (s *Service) GetDeviceThermal(ctx context.Context, deviceID types.DeviceID) (*types.ThermalMetrics, error) {
+    return s.thermalMgr.GetDeviceThermal(ctx, deviceID)
 }
 
 func (s *Service) ListDevices(ctx context.Context) ([]types.DeviceState, error) {
@@ -79,57 +89,53 @@ func (s *Service) ListDevices(ctx context.Context) ([]types.DeviceState, error) 
 
 // Thermal Management
 
-func (s *Service) UpdateThermalPolicy(ctx context.Context, deviceID types.DeviceID, policy types.ThermalPolicy) error {
-    // Validate policy
-    if err := s.thermalMgr.ValidatePolicy(ctx, deviceID, policy); err != nil {
+func (s *Service) UpdateThermalPolicy(ctx context.Context, deviceID types.DeviceID, policy *types.ThermalPolicy) error {
+    // Set policy directly
+    if err := s.thermalMgr.SetDevicePolicy(ctx, deviceID, policy); err != nil {
         return err
     }
 
-    // Schedule policy update
+    // Schedule any needed tasks
     task := types.Task{
-        Type:     types.TaskUpdateThermalPolicy,
-        DeviceID: deviceID,
-        Payload:  policy,
+        Type:      types.TaskUpdateThermalPolicy,
+        DeviceIDs: []types.DeviceID{deviceID},
+        Payload:   policy,
     }
     return s.scheduler.Schedule(ctx, task)
 }
 
 func (s *Service) GetThermalPolicy(ctx context.Context, deviceID types.DeviceID) (*types.ThermalPolicy, error) {
-    return s.thermalMgr.GetPolicy(ctx, deviceID)
+    return s.thermalMgr.GetDevicePolicy(ctx, deviceID)
 }
 
 func (s *Service) SetFanSpeed(ctx context.Context, deviceID types.DeviceID, speed uint32) error {
-    if err := s.thermalMgr.ValidateFanSpeed(ctx, deviceID, speed); err != nil {
-        return err
-    }
-
     task := types.Task{
-        Type:     types.TaskSetFanSpeed,
-        DeviceID: deviceID,
-        Payload:  speed,
+        Type:      types.TaskSetFanSpeed,
+        DeviceIDs: []types.DeviceID{deviceID},
+        Payload:   speed,
     }
     return s.scheduler.Schedule(ctx, task)
 }
 
 func (s *Service) SetThrottling(ctx context.Context, deviceID types.DeviceID, enabled bool) error {
     task := types.Task{
-        Type:     types.TaskSetThrottling,
-        DeviceID: deviceID,
-        Payload:  enabled,
+        Type:      types.TaskSetCoolingMode,
+        DeviceIDs: []types.DeviceID{deviceID},
+        Payload:   enabled,
     }
     return s.scheduler.Schedule(ctx, task)
 }
 
 func (s *Service) GetThermalMetrics(ctx context.Context, deviceID types.DeviceID) (*types.ThermalMetrics, error) {
-    return s.thermalMgr.GetMetrics(ctx, deviceID)
+    return s.thermalMgr.GetDeviceThermal(ctx, deviceID)
 }
 
-func (s *Service) GetThermalAlerts(ctx context.Context) ([]types.ThermalAlert, error) {
-    return s.thermalMgr.GetAlerts(ctx)
+func (s *Service) GetZoneMetrics(ctx context.Context, zone string) (*types.ZoneThermalMetrics, error) {
+    return s.thermalMgr.GetZoneMetrics(ctx, zone)
 }
 
-func (s *Service) GetThermalSummary(ctx context.Context) (*types.ThermalSummary, error) {
-    return s.thermalMgr.GetSummary(ctx)
+func (s *Service) GetThermalEvents(ctx context.Context) ([]types.ThermalEvent, error) {
+    return s.thermalMgr.GetThermalEvents(ctx)
 }
 
 // Task Management
