@@ -25,6 +25,13 @@ func NewService(store Store, logger *zap.Logger) *Service {
 	}
 }
 
+// Store returns the device store instance.
+// This provides controlled access to the underlying storage implementation
+// while maintaining proper encapsulation.
+func (s *Service) Store() Store {
+	return s.store
+}
+
 // logError logs an error with contextual information
 func (s *Service) logError(op string, err error, fields ...zap.Field) {
 	fields = append(fields, zap.String("operation", op))

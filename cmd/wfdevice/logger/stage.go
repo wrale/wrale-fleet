@@ -11,6 +11,9 @@ const (
 
 	// MaxStage is the maximum supported stage (Stage 6)
 	MaxStage = 6
+
+	// stageKey is the key used to store stage information in the logger
+	stageKey = "stage"
 )
 
 // WithStage adds stage information to a logger, enabling stage-aware logging
@@ -22,7 +25,7 @@ func WithStage(logger *zap.Logger, stage int) *zap.Logger {
 	if stage > MaxStage {
 		stage = MaxStage // Cap at maximum Stage 6
 	}
-	return logger.With(zap.Int("stage", stage))
+	return logger.With(zap.Int(stageKey, stage))
 }
 
 // StageCheck verifies if a requested operation is supported in the current stage.
@@ -31,11 +34,14 @@ func WithStage(logger *zap.Logger, stage int) *zap.Logger {
 func StageCheck(logger *zap.Logger, requiredStage int, operation string) bool {
 	currentStage := MinStage // Default to Stage 1 if not specified
 
-	// Extract current stage from logger context if available
-	if stage := logger.Check(zapcore.InfoLevel, ""); stage != nil {
-		if stageField := stage.Entry.ContextMap()["stage"]; stageField != nil {
-			if s, ok := stageField.(int); ok {
-				currentStage = s
+	// Extract current stage from logger fields
+	if ce := logger.Check(zapcore.InfoLevel, ""); ce != nil {
+		for _, f := range ce.Entry.Context {
+			if f.Key == stageKey {
+				if stage, ok := f.Integer; ok {
+					currentStage = int(stage)
+					break
+				}
 			}
 		}
 	}
@@ -62,5 +68,5 @@ func StageField(stage int) zap.Field {
 	if stage > MaxStage {
 		stage = MaxStage
 	}
-	return zap.Int("stage", stage)
+	return zap.Int(stageKey, stage)
 }
