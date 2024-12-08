@@ -51,29 +51,7 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Prepare new parent information if needed
-	var newParentInfo *AncestryInfo
-	if newParentID != "" {
-		newParent, err := h.store.Get(ctx, group.TenantID, newParentID)
-		if err != nil {
-			return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
-		}
-		newParentInfo = &newParent.Ancestry
-	}
-
-	// Save current children before any modifications
-	currentChildren := make([]string, len(currentGroup.Ancestry.Children))
-	copy(currentChildren, currentGroup.Ancestry.Children)
-
-	// Update the current group's relationships
-	if err := currentGroup.SetParent(newParentID, newParentInfo); err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-
-	// Restore children that were cleared by SetParent
-	currentGroup.Ancestry.Children = currentChildren
-
-	// Update old parent if it exists
+	// Update old parent if it exists - remove from children
 	if originalParentID != "" {
 		oldParent, err := h.store.Get(ctx, currentGroup.TenantID, originalParentID)
 		if err != nil {
@@ -86,17 +64,24 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 		}
 	}
 
-	// Update new parent if it exists
+	// Update new parent if it exists - retrieve ancestry info and add to children
+	var newParentInfo *AncestryInfo
 	if newParentID != "" {
 		newParent, err := h.store.Get(ctx, currentGroup.TenantID, newParentID)
 		if err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
 		}
+		newParentInfo = &newParent.Ancestry
 
 		newParent.AddChild(currentGroup.ID)
 		if err := h.store.Update(ctx, newParent); err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to update new parent group", err)
 		}
+	}
+
+	// Update the current group's ancestry information
+	if err := currentGroup.SetParent(newParentID, newParentInfo); err != nil {
+		return fmt.Errorf("%s: failed to update group ancestry: %w", op, err)
 	}
 
 	// Update the current group with all changes
@@ -129,6 +114,18 @@ func (h *HierarchyManager) rollbackHierarchyChange(ctx context.Context, group *G
 	rollbackGroup, err := h.store.Get(ctx, group.TenantID, group.ID)
 	if err != nil {
 		return fmt.Errorf("%s: failed to get group for rollback: %w", op, err)
+	}
+
+	// If there was a new parent, remove this group from its children
+	if rollbackGroup.ParentID != "" && rollbackGroup.ParentID != originalParentID {
+		currentParent, err := h.store.Get(ctx, group.TenantID, rollbackGroup.ParentID)
+		if err != nil {
+			return fmt.Errorf("%s: failed to get current parent for rollback: %w", op, err)
+		}
+		currentParent.RemoveChild(rollbackGroup.ID)
+		if err := h.store.Update(ctx, currentParent); err != nil {
+			return fmt.Errorf("%s: failed to update current parent: %w", op, err)
+		}
 	}
 
 	// If rolling back to original parent
