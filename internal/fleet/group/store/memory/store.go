@@ -2,25 +2,33 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
-	"github.com/wrale/fleet/internal/fleet/device/store/memory" // Device store for membership
+	"github.com/wrale/fleet/internal/fleet/device"
 	"github.com/wrale/fleet/internal/fleet/group"
 )
 
 // Store implements an in-memory group store
 type Store struct {
-	mu     sync.RWMutex
-	groups map[string]map[string]*group.Group // tenant -> id -> group
-	device *memory.Store                      // Device store for membership queries
+	mu          sync.RWMutex
+	groups      map[string]map[string]*group.Group // tenant -> id -> group
+	memberships map[string]map[string]struct{}     // groupKey -> deviceID -> struct{}
+	deviceStore device.Store                       // Device store for membership queries
 }
 
 // New creates a new memory store instance
-func New(deviceStore *memory.Store) *Store {
+func New(deviceStore device.Store) *Store {
 	return &Store{
-		groups: make(map[string]map[string]*group.Group),
-		device: deviceStore,
+		groups:      make(map[string]map[string]*group.Group),
+		memberships: make(map[string]map[string]struct{}),
+		deviceStore: deviceStore,
 	}
+}
+
+// groupKey generates a unique key for group operations
+func (s *Store) groupKey(tenantID, groupID string) string {
+	return fmt.Sprintf("%s:%s", tenantID, groupID)
 }
 
 // Create adds a new group
@@ -39,12 +47,17 @@ func (s *Store) Create(ctx context.Context, g *group.Group) error {
 
 	// Check for duplicate
 	if _, exists := s.groups[g.TenantID][g.ID]; exists {
-		return group.E("Store.Create", group.ErrCodeDuplicate,
+		return group.E("Store.Create", group.ErrCodeGroupExists,
 			"group already exists", nil)
 	}
 
 	// Store copy of group
 	s.groups[g.TenantID][g.ID] = g.DeepCopy()
+
+	// Initialize membership tracking
+	key := s.groupKey(g.TenantID, g.ID)
+	s.memberships[key] = make(map[string]struct{})
+
 	return nil
 }
 
@@ -55,13 +68,13 @@ func (s *Store) Get(ctx context.Context, tenantID, id string) (*group.Group, err
 
 	tenantGroups, exists := s.groups[tenantID]
 	if !exists {
-		return nil, group.E("Store.Get", group.ErrCodeNotFound,
+		return nil, group.E("Store.Get", group.ErrCodeGroupNotFound,
 			"group not found", nil)
 	}
 
 	g, exists := tenantGroups[id]
 	if !exists {
-		return nil, group.E("Store.Get", group.ErrCodeNotFound,
+		return nil, group.E("Store.Get", group.ErrCodeGroupNotFound,
 			"group not found", nil)
 	}
 
@@ -79,12 +92,12 @@ func (s *Store) Update(ctx context.Context, g *group.Group) error {
 
 	tenantGroups, exists := s.groups[g.TenantID]
 	if !exists {
-		return group.E("Store.Update", group.ErrCodeNotFound,
+		return group.E("Store.Update", group.ErrCodeGroupNotFound,
 			"group not found", nil)
 	}
 
 	if _, exists := tenantGroups[g.ID]; !exists {
-		return group.E("Store.Update", group.ErrCodeNotFound,
+		return group.E("Store.Update", group.ErrCodeGroupNotFound,
 			"group not found", nil)
 	}
 
@@ -99,15 +112,20 @@ func (s *Store) Delete(ctx context.Context, tenantID, id string) error {
 
 	tenantGroups, exists := s.groups[tenantID]
 	if !exists {
-		return group.E("Store.Delete", group.ErrCodeNotFound,
+		return group.E("Store.Delete", group.ErrCodeGroupNotFound,
 			"group not found", nil)
 	}
 
 	if _, exists := tenantGroups[id]; !exists {
-		return group.E("Store.Delete", group.ErrCodeNotFound,
+		return group.E("Store.Delete", group.ErrCodeGroupNotFound,
 			"group not found", nil)
 	}
 
+	// Clean up memberships
+	key := s.groupKey(tenantID, id)
+	delete(s.memberships, key)
+
+	// Delete group
 	delete(s.groups[tenantID], id)
 	return nil
 }
@@ -137,6 +155,7 @@ func (s *Store) Clear(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.groups = make(map[string]map[string]*group.Group)
+	s.memberships = make(map[string]map[string]struct{})
 	return nil
 }
 
