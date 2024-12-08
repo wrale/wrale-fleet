@@ -56,63 +56,6 @@ func getLoggingConfig() LoggingConfig {
 	return config
 }
 
-// createSamplingCore wraps a zapcore.Core with appropriate sampling configuration
-// based on the log level. This ensures we maintain important logs while reducing
-// volume for less critical entries.
-func createSamplingCore(core zapcore.Core, cfg LoggingConfig) zapcore.Core {
-	if !cfg.Sampling {
-		return core
-	}
-
-	// Create a tee of cores with different sampling configs for different levels
-	var cores []zapcore.Core
-
-	// Never sample error or above
-	errorCore := core.With([]zapcore.Field{
-		zap.String("sampling", "none"),
-	})
-	errorCore = zapcore.NewIncrementLogLevelCore(errorCore, zapcore.ErrorLevel)
-	cores = append(cores, errorCore)
-
-	// Sample warning logs: keep first 100, then sample 1/10
-	warnCore := zapcore.NewSampler(
-		zapcore.NewIncrementLogLevelCore(core, zapcore.WarnLevel),
-		time.Second,
-		100,
-		10,
-	)
-	warnCore = warnCore.With([]zapcore.Field{
-		zap.String("sampling", "warn"),
-	})
-	cores = append(cores, warnCore)
-
-	// Sample info logs: keep first 100, then sample 1/100
-	infoCore := zapcore.NewSampler(
-		zapcore.NewIncrementLogLevelCore(core, zapcore.InfoLevel),
-		time.Second,
-		100,
-		100,
-	)
-	infoCore = infoCore.With([]zapcore.Field{
-		zap.String("sampling", "info"),
-	})
-	cores = append(cores, infoCore)
-
-	// Heavily sample debug logs: keep first 50, then sample 1/1000
-	debugCore := zapcore.NewSampler(
-		zapcore.NewIncrementLogLevelCore(core, zapcore.DebugLevel),
-		time.Second,
-		50,
-		1000,
-	)
-	debugCore = debugCore.With([]zapcore.Field{
-		zap.String("sampling", "debug"),
-	})
-	cores = append(cores, debugCore)
-
-	return zapcore.NewTee(cores...)
-}
-
 // setupLogger configures the application logger based on environment variables.
 // It returns a configured zap.Logger with appropriate log levels and encoding.
 func setupLogger() (*zap.Logger, error) {
@@ -134,40 +77,65 @@ func setupLogger() (*zap.Logger, error) {
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
-	// Create zap config based on environment
-	zapConfig := zap.Config{
-		Level:            zap.NewAtomicLevelAt(parseLogLevel(cfg.LogLevel)),
-		Development:      cfg.Environment == "development",
-		Encoding:         selectEncoding(cfg.JSONOutput),
-		EncoderConfig:    encConfig,
-		OutputPaths:      []string{"stdout"},
-		ErrorOutputPaths: []string{"stderr"},
+	// Create the encoder based on configuration
+	var encoder zapcore.Encoder
+	if cfg.JSONOutput {
+		encoder = zapcore.NewJSONEncoder(encConfig)
+	} else {
+		encoder = zapcore.NewConsoleEncoder(encConfig)
 	}
 
-	// Configure stack traces
-	if !cfg.StackTrace {
-		zapConfig.DisableStacktrace = true
+	// Create the core with appropriate level and sampling
+	baseLevel := parseLogLevel(cfg.LogLevel)
+	core := zapcore.NewCore(
+		encoder,
+		zapcore.AddSync(os.Stdout),
+		baseLevel,
+	)
+
+	// Apply sampling if enabled (except for error logs)
+	if cfg.Sampling {
+		// Create a tee of cores - one for error logs (unsampled) and one for everything else
+		errorCore := zapcore.NewCore(
+			encoder,
+			zapcore.AddSync(os.Stdout),
+			zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+				return lvl >= zapcore.ErrorLevel
+			}),
+		)
+
+		// Sampled core for info and below
+		sampledCore := zapcore.NewSamplerWithOptions(
+			zapcore.NewCore(
+				encoder,
+				zapcore.AddSync(os.Stdout),
+				zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+					return lvl < zapcore.ErrorLevel && lvl >= baseLevel
+				}),
+			),
+			time.Second, // Tick
+			100,         // First
+			100,         // Thereafter
+		)
+
+		// Combine the cores
+		core = zapcore.NewTee(errorCore, sampledCore)
 	}
 
-	// Create the base logger
-	baseLogger, err := zapConfig.Build(
+	// Build the logger
+	logger := zap.New(
+		core,
 		zap.AddCaller(),
 		zap.AddCallerSkip(1),
-		zap.AddStacktrace(zapcore.ErrorLevel),
 	)
-	if err != nil {
-		return nil, err
-	}
 
-	// If sampling is enabled, wrap the core with our sampling configuration
-	if cfg.Sampling {
-		core := baseLogger.Core()
-		sampledCore := createSamplingCore(core, cfg)
-		baseLogger = zap.New(sampledCore)
+	// Add stack traces for errors if enabled
+	if cfg.StackTrace {
+		logger = logger.WithOptions(zap.AddStacktrace(zapcore.ErrorLevel))
 	}
 
 	// Add global fields
-	logger := baseLogger.With(
+	logger = logger.With(
 		zap.String("environment", cfg.Environment),
 		zap.String("app", "fleetd"),
 		zap.Time("boot_time", time.Now().UTC()),
@@ -202,12 +170,6 @@ func selectEncoding(useJSON bool) string {
 
 // safeSync attempts to sync the logger, handling common sync issues gracefully.
 // It returns nil for expected sync errors that shouldn't impact application operation.
-// This function handles various sync-related errors that can occur across different
-// platforms and environments (especially in CI/CD pipelines), including:
-// - "invalid argument" errors when syncing stdout/stderr
-// - "inappropriate ioctl for device" on some Unix systems
-// - "bad file descriptor" errors during shutdown
-// - General EINVAL errors from syscall operations
 func safeSync(logger *zap.Logger) error {
 	err := logger.Sync()
 	if err == nil {
