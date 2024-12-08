@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -47,8 +48,13 @@ func main() {
 	// Create error channel for main goroutine
 	errChan := make(chan error, 1)
 
+	// WaitGroup for coordinating cleanup
+	var wg sync.WaitGroup
+	wg.Add(1)
+
 	// Run demo in separate goroutine with enhanced error propagation
 	go func() {
+		defer wg.Done()
 		if err := runDemo(ctx, service, logger); err != nil {
 			logger.Error("demo failed", zap.Error(err))
 			errChan <- err
@@ -88,10 +94,37 @@ func main() {
 	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cleanupCancel()
 
-	// Perform cleanup operations
-	select {
-	case <-time.After(500 * time.Millisecond):
+	// Create cleanup done channel
+	cleanupDone := make(chan struct{})
+
+	// Perform cleanup operations in a goroutine
+	go func() {
+		defer close(cleanupDone)
+
+		// Wait for demo goroutine to finish
+		wg.Wait()
+
+		// Close store (assuming store implements io.Closer)
+		if closer, ok := store.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				logger.Error("failed to close store", zap.Error(err))
+			}
+		}
+
+		// Cleanup service resources
+		if cleaner, ok := service.(interface{ Cleanup(context.Context) error }); ok {
+			if err := cleaner.Cleanup(cleanupCtx); err != nil {
+				logger.Error("failed to cleanup service", zap.Error(err))
+			}
+		}
+
 		logger.Info("cleanup completed successfully")
+	}()
+
+	// Wait for cleanup to complete or timeout
+	select {
+	case <-cleanupDone:
+		// Cleanup completed successfully
 	case <-cleanupCtx.Done():
 		logger.Warn("cleanup operation timed out", zap.Error(cleanupCtx.Err()))
 	}
