@@ -50,7 +50,7 @@ func (s *DeviceRegistrationScenario) Run(ctx context.Context) error {
 	}
 
 	for _, step := range steps {
-		s.base.logger.Info("executing step", zap.String("step", step.name))
+		s.base.Logger().Info("executing step", zap.String("step", step.name))
 
 		cmd := exec.CommandContext(ctx, step.command, step.args...)
 		cmd.Stdout = os.Stdout
@@ -109,7 +109,7 @@ func (s *StatusMonitoringScenario) Run(ctx context.Context) error {
 	}
 
 	for _, step := range steps {
-		s.base.logger.Info("executing step", zap.String("step", step.name))
+		s.base.Logger().Info("executing step", zap.String("step", step.name))
 
 		cmd := exec.CommandContext(ctx, step.command, step.args...)
 		cmd.Stdout = os.Stdout
@@ -173,7 +173,7 @@ func (s *ConfigurationScenario) Run(ctx context.Context) error {
 	}
 
 	for _, step := range steps {
-		s.base.logger.Info("executing step", zap.String("step", step.name))
+		s.base.Logger().Info("executing step", zap.String("step", step.name))
 
 		cmd := exec.CommandContext(ctx, step.command, step.args...)
 		cmd.Stdout = os.Stdout

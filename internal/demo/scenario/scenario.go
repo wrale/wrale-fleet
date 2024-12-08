@@ -53,6 +53,11 @@ func (b *BaseScenario) Description() string {
 	return b.description
 }
 
+// Logger returns the scenario's logger
+func (b *BaseScenario) Logger() *zap.Logger {
+	return b.logger
+}
+
 // Setup provides a default no-op implementation
 func (b *BaseScenario) Setup(ctx context.Context) error {
 	return nil
