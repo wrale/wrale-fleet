@@ -67,6 +67,52 @@ func (h *HierarchyManager) buildAncestry(ctx context.Context, group *Group, pare
 	return ancestry, nil
 }
 
+// prepareDescendantUpdates prepares all updates needed for moving a subtree
+func (h *HierarchyManager) prepareDescendantUpdates(ctx context.Context, group *Group) ([]*Group, error) {
+	const op = "HierarchyManager.prepareDescendantUpdates"
+
+	// Get all descendants in the order they appear in the hierarchy
+	descendants, err := h.GetDescendants(ctx, group)
+	if err != nil {
+		return nil, E(op, ErrCodeStoreOperation, "failed to get descendants", err)
+	}
+
+	// Build a map for quick lookups
+	groupMap := make(map[string]*Group)
+	groupMap[group.ID] = group
+	for _, desc := range descendants {
+		groupMap[desc.ID] = desc
+	}
+
+	// Prepare updates for each descendant
+	updates := make([]*Group, len(descendants))
+	for i, desc := range descendants {
+		descCopy := desc.DeepCopy()
+
+		// Get the parent (which should now be in our map)
+		parent, exists := groupMap[desc.ParentID]
+		if !exists {
+			return nil, E(op, ErrCodeInvalidHierarchy,
+				fmt.Sprintf("missing parent %s for descendant %s", desc.ParentID, desc.ID), nil)
+		}
+
+		// Build new ancestry based on the parent's updated info
+		ancestry, err := h.buildAncestry(ctx, descCopy, parent)
+		if err != nil {
+			return nil, E(op, ErrCodeStoreOperation,
+				fmt.Sprintf("failed to build ancestry for descendant %s", desc.ID), err)
+		}
+
+		descCopy.Ancestry = *ancestry
+		updates[i] = descCopy
+
+		// Update our map with the new version for subsequent descendants
+		groupMap[desc.ID] = descCopy
+	}
+
+	return updates, nil
+}
+
 // UpdateHierarchy updates a group's position in the hierarchy
 func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, newParentID string) error {
 	const op = "HierarchyManager.UpdateHierarchy"
@@ -134,27 +180,17 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
 
-	// Update all descendants with new paths
-	descendants, err := h.GetDescendants(ctx, groupCopy)
+	// Prepare and apply all descendant updates
+	descendantUpdates, err := h.prepareDescendantUpdates(ctx, groupCopy)
 	if err != nil {
-		return E(op, ErrCodeStoreOperation, "failed to get descendants for path update", err)
+		return E(op, ErrCodeStoreOperation, "failed to prepare descendant updates", err)
 	}
 
-	for _, desc := range descendants {
-		parent, err := h.store.Get(ctx, desc.TenantID, desc.ParentID)
-		if err != nil {
-			return E(op, ErrCodeStoreOperation, fmt.Sprintf("failed to get parent for descendant %s", desc.ID), err)
-		}
-
-		descCopy := desc.DeepCopy()
-		descAncestry, err := h.buildAncestry(ctx, descCopy, parent)
-		if err != nil {
-			return E(op, ErrCodeStoreOperation, fmt.Sprintf("failed to build ancestry for descendant %s", desc.ID), err)
-		}
-
-		descCopy.Ancestry = *descAncestry
-		if err := h.store.Update(ctx, descCopy); err != nil {
-			return E(op, ErrCodeStoreOperation, fmt.Sprintf("failed to update descendant %s", desc.ID), err)
+	// Apply the updates in order
+	for _, update := range descendantUpdates {
+		if err := h.store.Update(ctx, update); err != nil {
+			return E(op, ErrCodeStoreOperation,
+				fmt.Sprintf("failed to update descendant %s", update.ID), err)
 		}
 	}
 
