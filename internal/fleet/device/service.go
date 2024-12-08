@@ -3,6 +3,7 @@ package device
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -87,7 +88,7 @@ func (s *Service) Update(ctx context.Context, device *Device) error {
 		s.monitor.RecordStatusChange(ctx, device.ID, device.TenantID, existing.Status, device.Status)
 	}
 
-	if existing.Config != device.Config {
+	if existing.LastConfigHash != device.LastConfigHash {
 		s.monitor.RecordConfigChange(ctx, device.ID, device.TenantID, "system", map[string]interface{}{
 			"old_hash": existing.LastConfigHash,
 			"new_hash": device.LastConfigHash,
