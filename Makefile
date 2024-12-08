@@ -9,6 +9,8 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOVET=$(GOCMD) vet
 BINARY_NAME=fleetd
+BUILD_DIR=build
+BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)
 
 # Tools
 GOLINT=golangci-lint
@@ -25,9 +27,12 @@ help: ## Display this help message
 	@echo "Usage:"
 	@awk 'BEGIN {FS = ":.*##"; printf "  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
 clean: ## Remove build artifacts
 	$(GOCLEAN)
-	rm -f $(BINARY_NAME)
+	rm -rf $(BUILD_DIR)
 	rm -f coverage.out
 
 fmt: ## Format code using gofmt
@@ -55,9 +60,9 @@ coverage: ## Generate test coverage report
 	$(GOTEST) -v -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out
 
-build: ## Build the binary
+build: $(BUILD_DIR) ## Build the binary
 	@echo "==> Building $(BINARY_NAME)"
-	$(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME) ./cmd/fleetd
+	$(GOBUILD) $(LDFLAGS) -o $(BINARY_PATH) ./cmd/fleetd
 
 install-tools: ## Install required development tools
 	@echo "==> Installing development tools"
@@ -69,7 +74,7 @@ all: fmt vet lint sec-check test build ## Run all checks and build
 # Development targets
 run: build ## Run the application
 	@echo "==> Running $(BINARY_NAME)"
-	./$(BINARY_NAME)
+	$(BINARY_PATH)
 
 dev: ## Run the application with hot reload
 	@echo "==> Starting development server"
