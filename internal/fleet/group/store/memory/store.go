@@ -18,21 +18,15 @@ type Store struct {
 	deviceStore device.Store
 }
 
-// NewMemoryStore creates a new in-memory group store with proper initialization
+// New creates a new in-memory group store with proper initialization
 // of all required components and maps. This constructor is primarily used for
 // testing and demonstration purposes.
-func NewMemoryStore(deviceStore device.Store) group.Store {
+func New(deviceStore device.Store) *Store {
 	return &Store{
 		groups:      make(map[string]*group.Group),
 		memberships: make(map[string]map[string]struct{}),
 		deviceStore: deviceStore,
 	}
-}
-
-// New creates a new in-memory group store. This constructor is maintained for
-// backward compatibility and internally calls NewMemoryStore.
-func New(deviceStore device.Store) *Store {
-	return NewMemoryStore(deviceStore).(*Store)
 }
 
 // key generates the map key for a group
@@ -162,38 +156,4 @@ func (s *Store) List(ctx context.Context, opts group.ListOptions) ([]*group.Grou
 	}
 
 	return result, nil
-}
-
-// matchesFilter checks if a group matches the given filter options
-func (s *Store) matchesFilter(g *group.Group, opts group.ListOptions) bool {
-	// Always filter by tenant
-	if opts.TenantID != "" && g.TenantID != opts.TenantID {
-		return false
-	}
-
-	// Filter by parent
-	if opts.ParentID != "" && g.ParentID != opts.ParentID {
-		return false
-	}
-
-	// Filter by type
-	if opts.Type != "" && g.Type != opts.Type {
-		return false
-	}
-
-	// Filter by depth
-	if opts.Depth >= 0 && g.Ancestry.Depth != opts.Depth {
-		return false
-	}
-
-	// Filter by tags
-	if len(opts.Tags) > 0 {
-		for k, v := range opts.Tags {
-			if gv, ok := g.Tags[k]; !ok || gv != v {
-				return false
-			}
-		}
-	}
-
-	return true
 }
