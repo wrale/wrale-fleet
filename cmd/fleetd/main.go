@@ -1,4 +1,5 @@
 package main
+
 // Package main implements the deprecated fleetd daemon.
 //
 // Deprecated: This package is deprecated and will be removed in a future version.

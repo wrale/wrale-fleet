@@ -120,7 +120,7 @@ func (s *Server) Stop() error {
 	var err error
 	s.stopOnce.Do(func() {
 		s.logger.Info("stopping central control plane server")
-		
+
 		// Create shutdown context with timeout
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
