@@ -19,6 +19,13 @@ const (
 )
 
 func main() {
+	// Regular entry point runs without init signal
+	mainWithInit(nil)
+}
+
+// mainWithInit is the main program logic, optionally signaling initialization.
+// The initDone channel is used for testing to coordinate program startup.
+func mainWithInit(initDone chan<- struct{}) {
 	// Initialize logger with enhanced error handling
 	logger, err := setupLogger()
 	if err != nil {
@@ -41,6 +48,11 @@ func main() {
 	if err := demoManager.Start(); err != nil {
 		logger.Error("failed to start demo manager", zap.Error(err))
 		os.Exit(1)
+	}
+
+	// Signal successful initialization if in test mode
+	if initDone != nil {
+		close(initDone)
 	}
 
 	// Set up signal handling

@@ -72,7 +72,7 @@ func TestDemoManager(t *testing.T) {
 // and graceful shutdown.
 func TestMainSignalHandling(t *testing.T) {
 	// Create channels for test coordination
-	ready := make(chan struct{})
+	initDone := make(chan struct{})
 	done := make(chan struct{})
 
 	// Capture exit codes for verification
@@ -93,17 +93,22 @@ func TestMainSignalHandling(t *testing.T) {
 
 	// Start the main program in a goroutine
 	go func() {
-		// Signal test framework when initialization is done
-		defer close(ready)
-		main()
+		defer close(done)
+		mainWithInit(initDone)
 	}()
 
 	// Wait for program initialization with timeout
 	select {
-	case <-ready:
+	case <-initDone:
 		// Program initialized successfully
 	case <-time.After(testInitTimeout):
 		t.Fatal("Program failed to initialize within timeout")
+	case <-done:
+		// Check if program exited during initialization
+		exitMu.Lock()
+		code := exitCode
+		exitMu.Unlock()
+		t.Fatalf("Program exited during initialization with code %d", code)
 	}
 
 	// Let it run briefly to ensure stable operation
