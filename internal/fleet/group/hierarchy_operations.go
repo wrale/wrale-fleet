@@ -71,6 +71,10 @@ func (h *HierarchyManager) buildAncestry(ctx context.Context, group *Group, pare
 func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, newParentID string) error {
 	const op = "HierarchyManager.UpdateHierarchy"
 
+	// Lock the entire hierarchy operation
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	// Get current state of the group and validate the change
 	currentGroup, err := h.store.Get(ctx, group.TenantID, group.ID)
 	if err != nil {
