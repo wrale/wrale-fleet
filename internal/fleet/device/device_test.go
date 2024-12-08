@@ -96,7 +96,7 @@ func TestDevice_SetConfig(t *testing.T) {
 	originalUpdate := device.UpdatedAt
 
 	config := json.RawMessage(`{"key": "value"}`)
-	device.SetConfig(config, "test-user")
+	require.NoError(t, device.SetConfig(config, "test-user"), "setting config should succeed")
 
 	assert.Equal(t, config, device.Config, "config should be updated")
 	assert.True(t, device.UpdatedAt.After(originalUpdate), "updated timestamp should be newer")
@@ -108,15 +108,15 @@ func TestDevice_Tags(t *testing.T) {
 	device := New("test-tenant", "test-device")
 
 	// Test adding tags
-	device.AddTag("env", "prod")
+	require.NoError(t, device.AddTag("env", "prod"), "adding tag should succeed")
 	assert.Equal(t, "prod", device.Tags["env"], "tag should be added")
 
 	// Test updating existing tag
-	device.AddTag("env", "dev")
+	require.NoError(t, device.AddTag("env", "dev"), "updating tag should succeed")
 	assert.Equal(t, "dev", device.Tags["env"], "tag should be updated")
 
 	// Test removing tag
-	device.RemoveTag("env")
+	require.NoError(t, device.RemoveTag("env"), "removing tag should succeed")
 	_, exists := device.Tags["env"]
 	assert.False(t, exists, "tag should be removed")
 }
