@@ -1,4 +1,9 @@
 package main
+// Package main implements the deprecated fleetd daemon.
+//
+// Deprecated: This package is deprecated and will be removed in a future version.
+// Please use the wfcentral and wfdevice commands instead, as documented in the
+// Command-Line Interface Strategy.
 
 import (
 	"context"
@@ -19,6 +24,11 @@ const (
 )
 
 func main() {
+	fmt.Fprintln(os.Stderr, "WARNING: fleetd is deprecated and will be removed in a future version.")
+	fmt.Fprintln(os.Stderr, "Please migrate to wfcentral and wfdevice commands.")
+	fmt.Fprintln(os.Stderr, "See documentation for migration instructions.")
+	fmt.Fprintln(os.Stderr)
+
 	// Regular entry point runs without init signal
 	mainWithInit(nil)
 }
