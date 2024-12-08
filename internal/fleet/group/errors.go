@@ -13,6 +13,12 @@ const (
 	ErrCodeStoreOperation   = "STORE_OPERATION"
 )
 
+// Common error field names for consistent error annotation
+const (
+	FieldGroupID  = "group_id"
+	FieldTenantID = "tenant_id"
+)
+
 // Error represents a group management error
 type Error struct {
 	Code    string
@@ -42,6 +48,16 @@ func (e *Error) WithField(key string, value interface{}) *Error {
 	}
 	e.Fields[key] = value
 	return e
+}
+
+// WithGroupID adds the group ID field to the error for better error context
+func (e *Error) WithGroupID(groupID string) *Error {
+	return e.WithField(FieldGroupID, groupID)
+}
+
+// WithTenantID adds the tenant ID field to the error for better error context
+func (e *Error) WithTenantID(tenantID string) *Error {
+	return e.WithField(FieldTenantID, tenantID)
 }
 
 // E creates a new Error
