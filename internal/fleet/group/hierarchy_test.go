@@ -16,7 +16,7 @@ func TestHierarchy(t *testing.T) {
 	// Initialize stores
 	deviceStore := devmem.New()
 	store := grpmem.New(deviceStore)
-	
+
 	ctx := context.Background()
 	tenantID := "test-tenant"
 

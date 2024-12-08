@@ -28,7 +28,7 @@ func (s *Store) Create(ctx context.Context, d *device.Device) error {
 
 	key := s.deviceKey(d.TenantID, d.ID)
 	if _, exists := s.devices[key]; exists {
-		return device.E("Store.Create", device.ErrCodeAlreadyExists, "device already exists", nil)
+		return device.E("Store.Create", device.ErrCodeDeviceExists, "device already exists", nil)
 	}
 
 	s.devices[key] = d
@@ -43,7 +43,7 @@ func (s *Store) Get(ctx context.Context, tenantID, deviceID string) (*device.Dev
 	key := s.deviceKey(tenantID, deviceID)
 	d, exists := s.devices[key]
 	if !exists {
-		return nil, device.E("Store.Get", device.ErrCodeNotFound, "device not found", nil)
+		return nil, device.E("Store.Get", device.ErrCodeDeviceNotFound, "device not found", nil)
 	}
 
 	return d, nil
@@ -56,7 +56,7 @@ func (s *Store) Update(ctx context.Context, d *device.Device) error {
 
 	key := s.deviceKey(d.TenantID, d.ID)
 	if _, exists := s.devices[key]; !exists {
-		return device.E("Store.Update", device.ErrCodeNotFound, "device not found", nil)
+		return device.E("Store.Update", device.ErrCodeDeviceNotFound, "device not found", nil)
 	}
 
 	s.devices[key] = d
@@ -70,7 +70,7 @@ func (s *Store) Delete(ctx context.Context, tenantID, deviceID string) error {
 
 	key := s.deviceKey(tenantID, deviceID)
 	if _, exists := s.devices[key]; !exists {
-		return device.E("Store.Delete", device.ErrCodeNotFound, "device not found", nil)
+		return device.E("Store.Delete", device.ErrCodeDeviceNotFound, "device not found", nil)
 	}
 
 	delete(s.devices, key)
