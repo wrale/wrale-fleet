@@ -48,52 +48,57 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// If there's an existing parent, remove this group from its children
+	// Clear existing parent relationship if any
 	if currentGroup.ParentID != "" {
 		oldParent, err := h.store.Get(ctx, currentGroup.TenantID, currentGroup.ParentID)
 		if err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to get old parent group", err)
 		}
 
-		// Update the old parent
+		// Update the old parent's children list
 		oldParent.RemoveChild(currentGroup.ID)
 		if err := h.store.Update(ctx, oldParent); err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to update old parent group", err)
 		}
-	}
 
-	// Handle the new parent relationship
-	if newParentID != "" {
-		// Get or refresh new parent information
-		newParent, err := h.store.Get(ctx, currentGroup.TenantID, newParentID)
-		if err != nil {
-			return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
-		}
-
-		// Update the parent-child relationship
-		if err := currentGroup.SetParent(newParentID, &newParent.Ancestry); err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-
-		// Update and persist the new parent
-		newParent.AddChild(currentGroup.ID)
-		if err := h.store.Update(ctx, newParent); err != nil {
-			return E(op, ErrCodeStoreOperation, "failed to update new parent group", err)
-		}
-	} else {
-		// Moving to root - clear parent relationship
+		// Clear the current group's parent reference
 		if err := currentGroup.SetParent("", nil); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	}
 
-	// Update the current group with its new state
+	// Establish new parent relationship if specified
+	if newParentID != "" {
+		// Get the new parent group
+		newParent, err := h.store.Get(ctx, currentGroup.TenantID, newParentID)
+		if err != nil {
+			return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
+		}
+
+		// Update the parent-child relationship from both sides
+		if err := currentGroup.SetParent(newParentID, &newParent.Ancestry); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+
+		// Update the new parent's children list
+		newParent.AddChild(currentGroup.ID)
+		if err := h.store.Update(ctx, newParent); err != nil {
+			return E(op, ErrCodeStoreOperation, "failed to update new parent group", err)
+		}
+	}
+
+	// Persist the updated group state
 	if err := h.store.Update(ctx, currentGroup); err != nil {
 		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
 
 	// Update the input group to reflect the changes
 	*group = *currentGroup
+
+	// Verify the hierarchy integrity after the update
+	if err := h.ValidateHierarchyIntegrity(ctx, group.TenantID); err != nil {
+		return E(op, ErrCodeInvalidGroup, "hierarchy integrity validation failed after update", err)
+	}
 
 	return nil
 }

@@ -32,44 +32,38 @@ func (h *HierarchyManager) GetDescendants(ctx context.Context, group *Group) ([]
 
 	// Build maps for efficient lookup and tracking
 	groupMap := make(map[string]*Group)
-	processed := make(map[string]bool)
 	for _, g := range allGroups {
 		groupMap[g.ID] = g
 	}
 
 	var descendants []*Group
+	visited := make(map[string]bool)
 
-	// Helper function to recursively collect descendants
-	var collect func(parentID string) error
-	collect = func(parentID string) error {
-		// Skip if already processed to avoid cycles
-		if processed[parentID] {
+	// Helper function to recursively collect descendants with cycle detection
+	var collect func(groupID string) error
+	collect = func(groupID string) error {
+		currentGroup, exists := groupMap[groupID]
+		if !exists || visited[groupID] {
 			return nil
 		}
-		processed[parentID] = true
+		visited[groupID] = true
 
-		parent, exists := groupMap[parentID]
-		if !exists {
-			return nil
-		}
-
-		// Process each child
-		for _, childID := range parent.Ancestry.Children {
+		// Process direct children first
+		for _, childID := range currentGroup.Ancestry.Children {
 			child, exists := groupMap[childID]
 			if !exists {
 				continue
 			}
 
 			// Verify bi-directional relationship
-			if child.ParentID != parent.ID {
-				continue
-			}
-
-			descendants = append(descendants, child)
-			if err := collect(childID); err != nil {
-				return err
+			if child.ParentID == currentGroup.ID {
+				descendants = append(descendants, child)
+				if err := collect(childID); err != nil {
+					return err
+				}
 			}
 		}
+
 		return nil
 	}
 
