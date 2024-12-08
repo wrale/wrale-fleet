@@ -49,13 +49,13 @@ func TestDemoManager(t *testing.T) {
 	// Let the demo run for a while to verify continuous operation
 	time.Sleep(testRunTime)
 
-	// Verify that the demo device exists and is being maintained
+	// Verify that the demo devices exist and are being maintained
 	devices, err := service.List(context.Background(), device.ListOptions{
-		TenantID: "demo-tenant",
+		TenantID: "tenant-production",
 	})
 	require.NoError(t, err, "Should be able to list devices")
-	require.Len(t, devices, 1, "Should have exactly one demo device")
-	assert.Equal(t, "Demo Raspberry Pi", devices[0].Name)
+	require.Len(t, devices, 3, "Should have exactly three demo devices")
+	assert.Equal(t, "Demo Device 1", devices[0].Name)
 	assert.Equal(t, device.StatusOnline, devices[0].Status)
 
 	// Create shutdown context with timeout
