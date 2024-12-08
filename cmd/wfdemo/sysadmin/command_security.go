@@ -1,3 +1,4 @@
+// Package sysadmin provides secure command execution for fleet management demos
 package sysadmin
 
 import (
@@ -6,34 +7,44 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"unicode"
 )
 
-// CommandType represents a validated command type
-type CommandType int
-
-const (
-	CmdDeviceRegister CommandType = iota
-	CmdDeviceGet
-	CmdDeviceStatus
-	CmdDeviceHealth
-	CmdDeviceAlerts
-	CmdDeviceConfigGet
-	CmdDeviceConfigSet
-	CmdDeviceConfigHistory
-)
-
-// commandDef defines a command's structure and validation rules
-type commandDef struct {
-	args     []string
-	maxArgs  int
-	validate func([]string) error
+// DeviceCommand represents a validated device management command
+type Command interface {
+	// Execute runs the command with the given context
+	Execute(context.Context) error
 }
 
-// commandExecutor provides secure command execution for demo scenarios
-type commandExecutor struct {
-	wfcentralPath string
-	commands      map[CommandType]commandDef
+// CommandExecutor manages device management commands
+type CommandExecutor struct {
+	execPath string   // Validated path to wfcentral binary
+	baseArgs []string // Immutable base arguments
+}
+
+// NewCommandExecutor creates a command executor with a validated executable path
+func NewCommandExecutor(wfcentralPath string) (*CommandExecutor, error) {
+	// Validate and resolve absolute path
+	absPath, err := filepath.Abs(wfcentralPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid wfcentral path: %w", err)
+	}
+
+	// Verify file exists and is executable
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("wfcentral not found: %w", err)
+	}
+
+	if info.Mode()&0111 == 0 {
+		return nil, fmt.Errorf("wfcentral is not executable")
+	}
+
+	return &CommandExecutor{
+		execPath: absPath,
+		baseArgs: []string{"device"}, // Immutable base command
+	}, nil
 }
 
 // validateDeviceName ensures device names contain only allowed characters
@@ -73,172 +84,220 @@ func validateFilePath(path string) error {
 	return nil
 }
 
-// newCommandExecutor creates a new command executor with security validation
-func newCommandExecutor(wfcentralPath string) (*commandExecutor, error) {
-	// Validate wfcentral path
-	absPath, err := filepath.Abs(wfcentralPath)
-	if err != nil {
-		return nil, fmt.Errorf("invalid wfcentral path: %w", err)
+// baseDeviceCommand provides common functionality for device commands
+type baseDeviceCommand struct {
+	executor *CommandExecutor
+	name     string   // Validated device name
+	subCmd   []string // Static sub-command
+}
+
+// execute safely executes a command built from validated components
+func (c *baseDeviceCommand) execute(ctx context.Context) error {
+	args := append(append([]string{}, c.executor.baseArgs...), c.subCmd...)
+	args = append(args, c.name)
+
+	cmd := exec.CommandContext(ctx, c.executor.execPath)
+	cmd.Args = append([]string{c.executor.execPath}, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// RegisterDeviceCommand represents a validated device registration command
+type RegisterDeviceCommand struct {
+	baseDeviceCommand
+}
+
+// NewRegisterDeviceCommand creates a new device registration command
+func (e *CommandExecutor) NewRegisterDeviceCommand(name string) (*RegisterDeviceCommand, error) {
+	if err := validateDeviceName(name); err != nil {
+		return nil, fmt.Errorf("invalid device name: %w", err)
 	}
 
-	// Verify file exists and is executable
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("wfcentral not found: %w", err)
-	}
-
-	if info.Mode()&0111 == 0 {
-		return nil, fmt.Errorf("wfcentral is not executable")
-	}
-
-	// Define command definitions with validation rules
-	commands := map[CommandType]commandDef{
-		CmdDeviceRegister: {
-			args:    []string{"device", "register", "--name"},
-			maxArgs: 4,
-			validate: func(args []string) error {
-				if len(args) != 4 {
-					return fmt.Errorf("invalid argument count for device register")
-				}
-				return validateDeviceName(args[3])
-			},
+	return &RegisterDeviceCommand{
+		baseDeviceCommand: baseDeviceCommand{
+			executor: e,
+			name:     name,
+			subCmd:   []string{"register", "--name"},
 		},
-		CmdDeviceGet: {
-			args:    []string{"device", "get"},
-			maxArgs: 3,
-			validate: func(args []string) error {
-				if len(args) != 3 {
-					return fmt.Errorf("invalid argument count for device get")
-				}
-				return validateDeviceName(args[2])
-			},
-		},
-		CmdDeviceStatus: {
-			args:    []string{"device", "status"},
-			maxArgs: 3,
-			validate: func(args []string) error {
-				if len(args) != 3 {
-					return fmt.Errorf("invalid argument count for device status")
-				}
-				return validateDeviceName(args[2])
-			},
-		},
-		CmdDeviceHealth: {
-			args:    []string{"device", "health"},
-			maxArgs: 3,
-			validate: func(args []string) error {
-				if len(args) != 3 {
-					return fmt.Errorf("invalid argument count for device health")
-				}
-				return validateDeviceName(args[2])
-			},
-		},
-		CmdDeviceAlerts: {
-			args:    []string{"device", "alerts"},
-			maxArgs: 3,
-			validate: func(args []string) error {
-				if len(args) != 3 {
-					return fmt.Errorf("invalid argument count for device alerts")
-				}
-				return validateDeviceName(args[2])
-			},
-		},
-		CmdDeviceConfigGet: {
-			args:    []string{"device", "config", "get"},
-			maxArgs: 4,
-			validate: func(args []string) error {
-				if len(args) != 4 {
-					return fmt.Errorf("invalid argument count for config get")
-				}
-				return validateDeviceName(args[3])
-			},
-		},
-		CmdDeviceConfigSet: {
-			args:    []string{"device", "config", "set"},
-			maxArgs: 6,
-			validate: func(args []string) error {
-				if len(args) != 6 || args[4] != "--file" {
-					return fmt.Errorf("invalid arguments for config set")
-				}
-				if err := validateDeviceName(args[3]); err != nil {
-					return err
-				}
-				return validateFilePath(args[5])
-			},
-		},
-		CmdDeviceConfigHistory: {
-			args:    []string{"device", "config", "history"},
-			maxArgs: 4,
-			validate: func(args []string) error {
-				if len(args) != 4 {
-					return fmt.Errorf("invalid argument count for config history")
-				}
-				return validateDeviceName(args[3])
-			},
-		},
-	}
-
-	return &commandExecutor{
-		wfcentralPath: absPath,
-		commands:      commands,
 	}, nil
 }
 
-// buildCommand safely constructs a command with validated arguments
-func (c *commandExecutor) buildCommand(cmdType CommandType, args []string) ([]string, error) {
-	def, ok := c.commands[cmdType]
-	if !ok {
-		return nil, fmt.Errorf("unknown command type")
-	}
-
-	if len(args) > def.maxArgs {
-		return nil, fmt.Errorf("too many arguments for command")
-	}
-
-	if err := def.validate(args); err != nil {
-		return nil, fmt.Errorf("command validation failed: %w", err)
-	}
-
-	return args, nil
+// Execute runs the registration command
+func (c *RegisterDeviceCommand) Execute(ctx context.Context) error {
+	return c.execute(ctx)
 }
 
-// executeCommand safely executes a whitelisted command
-func (c *commandExecutor) executeCommand(ctx context.Context, args []string) error {
-	// Determine command type from args
-	var cmdType CommandType
-	found := false
+// GetDeviceCommand represents a validated device info retrieval command
+type GetDeviceCommand struct {
+	baseDeviceCommand
+}
 
-	for ct, def := range c.commands {
-		if len(args) >= len(def.args) {
-			match := true
-			for i, arg := range def.args {
-				if i >= len(args) || args[i] != arg {
-					match = false
-					break
-				}
-			}
-			if match {
-				cmdType = ct
-				found = true
-				break
-			}
-		}
+// NewGetDeviceCommand creates a new device info retrieval command
+func (e *CommandExecutor) NewGetDeviceCommand(name string) (*GetDeviceCommand, error) {
+	if err := validateDeviceName(name); err != nil {
+		return nil, fmt.Errorf("invalid device name: %w", err)
 	}
 
-	if !found {
-		return fmt.Errorf("command not allowed: %v", args)
+	return &GetDeviceCommand{
+		baseDeviceCommand: baseDeviceCommand{
+			executor: e,
+			name:     name,
+			subCmd:   []string{"get"},
+		},
+	}, nil
+}
+
+// Execute runs the get command
+func (c *GetDeviceCommand) Execute(ctx context.Context) error {
+	return c.execute(ctx)
+}
+
+// DeviceStatusCommand represents a validated device status command
+type DeviceStatusCommand struct {
+	baseDeviceCommand
+}
+
+// NewDeviceStatusCommand creates a new device status command
+func (e *CommandExecutor) NewDeviceStatusCommand(name string) (*DeviceStatusCommand, error) {
+	if err := validateDeviceName(name); err != nil {
+		return nil, fmt.Errorf("invalid device name: %w", err)
 	}
 
-	// Build and validate command
-	validatedArgs, err := c.buildCommand(cmdType, args)
-	if err != nil {
-		return fmt.Errorf("command building failed: %w", err)
+	return &DeviceStatusCommand{
+		baseDeviceCommand: baseDeviceCommand{
+			executor: e,
+			name:     name,
+			subCmd:   []string{"status"},
+		},
+	}, nil
+}
+
+// Execute runs the status command
+func (c *DeviceStatusCommand) Execute(ctx context.Context) error {
+	return c.execute(ctx)
+}
+
+// DeviceHealthCommand represents a validated device health command
+type DeviceHealthCommand struct {
+	baseDeviceCommand
+}
+
+// NewDeviceHealthCommand creates a new device health command
+func (e *CommandExecutor) NewDeviceHealthCommand(name string) (*DeviceHealthCommand, error) {
+	if err := validateDeviceName(name); err != nil {
+		return nil, fmt.Errorf("invalid device name: %w", err)
 	}
 
-	// Execute command with proper context and output handling
-	cmd := exec.CommandContext(ctx, c.wfcentralPath, validatedArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	return &DeviceHealthCommand{
+		baseDeviceCommand: baseDeviceCommand{
+			executor: e,
+			name:     name,
+			subCmd:   []string{"health"},
+		},
+	}, nil
+}
 
-	return cmd.Run()
+// Execute runs the health command
+func (c *DeviceHealthCommand) Execute(ctx context.Context) error {
+	return c.execute(ctx)
+}
+
+// DeviceAlertsCommand represents a validated device alerts command
+type DeviceAlertsCommand struct {
+	baseDeviceCommand
+}
+
+// NewDeviceAlertsCommand creates a new device alerts command
+func (e *CommandExecutor) NewDeviceAlertsCommand(name string) (*DeviceAlertsCommand, error) {
+	if err := validateDeviceName(name); err != nil {
+		return nil, fmt.Errorf("invalid device name: %w", err)
+	}
+
+	return &DeviceAlertsCommand{
+		baseDeviceCommand: baseDeviceCommand{
+			executor: e,
+			name:     name,
+			subCmd:   []string{"alerts"},
+		},
+	}, nil
+}
+
+// Execute runs the alerts command
+func (c *DeviceAlertsCommand) Execute(ctx context.Context) error {
+	return c.execute(ctx)
+}
+
+// DeviceConfigCommand represents a validated device config command
+type DeviceConfigCommand struct {
+	baseDeviceCommand
+	action string
+	file   string // Optional config file path
+}
+
+// NewDeviceConfigGetCommand creates a new device config get command
+func (e *CommandExecutor) NewDeviceConfigGetCommand(name string) (*DeviceConfigCommand, error) {
+	if err := validateDeviceName(name); err != nil {
+		return nil, fmt.Errorf("invalid device name: %w", err)
+	}
+
+	return &DeviceConfigCommand{
+		baseDeviceCommand: baseDeviceCommand{
+			executor: e,
+			name:     name,
+			subCmd:   []string{"config", "get"},
+		},
+		action: "get",
+	}, nil
+}
+
+// NewDeviceConfigSetCommand creates a new device config set command
+func (e *CommandExecutor) NewDeviceConfigSetCommand(name, configFile string) (*DeviceConfigCommand, error) {
+	if err := validateDeviceName(name); err != nil {
+		return nil, fmt.Errorf("invalid device name: %w", err)
+	}
+	if err := validateFilePath(configFile); err != nil {
+		return nil, fmt.Errorf("invalid config file: %w", err)
+	}
+
+	return &DeviceConfigCommand{
+		baseDeviceCommand: baseDeviceCommand{
+			executor: e,
+			name:     name,
+			subCmd:   []string{"config", "set"},
+		},
+		action: "set",
+		file:   configFile,
+	}, nil
+}
+
+// NewDeviceConfigHistoryCommand creates a new device config history command
+func (e *CommandExecutor) NewDeviceConfigHistoryCommand(name string) (*DeviceConfigCommand, error) {
+	if err := validateDeviceName(name); err != nil {
+		return nil, fmt.Errorf("invalid device name: %w", err)
+	}
+
+	return &DeviceConfigCommand{
+		baseDeviceCommand: baseDeviceCommand{
+			executor: e,
+			name:     name,
+			subCmd:   []string{"config", "history"},
+		},
+		action: "history",
+	}, nil
+}
+
+// Execute runs the config command with appropriate arguments
+func (c *DeviceConfigCommand) Execute(ctx context.Context) error {
+	if c.action == "set" {
+		args := append(append([]string{}, c.executor.baseArgs...), c.subCmd...)
+		args = append(args, c.name, "--file", c.file)
+
+		cmd := exec.CommandContext(ctx, c.executor.execPath)
+		cmd.Args = append([]string{c.executor.execPath}, args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	return c.execute(ctx)
 }

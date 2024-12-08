@@ -1,3 +1,4 @@
+// Package sysadmin provides secure command execution for fleet management demos
 package sysadmin
 
 import (
@@ -13,12 +14,12 @@ import (
 // DeviceRegistrationScenario demonstrates basic device registration workflow
 type DeviceRegistrationScenario struct {
 	base     *scenario.BaseScenario
-	executor *commandExecutor
+	executor *CommandExecutor
 }
 
 // NewDeviceRegistrationScenario creates a new device registration demo
 func NewDeviceRegistrationScenario(logger *zap.Logger, wfcentralPath string) (*DeviceRegistrationScenario, error) {
-	executor, err := newCommandExecutor(wfcentralPath)
+	executor, err := NewCommandExecutor(wfcentralPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create command executor: %w", err)
 	}
@@ -35,24 +36,31 @@ func (s *DeviceRegistrationScenario) Setup(ctx context.Context) error   { return
 func (s *DeviceRegistrationScenario) Cleanup(ctx context.Context) error { return s.base.Cleanup(ctx) }
 
 func (s *DeviceRegistrationScenario) Run(ctx context.Context) error {
+	const deviceName = "demo-device-1"
+
 	steps := []struct {
 		name string
-		args []string
+		cmd  func() (Command, error)
 	}{
 		{
 			name: "Register Device",
-			args: []string{"device", "register", "--name", "demo-device-1"},
+			cmd:  func() (Command, error) { return s.executor.NewRegisterDeviceCommand(deviceName) },
 		},
 		{
 			name: "Verify Registration",
-			args: []string{"device", "get", "demo-device-1"},
+			cmd:  func() (Command, error) { return s.executor.NewGetDeviceCommand(deviceName) },
 		},
 	}
 
 	for _, step := range steps {
 		s.base.Logger().Info("executing step", zap.String("step", step.name))
 
-		if err := s.executor.executeCommand(ctx, step.args); err != nil {
+		cmd, err := step.cmd()
+		if err != nil {
+			return fmt.Errorf("failed to create command for step %s: %w", step.name, err)
+		}
+
+		if err := cmd.Execute(ctx); err != nil {
 			return fmt.Errorf("step %s failed: %w", step.name, err)
 		}
 
@@ -65,12 +73,12 @@ func (s *DeviceRegistrationScenario) Run(ctx context.Context) error {
 // StatusMonitoringScenario demonstrates device status monitoring
 type StatusMonitoringScenario struct {
 	base     *scenario.BaseScenario
-	executor *commandExecutor
+	executor *CommandExecutor
 }
 
 // NewStatusMonitoringScenario creates a new status monitoring demo
 func NewStatusMonitoringScenario(logger *zap.Logger, wfcentralPath string) (*StatusMonitoringScenario, error) {
-	executor, err := newCommandExecutor(wfcentralPath)
+	executor, err := NewCommandExecutor(wfcentralPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create command executor: %w", err)
 	}
@@ -87,28 +95,35 @@ func (s *StatusMonitoringScenario) Setup(ctx context.Context) error   { return s
 func (s *StatusMonitoringScenario) Cleanup(ctx context.Context) error { return s.base.Cleanup(ctx) }
 
 func (s *StatusMonitoringScenario) Run(ctx context.Context) error {
+	const deviceName = "demo-device-1"
+
 	steps := []struct {
 		name string
-		args []string
+		cmd  func() (Command, error)
 	}{
 		{
 			name: "View Device Status",
-			args: []string{"device", "status", "demo-device-1"},
+			cmd:  func() (Command, error) { return s.executor.NewDeviceStatusCommand(deviceName) },
 		},
 		{
 			name: "Monitor Health Metrics",
-			args: []string{"device", "health", "demo-device-1"},
+			cmd:  func() (Command, error) { return s.executor.NewDeviceHealthCommand(deviceName) },
 		},
 		{
 			name: "Check Alert History",
-			args: []string{"device", "alerts", "demo-device-1"},
+			cmd:  func() (Command, error) { return s.executor.NewDeviceAlertsCommand(deviceName) },
 		},
 	}
 
 	for _, step := range steps {
 		s.base.Logger().Info("executing step", zap.String("step", step.name))
 
-		if err := s.executor.executeCommand(ctx, step.args); err != nil {
+		cmd, err := step.cmd()
+		if err != nil {
+			return fmt.Errorf("failed to create command for step %s: %w", step.name, err)
+		}
+
+		if err := cmd.Execute(ctx); err != nil {
 			return fmt.Errorf("step %s failed: %w", step.name, err)
 		}
 
@@ -121,12 +136,12 @@ func (s *StatusMonitoringScenario) Run(ctx context.Context) error {
 // ConfigurationScenario demonstrates device configuration management
 type ConfigurationScenario struct {
 	base     *scenario.BaseScenario
-	executor *commandExecutor
+	executor *CommandExecutor
 }
 
 // NewConfigurationScenario creates a new configuration management demo
 func NewConfigurationScenario(logger *zap.Logger, wfcentralPath string) (*ConfigurationScenario, error) {
-	executor, err := newCommandExecutor(wfcentralPath)
+	executor, err := NewCommandExecutor(wfcentralPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create command executor: %w", err)
 	}
@@ -143,32 +158,42 @@ func (s *ConfigurationScenario) Setup(ctx context.Context) error   { return s.ba
 func (s *ConfigurationScenario) Cleanup(ctx context.Context) error { return s.base.Cleanup(ctx) }
 
 func (s *ConfigurationScenario) Run(ctx context.Context) error {
+	const (
+		deviceName = "demo-device-1"
+		configFile = "demo-config.json"
+	)
+
 	steps := []struct {
 		name string
-		args []string
+		cmd  func() (Command, error)
 	}{
 		{
 			name: "View Current Config",
-			args: []string{"device", "config", "get", "demo-device-1"},
+			cmd:  func() (Command, error) { return s.executor.NewDeviceConfigGetCommand(deviceName) },
 		},
 		{
 			name: "Update Config",
-			args: []string{"device", "config", "set", "demo-device-1", "--file", "demo-config.json"},
+			cmd:  func() (Command, error) { return s.executor.NewDeviceConfigSetCommand(deviceName, configFile) },
 		},
 		{
 			name: "Verify Config Update",
-			args: []string{"device", "config", "get", "demo-device-1"},
+			cmd:  func() (Command, error) { return s.executor.NewDeviceConfigGetCommand(deviceName) },
 		},
 		{
 			name: "View Config History",
-			args: []string{"device", "config", "history", "demo-device-1"},
+			cmd:  func() (Command, error) { return s.executor.NewDeviceConfigHistoryCommand(deviceName) },
 		},
 	}
 
 	for _, step := range steps {
 		s.base.Logger().Info("executing step", zap.String("step", step.name))
 
-		if err := s.executor.executeCommand(ctx, step.args); err != nil {
+		cmd, err := step.cmd()
+		if err != nil {
+			return fmt.Errorf("failed to create command for step %s: %w", step.name, err)
+		}
+
+		if err := cmd.Execute(ctx); err != nil {
 			return fmt.Errorf("step %s failed: %w", step.name, err)
 		}
 
