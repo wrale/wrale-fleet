@@ -46,7 +46,8 @@ func ValidateTenantAccess(ctx context.Context, d *Device) error {
 // ValidateTenantMatch ensures two tenant IDs match
 func ValidateTenantMatch(tenantID1, tenantID2 string) error {
 	if tenantID1 != tenantID2 {
-		return E("device.ValidateTenantMatch", ErrCodeUnauthorized, "tenant ID mismatch", nil).
+		return E("device.ValidateTenantMatch", ErrCodeUnauthorized,
+			"unauthorized access: operation not permitted for this tenant", nil).
 			WithField("tenant1", tenantID1).
 			WithField("tenant2", tenantID2)
 	}
