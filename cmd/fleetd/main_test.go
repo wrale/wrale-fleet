@@ -16,95 +16,70 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+// Test constants define reasonable timeouts for different operations.
+// These values are long enough to allow for normal operation but short
+// enough to catch deadlocks or hanging operations quickly.
 const (
-	testInitTimeout     = 500 * time.Millisecond
-	testShutdownTimeout = 5 * time.Second
+	testInitTimeout     = 2 * time.Second // Time allowed for initialization
+	testRunTime         = 3 * time.Second // Time to let the demo run
+	testShutdownTimeout = 2 * time.Second // Time allowed for clean shutdown
 )
 
-// TestRunDemo tests the demo workflow functionality
-func TestRunDemo(t *testing.T) {
-	// Use test logger with proper cleanup
+// TestDemoManager verifies the continuous demo operation capabilities,
+// including startup, running state, and graceful shutdown.
+func TestDemoManager(t *testing.T) {
+	// Create a test logger that integrates with the testing framework
 	logger := zaptest.NewLogger(t)
 	defer func() {
 		_ = safeSync(logger)
 	}()
 
-	tests := []struct {
-		name    string
-		ctx     context.Context
-		wantErr bool
-		setup   func(*device.Service) error
-	}{
-		{
-			name:    "successful demo execution",
-			ctx:     context.Background(),
-			wantErr: false,
-		},
-		{
-			name: "context cancellation",
-			ctx: func() context.Context {
-				ctx, cancel := context.WithCancel(context.Background())
-				cancel() // Pre-cancel context
-				return ctx
-			}(),
-			wantErr: true,
-		},
-		{
-			name: "device already exists",
-			ctx:  context.Background(),
-			setup: func(s *device.Service) error {
-				// Pre-create device with same tenant ID
-				_, err := s.Register(context.Background(), "demo-tenant", "Existing Device")
-				return err
-			},
-			wantErr: false,
-		},
-	}
+	// Create the basic infrastructure needed for the demo
+	store := memory.New()
+	service := device.NewService(store, logger)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			store := memory.New()
-			service := device.NewService(store, logger)
+	// Initialize the demo manager
+	dm := NewDemoManager(service, logger)
+	require.NotNil(t, dm, "Demo manager should be created successfully")
 
-			if tt.setup != nil {
-				require.NoError(t, tt.setup(service))
-			}
+	// Start the demo and verify initialization
+	err := dm.Start()
+	require.NoError(t, err, "Demo should start without errors")
 
-			err := runDemo(tt.ctx, service, logger)
-			if tt.wantErr {
-				assert.Error(t, err)
-				return
-			}
-			assert.NoError(t, err)
+	// Let the demo run for a while to verify continuous operation
+	time.Sleep(testRunTime)
 
-			devices, err := service.List(tt.ctx, device.ListOptions{
-				TenantID: "demo-tenant",
-			})
-			require.NoError(t, err)
-			require.NotEmpty(t, devices)
-		})
-	}
+	// Verify that the demo device exists and is being maintained
+	devices, err := service.List(context.Background(), device.ListOptions{
+		TenantID: "demo-tenant",
+	})
+	require.NoError(t, err, "Should be able to list devices")
+	require.Len(t, devices, 1, "Should have exactly one demo device")
+	assert.Equal(t, "Demo Raspberry Pi", devices[0].Name)
+	assert.Equal(t, device.StatusOnline, devices[0].Status)
+
+	// Verify graceful shutdown
+	err = dm.Stop()
+	assert.NoError(t, err, "Demo should stop gracefully")
 }
 
-// TestMainSignalHandling tests proper shutdown signal handling
+// TestMainSignalHandling verifies that the main program handles
+// system signals appropriately, including proper initialization
+// and graceful shutdown.
 func TestMainSignalHandling(t *testing.T) {
-	// Create coordination channels
+	// Create channels for test coordination
 	ready := make(chan struct{})
 	done := make(chan struct{})
 
-	// Setup exit capture
+	// Capture exit codes for verification
 	var exitCode int
 	var exitMu sync.Mutex
 	origExit := osExit
-
-	// Properly restore original exit function with parameter passing
 	defer func() {
-		osExit = func(code int) {
-			origExit(code)
-		}
+		osExit = origExit
 	}()
 
-	// Mock exit function that captures the exit code
+	// Mock the exit function to capture exit codes instead of terminating
 	osExit = func(code int) {
 		exitMu.Lock()
 		exitCode = code
@@ -112,41 +87,43 @@ func TestMainSignalHandling(t *testing.T) {
 		close(done)
 	}
 
-	// Start main in a goroutine with initialization signal
+	// Start the main program in a goroutine
 	go func() {
-		// Signal when initialization is complete
-		time.AfterFunc(testInitTimeout/2, func() {
-			close(ready)
-		})
+		// Signal test framework when initialization is done
+		defer close(ready)
 		main()
 	}()
 
-	// Wait for initialization with timeout
+	// Wait for program initialization with timeout
 	select {
 	case <-ready:
-		// Initialized successfully
+		// Program initialized successfully
 	case <-time.After(testInitTimeout):
-		t.Fatal("program did not initialize within timeout")
+		t.Fatal("Program failed to initialize within timeout")
 	}
 
-	// Send interrupt signal
-	p, err := os.FindProcess(os.Getpid())
-	require.NoError(t, err)
-	require.NoError(t, p.Signal(os.Interrupt))
+	// Let it run briefly to ensure stable operation
+	time.Sleep(testRunTime)
 
-	// Wait for shutdown with timeout
+	// Send termination signal
+	p, err := os.FindProcess(os.Getpid())
+	require.NoError(t, err, "Should be able to find current process")
+	require.NoError(t, p.Signal(os.Interrupt), "Should be able to send interrupt signal")
+
+	// Wait for clean shutdown
 	select {
 	case <-done:
 		exitMu.Lock()
 		code := exitCode
 		exitMu.Unlock()
-		assert.Equal(t, 0, code)
+		assert.Equal(t, 0, code, "Program should exit with success code")
 	case <-time.After(testShutdownTimeout):
-		t.Fatal("program did not shut down within timeout")
+		t.Fatal("Program failed to shut down within timeout")
 	}
 }
 
-// TestLogger verifies logger configuration
+// TestLogger verifies that the logger is properly configured based
+// on the environment setting and handles synchronization gracefully.
 func TestLogger(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -167,20 +144,27 @@ func TestLogger(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Save and restore environment state
 			prevEnv := os.Getenv("ENVIRONMENT")
 			os.Setenv("ENVIRONMENT", tt.environment)
 			defer os.Setenv("ENVIRONMENT", prevEnv)
 
+			// Create and verify logger
 			logger, err := setupLogger()
-			require.NoError(t, err)
+			require.NoError(t, err, "Logger setup should succeed")
 			defer func() {
 				_ = safeSync(logger)
 			}()
 
-			assert.Equal(t, tt.wantLevel, getLoggerLevel(logger))
+			assert.Equal(t, tt.wantLevel, getLoggerLevel(logger),
+				"Logger should have correct level for environment")
+
+			// Verify sync behavior
+			err = safeSync(logger)
+			assert.NoError(t, err, "Logger sync should handle common issues gracefully")
 		})
 	}
 }
 
-// Mock os.Exit for testing
+// Mock os.Exit for testing purposes
 var osExit = os.Exit

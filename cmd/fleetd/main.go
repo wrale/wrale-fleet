@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -27,9 +26,9 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() {
-		// Use the safe sync helper to handle stdout/stderr sync errors gracefully
 		if err := safeSync(logger); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
+			// Logger sync errors are expected on some platforms, don't fail
+			fmt.Fprintf(os.Stderr, "logger sync warning: %v\n", err)
 		}
 	}()
 
@@ -37,95 +36,39 @@ func main() {
 	store := memory.New()
 	service := device.NewService(store, logger)
 
-	// Handle shutdown signals with improved coordination
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Create and start demo manager
+	demoManager := NewDemoManager(service, logger)
+	if err := demoManager.Start(); err != nil {
+		logger.Error("failed to start demo manager", zap.Error(err))
+		os.Exit(1)
+	}
 
 	// Set up signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Create error channel for main goroutine
-	errChan := make(chan error, 1)
+	// Wait for shutdown signal
+	sig := <-sigChan
+	logger.Info("received shutdown signal", zap.String("signal", sig.String()))
 
-	// WaitGroup for coordinating cleanup
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	// Run demo in separate goroutine with enhanced error propagation
-	go func() {
-		defer wg.Done()
-		if err := runDemo(ctx, service, logger); err != nil {
-			logger.Error("demo failed", zap.Error(err))
-			errChan <- err
-			return
-		}
-		errChan <- nil
-	}()
-
-	// Wait for either signal or demo completion with improved shutdown sequence
-	var shutdownErr error
-	select {
-	case sig := <-sigChan:
-		logger.Info("received shutdown signal", zap.String("signal", sig.String()))
-		cancel()
-
-		// Create shutdown timeout context
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer shutdownCancel()
-
-		// Wait for demo to finish or timeout
-		select {
-		case err := <-errChan:
-			shutdownErr = err
-		case <-shutdownCtx.Done():
-			logger.Warn("shutdown timed out", zap.Error(shutdownCtx.Err()))
-			shutdownErr = shutdownCtx.Err()
-		}
-
-	case err := <-errChan:
-		shutdownErr = err
-	}
-
-	// Begin graceful shutdown with structured cleanup
+	// Begin graceful shutdown
 	logger.Info("initiating shutdown sequence")
 
-	// Create cleanup context with timeout for orderly shutdown
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), cleanupTimeout)
-	defer cleanupCancel()
+	// Stop demo manager
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer shutdownCancel()
 
-	// Create cleanup done channel
-	cleanupDone := make(chan struct{})
-
-	// Perform cleanup operations in a goroutine
-	go func() {
-		defer close(cleanupDone)
-
-		// Wait for demo goroutine to finish
-		wg.Wait()
-
-		// Close store if it implements io.Closer
-		if closer, ok := store.(interface{ Close() error }); ok {
-			if err := closer.Close(); err != nil {
-				logger.Error("failed to close store", zap.Error(err))
-			}
-		}
-
-		logger.Info("cleanup completed successfully")
-	}()
-
-	// Wait for cleanup to complete or timeout
-	select {
-	case <-cleanupDone:
-		// Cleanup completed successfully
-	case <-cleanupCtx.Done():
-		logger.Warn("cleanup operation timed out", zap.Error(cleanupCtx.Err()))
+	if err := demoManager.Stop(); err != nil {
+		logger.Error("failed to stop demo manager", zap.Error(err))
+		os.Exit(1)
 	}
 
-	// Exit with appropriate status and logging
-	if shutdownErr != nil {
-		logger.Error("shutdown completed with errors", zap.Error(shutdownErr))
-		os.Exit(1)
+	// Clean up resources
+	if closer, ok := store.(interface{ Close() error }); ok {
+		if err := closer.Close(); err != nil {
+			logger.Error("failed to close store", zap.Error(err))
+			os.Exit(1)
+		}
 	}
 
 	logger.Info("shutdown completed successfully")
