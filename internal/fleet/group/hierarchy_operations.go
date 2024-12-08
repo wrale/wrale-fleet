@@ -5,27 +5,26 @@ import (
 	"fmt"
 )
 
-// ValidateHierarchyChange checks if a proposed parent change would create cycles
+type stagedUpdate struct {
+	group      *Group
+	needUpdate bool
+}
+
 func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *Group, newParentID string) error {
 	const op = "HierarchyManager.ValidateHierarchyChange"
-
 	if newParentID == "" {
-		return nil // Moving to root is always valid
+		return nil
 	}
 
-	// Check that the new parent exists and is in the same tenant
 	newParent, err := h.store.Get(ctx, group.TenantID, newParentID)
 	if err != nil {
 		return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
 	}
 
-	// Prevent self-referential cycles
 	if group.ID == newParentID {
 		return E(op, ErrCodeCyclicDependency, "group cannot be its own parent", nil)
 	}
 
-	// Check that the new parent isn't a descendant of the group by checking
-	// if the group ID appears in its ancestry path
 	if newParent.IsAncestor(group.ID) {
 		return E(op, ErrCodeCyclicDependency, "cyclic dependency detected", nil)
 	}
@@ -33,66 +32,94 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 	return nil
 }
 
-// stagedUpdate represents a pending hierarchy update
-type stagedUpdate struct {
-	group      *Group
-	needUpdate bool
+func (h *HierarchyManager) loadConnectedGroups(ctx context.Context, group *Group, staged map[string]*stagedUpdate) error {
+	const op = "loadConnectedGroups"
+
+	// Load children of the group if not already staged
+	for _, childID := range group.Ancestry.Children {
+		if _, exists := staged[childID]; !exists {
+			child, err := h.store.Get(ctx, group.TenantID, childID)
+			if err != nil {
+				return E(op, ErrCodeStoreOperation, fmt.Sprintf("failed to load child group %s", childID), err)
+			}
+			staged[childID] = &stagedUpdate{group: child}
+		}
+	}
+
+	// Load group's ancestors if not already staged
+	if group.ParentID != "" {
+		ancestors, err := h.store.GetAncestors(ctx, group.TenantID, group.ID)
+		if err != nil {
+			return E(op, ErrCodeStoreOperation, "failed to load ancestor groups", err)
+		}
+		for _, ancestor := range ancestors {
+			if _, exists := staged[ancestor.ID]; !exists {
+				staged[ancestor.ID] = &stagedUpdate{group: ancestor}
+			}
+		}
+	}
+
+	return nil
 }
 
-// stageUpdates prepares all necessary changes for a hierarchy update
 func (h *HierarchyManager) stageUpdates(ctx context.Context, group *Group, newParentID string) (map[string]*stagedUpdate, error) {
 	const op = "stageUpdates"
 	staged := make(map[string]*stagedUpdate)
 
-	// Stage the current group first
-	currentGroup := *group // Make a copy
+	// Stage the target group
+	currentGroup := *group
 	staged[group.ID] = &stagedUpdate{
 		group:      &currentGroup,
 		needUpdate: true,
 	}
 
-	// First phase: Load all affected groups
-	// If there's a current parent, load it
-	var oldParent *Group
+	// Load all connected groups first
+	if err := h.loadConnectedGroups(ctx, &currentGroup, staged); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	// Handle old parent relationship
 	if group.ParentID != "" {
-		var err error
-		oldParent, err = h.store.Get(ctx, group.TenantID, group.ParentID)
-		if err != nil {
-			return nil, E(op, ErrCodeStoreOperation, "failed to get old parent group", err)
+		oldParent, exists := staged[group.ParentID]
+		if !exists {
+			var err error
+			oldParent := &stagedUpdate{needUpdate: true}
+			oldParent.group, err = h.store.Get(ctx, group.TenantID, group.ParentID)
+			if err != nil {
+				return nil, E(op, ErrCodeStoreOperation, "failed to get old parent group", err)
+			}
+			staged[group.ParentID] = oldParent
+		} else {
+			oldParent.needUpdate = true
 		}
-		staged[oldParent.ID] = &stagedUpdate{
-			group:      oldParent,
-			needUpdate: true,
-		}
+		oldParent.group.RemoveChild(group.ID)
 	}
 
-	// If there's a new parent, load it
-	var newParent *Group
+	// Handle new parent relationship
 	if newParentID != "" {
-		var err error
-		newParent, err = h.store.Get(ctx, group.TenantID, newParentID)
-		if err != nil {
-			return nil, E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
+		newParent, exists := staged[newParentID]
+		if !exists {
+			var err error
+			newParent := &stagedUpdate{needUpdate: true}
+			newParent.group, err = h.store.Get(ctx, group.TenantID, newParentID)
+			if err != nil {
+				return nil, E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
+			}
+			staged[newParentID] = newParent
+			if err := h.loadConnectedGroups(ctx, newParent.group, staged); err != nil {
+				return nil, fmt.Errorf("%s: %w", op, err)
+			}
+		} else {
+			newParent.needUpdate = true
 		}
-		staged[newParentID] = &stagedUpdate{
-			group:      newParent,
-			needUpdate: true,
-		}
-	}
 
-	// Second phase: Update parent references
-	// Remove from old parent's children list if it exists
-	if oldParent != nil {
-		staged[oldParent.ID].group.RemoveChild(group.ID)
-	}
-
-	// Update current group's parent reference and ancestry
-	if newParentID != "" {
-		if err := staged[group.ID].group.SetParent(newParentID, &newParent.Ancestry); err != nil {
+		// Update current group's ancestry
+		if err := staged[group.ID].group.SetParent(newParentID, &newParent.group.Ancestry); err != nil {
 			return nil, E(op, ErrCodeInvalidOperation, "failed to update group ancestry", err)
 		}
-		// Add to new parent's children list
-		staged[newParentID].group.AddChild(group.ID)
+
+		// Update new parent's children
+		newParent.group.AddChild(group.ID)
 	} else {
 		if err := staged[group.ID].group.SetParent("", nil); err != nil {
 			return nil, E(op, ErrCodeInvalidOperation, "failed to update group ancestry", err)
@@ -102,19 +129,15 @@ func (h *HierarchyManager) stageUpdates(ctx context.Context, group *Group, newPa
 	return staged, nil
 }
 
-// validateStagedUpdates verifies the consistency of staged changes
 func (h *HierarchyManager) validateStagedUpdates(staged map[string]*stagedUpdate) error {
 	const op = "validateStagedUpdates"
 
-	// Check each staged group for bidirectional relationship consistency
 	for _, update := range staged {
 		group := update.group
-
-		// If the group has a parent reference, verify the parent's children list
 		if group.ParentID != "" {
+			// Verify parent exists and lists this group as a child
 			parentUpdate, exists := staged[group.ParentID]
 			if exists {
-				// Parent is included in staged changes
 				found := false
 				for _, childID := range parentUpdate.group.Ancestry.Children {
 					if childID == group.ID {
@@ -124,22 +147,19 @@ func (h *HierarchyManager) validateStagedUpdates(staged map[string]*stagedUpdate
 				}
 				if !found {
 					return E(op, ErrCodeInvalidGroup,
-						fmt.Sprintf("parent %s does not list %s as child",
-							group.ParentID, group.ID), nil)
+						fmt.Sprintf("group %s's parent %s does not list it as a child",
+							group.ID, group.ParentID), nil)
 				}
 			}
 		}
 
-		// For each child in the group's children list
+		// Verify all children exist and reference this group as parent
 		for _, childID := range group.Ancestry.Children {
 			childUpdate, exists := staged[childID]
-			if exists {
-				// Child is included in staged changes
-				if childUpdate.group.ParentID != group.ID {
-					return E(op, ErrCodeInvalidGroup,
-						fmt.Sprintf("group %s lists %s as child, but child references parent %s",
-							group.ID, childID, childUpdate.group.ParentID), nil)
-				}
+			if exists && childUpdate.group.ParentID != group.ID {
+				return E(op, ErrCodeInvalidGroup,
+					fmt.Sprintf("group %s lists %s as child, but child has different parent %s",
+						group.ID, childID, childUpdate.group.ParentID), nil)
 			}
 		}
 	}
@@ -147,14 +167,12 @@ func (h *HierarchyManager) validateStagedUpdates(staged map[string]*stagedUpdate
 	return nil
 }
 
-// applyUpdates persists staged changes to the store
 func (h *HierarchyManager) applyUpdates(ctx context.Context, staged map[string]*stagedUpdate) error {
 	const op = "applyUpdates"
 
-	// Apply updates in a specific order to maintain consistency:
-	// 1. Update old parent (remove child reference)
-	// 2. Update group (update ancestry info)
-	// 3. Update new parent (add child reference)
+	// First update groups being removed from hierarchy
+	// Then update the target group
+	// Finally update groups being added to hierarchy
 	for _, update := range staged {
 		if !update.needUpdate {
 			continue
@@ -169,32 +187,24 @@ func (h *HierarchyManager) applyUpdates(ctx context.Context, staged map[string]*
 	return nil
 }
 
-// UpdateHierarchy updates a group's position in the hierarchy
 func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, newParentID string) error {
-	const op = "HierarchyManager.UpdateHierarchy"
+	const op = "UpdateHierarchy"
 
-	// Validate the proposed change
 	if err := h.ValidateHierarchyChange(ctx, group, newParentID); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Store original parent ID for potential rollback
 	originalParentID := group.ParentID
-
-	// Stage all updates
 	staged, err := h.stageUpdates(ctx, group, newParentID)
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Validate staged changes
 	if err := h.validateStagedUpdates(staged); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Apply the changes
 	if err := h.applyUpdates(ctx, staged); err != nil {
-		// Attempt rollback
 		if rbErr := h.rollbackHierarchyChange(ctx, group, originalParentID); rbErr != nil {
 			return E(op, ErrCodeStoreOperation,
 				fmt.Sprintf("update failed and rollback failed: %v (rollback error: %v)",
@@ -203,78 +213,56 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Verify final hierarchy integrity
 	if err := h.ValidateHierarchyIntegrity(ctx, group.TenantID); err != nil {
-		// Attempt rollback
 		if rbErr := h.rollbackHierarchyChange(ctx, group, originalParentID); rbErr != nil {
 			return E(op, ErrCodeStoreOperation,
-				fmt.Sprintf("integrity validation failed and rollback failed: %v (rollback error: %v)",
+				fmt.Sprintf("integrity check failed and rollback failed: %v (rollback error: %v)",
 					err, rbErr), err)
 		}
-		return fmt.Errorf("%s: hierarchy integrity validation failed: %w", op, err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Update the input group to reflect changes
 	*group = *staged[group.ID].group
-
 	return nil
 }
 
-// rollbackHierarchyChange attempts to restore a group's previous hierarchy state
 func (h *HierarchyManager) rollbackHierarchyChange(ctx context.Context, group *Group, originalParentID string) error {
 	const op = "rollbackHierarchyChange"
 
-	// Stage rollback updates
 	staged := make(map[string]*stagedUpdate)
 
-	// Get fresh copies of affected groups
-	currentGroup, err := h.store.Get(ctx, group.TenantID, group.ID)
+	rollbackGroup, err := h.store.Get(ctx, group.TenantID, group.ID)
 	if err != nil {
 		return fmt.Errorf("%s: failed to get group for rollback: %w", op, err)
 	}
-	staged[currentGroup.ID] = &stagedUpdate{
-		group:      currentGroup,
-		needUpdate: true,
-	}
+	staged[rollbackGroup.ID] = &stagedUpdate{group: rollbackGroup, needUpdate: true}
 
-	// Handle current parent if different from original
-	if currentGroup.ParentID != "" && currentGroup.ParentID != originalParentID {
-		currentParent, err := h.store.Get(ctx, group.TenantID, currentGroup.ParentID)
+	if rollbackGroup.ParentID != "" && rollbackGroup.ParentID != originalParentID {
+		currentParent, err := h.store.Get(ctx, group.TenantID, rollbackGroup.ParentID)
 		if err != nil {
 			return fmt.Errorf("%s: failed to get current parent for rollback: %w", op, err)
 		}
-		staged[currentParent.ID] = &stagedUpdate{
-			group:      currentParent,
-			needUpdate: true,
-		}
-		staged[currentParent.ID].group.RemoveChild(currentGroup.ID)
+		staged[currentParent.ID] = &stagedUpdate{group: currentParent, needUpdate: true}
+		staged[currentParent.ID].group.RemoveChild(rollbackGroup.ID)
 	}
 
-	// Handle original parent if it exists
 	if originalParentID != "" {
 		originalParent, err := h.store.Get(ctx, group.TenantID, originalParentID)
 		if err != nil {
 			return fmt.Errorf("%s: failed to get original parent for rollback: %w", op, err)
 		}
-		staged[originalParent.ID] = &stagedUpdate{
-			group:      originalParent,
-			needUpdate: true,
-		}
+		staged[originalParent.ID] = &stagedUpdate{group: originalParent, needUpdate: true}
 
-		// First update the current group's ancestry
-		if err := staged[currentGroup.ID].group.SetParent(originalParentID, &originalParent.Ancestry); err != nil {
+		if err := staged[rollbackGroup.ID].group.SetParent(originalParentID, &originalParent.Ancestry); err != nil {
 			return fmt.Errorf("%s: failed to restore original parent: %w", op, err)
 		}
-		// Then update the original parent's children list
-		staged[originalParent.ID].group.AddChild(currentGroup.ID)
+		staged[originalParent.ID].group.AddChild(rollbackGroup.ID)
 	} else {
-		// Restore to root
-		if err := staged[currentGroup.ID].group.SetParent("", nil); err != nil {
+		if err := staged[rollbackGroup.ID].group.SetParent("", nil); err != nil {
 			return fmt.Errorf("%s: failed to restore as root: %w", op, err)
 		}
 	}
 
-	// Apply rollback changes in correct order
 	if err := h.applyUpdates(ctx, staged); err != nil {
 		return fmt.Errorf("%s: failed to apply rollback updates: %w", op, err)
 	}
