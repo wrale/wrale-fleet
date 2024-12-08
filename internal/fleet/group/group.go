@@ -58,6 +58,87 @@ type Group struct {
 	DeviceCount int              `json:"device_count"` // Count of member devices
 }
 
+// DeepCopy creates a deep copy of a Group and all its nested structures
+func (g *Group) DeepCopy() *Group {
+	if g == nil {
+		return nil
+	}
+
+	result := &Group{
+		ID:          g.ID,
+		TenantID:    g.TenantID,
+		Name:        g.Name,
+		Description: g.Description,
+		Type:        g.Type,
+		ParentID:    g.ParentID,
+		CreatedAt:   g.CreatedAt,
+		UpdatedAt:   g.UpdatedAt,
+		DeviceCount: g.DeviceCount,
+	}
+
+	// Deep copy Ancestry
+	result.Ancestry = AncestryInfo{
+		Path:  g.Ancestry.Path,
+		Depth: g.Ancestry.Depth,
+	}
+
+	// Copy PathParts slice
+	if g.Ancestry.PathParts != nil {
+		result.Ancestry.PathParts = make([]string, len(g.Ancestry.PathParts))
+		result.Ancestry.PathParts = append([]string{}, g.Ancestry.PathParts...)
+	}
+
+	// Copy Children slice
+	if g.Ancestry.Children != nil {
+		result.Ancestry.Children = make([]string, len(g.Ancestry.Children))
+		result.Ancestry.Children = append([]string{}, g.Ancestry.Children...)
+	}
+
+	// Deep copy Query if present
+	if g.Query != nil {
+		queryResult := *g.Query
+		if g.Query.Tags != nil {
+			queryResult.Tags = make(map[string]string, len(g.Query.Tags))
+			for k, v := range g.Query.Tags {
+				queryResult.Tags[k] = v
+			}
+		}
+		if g.Query.Regions != nil {
+			queryResult.Regions = make([]string, len(g.Query.Regions))
+			copy(queryResult.Regions, g.Query.Regions)
+		}
+		if g.Query.Custom != nil {
+			queryResult.Custom = make([]byte, len(g.Query.Custom))
+			copy(queryResult.Custom, g.Query.Custom)
+		}
+		result.Query = &queryResult
+	}
+
+	// Deep copy Properties
+	if g.Properties.ConfigTemplate != nil {
+		result.Properties.ConfigTemplate = make([]byte, len(g.Properties.ConfigTemplate))
+		result.Properties.ConfigTemplate = append([]byte{}, g.Properties.ConfigTemplate...)
+	}
+
+	if g.Properties.PolicyOverrides != nil {
+		result.Properties.PolicyOverrides = make(map[string]json.RawMessage)
+		for k, v := range g.Properties.PolicyOverrides {
+			valueResult := make([]byte, len(v))
+			copy(valueResult, v)
+			result.Properties.PolicyOverrides[k] = valueResult
+		}
+	}
+
+	if g.Properties.Metadata != nil {
+		result.Properties.Metadata = make(map[string]string)
+		for k, v := range g.Properties.Metadata {
+			result.Properties.Metadata[k] = v
+		}
+	}
+
+	return result
+}
+
 // New creates a new Group with generated ID and timestamps
 func New(tenantID, name string, groupType Type) *Group {
 	now := time.Now().UTC()
@@ -187,7 +268,8 @@ func (g *Group) RemoveChild(childID string) {
 
 // IsAncestor checks if the given group ID is an ancestor of this group
 func (g *Group) IsAncestor(groupID string) bool {
-	for _, id := range g.Ancestry.PathParts {
+	// Only check actual ancestors (exclude self from check)
+	for _, id := range g.Ancestry.PathParts[:len(g.Ancestry.PathParts)-1] {
 		if id == groupID {
 			return true
 		}

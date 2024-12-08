@@ -36,9 +36,14 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 		return E(op, ErrCodeCyclicDependency, "group cannot be its own parent", nil)
 	}
 
-	// Check that the new parent isn't a descendant of the group
+	// Check for hierarchical cycles
+	if group.IsAncestor(newParentID) {
+		return E(op, ErrCodeCyclicDependency,
+			fmt.Sprintf("cannot set parent to %s as it is already an ancestor", newParentID), nil)
+	}
 	if newParent.IsAncestor(group.ID) {
-		return E(op, ErrCodeCyclicDependency, "cyclic dependency detected", nil)
+		return E(op, ErrCodeCyclicDependency,
+			fmt.Sprintf("cannot set parent to %s as it is a descendant", newParentID), nil)
 	}
 
 	return nil
@@ -71,20 +76,25 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 		if err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
 		}
+
+		// First set the parent reference to ensure correct ancestry path
 		if err := group.SetParent(newParentID, &newParent.Ancestry); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
+
+		// Update parent's children list and save
 		newParent.AddChild(group.ID)
 		if err := h.store.Update(ctx, newParent); err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to update new parent group", err)
 		}
 	} else {
+		// Reset to root group
 		if err := group.SetParent("", nil); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	}
 
-	// Update the group itself
+	// Update the group itself with all changes
 	if err := h.store.Update(ctx, group); err != nil {
 		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
@@ -186,9 +196,22 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 		}
 
 		// Validate ancestry path
-		if len(group.Ancestry.PathParts) == 0 || group.Ancestry.PathParts[len(group.Ancestry.PathParts)-1] != group.ID {
+		if len(group.Ancestry.PathParts) == 0 {
 			return E(op, ErrCodeInvalidGroup,
-				fmt.Sprintf("group %s has invalid ancestry path", group.ID),
+				fmt.Sprintf("group %s has empty ancestry path", group.ID),
+				nil)
+		}
+		if group.Ancestry.PathParts[len(group.Ancestry.PathParts)-1] != group.ID {
+			return E(op, ErrCodeInvalidGroup,
+				fmt.Sprintf("group %s has invalid ancestry path - last part should be own ID", group.ID),
+				nil)
+		}
+
+		// Validate depth matches path parts
+		expectedDepth := len(group.Ancestry.PathParts) - 1
+		if group.Ancestry.Depth != expectedDepth {
+			return E(op, ErrCodeInvalidGroup,
+				fmt.Sprintf("group %s has incorrect depth %d (expected %d)", group.ID, group.Ancestry.Depth, expectedDepth),
 				nil)
 		}
 	}

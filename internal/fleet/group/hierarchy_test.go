@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,8 +50,10 @@ func TestHierarchyManager_ValidateHierarchyChange(t *testing.T) {
 				child := New("tenant1", "child", TypeStatic)
 				require.NoError(t, store.Create(context.Background(), parent))
 				require.NoError(t, store.Create(context.Background(), child))
-				require.NoError(t, child.SetParent(parent.ID, &parent.Ancestry))
-				require.NoError(t, store.Update(context.Background(), child))
+
+				manager := NewHierarchyManager(store)
+				require.NoError(t, manager.UpdateHierarchy(context.Background(), child, parent.ID))
+
 				return parent, child.ID
 			},
 			expectError: true,
@@ -114,6 +117,7 @@ func TestHierarchyManager_UpdateHierarchy(t *testing.T) {
 				parent, err := store.Get(context.Background(), group.TenantID, newParentID)
 				require.NoError(t, err)
 				assert.Contains(t, parent.Ancestry.Children, group.ID)
+				assert.Equal(t, parent.ID, group.ParentID)
 			},
 		},
 		{
@@ -199,19 +203,33 @@ func TestHierarchyManager_GetDescendants(t *testing.T) {
 	child2 := New("tenant1", "child2", TypeStatic)
 	grandchild := New("tenant1", "grandchild", TypeStatic)
 
-	require.NoError(t, store.Create(ctx, root))
-	require.NoError(t, store.Create(ctx, child1))
-	require.NoError(t, store.Create(ctx, child2))
-	require.NoError(t, store.Create(ctx, grandchild))
+	// First create all groups
+	for _, g := range []*Group{root, child1, child2, grandchild} {
+		require.NoError(t, store.Create(ctx, g))
+	}
 
+	// Setup hierarchy
 	require.NoError(t, manager.UpdateHierarchy(ctx, child1, root.ID))
 	require.NoError(t, manager.UpdateHierarchy(ctx, child2, root.ID))
 	require.NoError(t, manager.UpdateHierarchy(ctx, grandchild, child2.ID))
 
+	// Verify immediate children of root
+	updatedRoot, err := store.Get(ctx, root.TenantID, root.ID)
+	require.NoError(t, err)
+	require.Len(t, updatedRoot.Ancestry.Children, 2, "root should have 2 children")
+	assert.Contains(t, updatedRoot.Ancestry.Children, child1.ID)
+	assert.Contains(t, updatedRoot.Ancestry.Children, child2.ID)
+
+	// Verify child2's children
+	updatedChild2, err := store.Get(ctx, child2.TenantID, child2.ID)
+	require.NoError(t, err)
+	require.Len(t, updatedChild2.Ancestry.Children, 1, "child2 should have 1 child")
+	assert.Contains(t, updatedChild2.Ancestry.Children, grandchild.ID)
+
 	// Test getting descendants
 	descendants, err := manager.GetDescendants(ctx, root)
 	require.NoError(t, err)
-	require.Len(t, descendants, 3)
+	require.Len(t, descendants, 3, "root should have 3 descendants")
 
 	// Create map of descendants for easy checking
 	descendantMap := make(map[string]*Group)
@@ -222,6 +240,14 @@ func TestHierarchyManager_GetDescendants(t *testing.T) {
 	assert.Contains(t, descendantMap, child1.ID)
 	assert.Contains(t, descendantMap, child2.ID)
 	assert.Contains(t, descendantMap, grandchild.ID)
+
+	// Verify each descendant's parent-child relationships
+	for _, d := range descendants {
+		require.NotEmpty(t, d.ParentID, "descendant should have parent ID")
+		parent, err := store.Get(ctx, d.TenantID, d.ParentID)
+		require.NoError(t, err)
+		assert.Contains(t, parent.Ancestry.Children, d.ID)
+	}
 }
 
 func TestHierarchyManager_ValidateHierarchyIntegrity(t *testing.T) {
@@ -234,19 +260,34 @@ func TestHierarchyManager_ValidateHierarchyIntegrity(t *testing.T) {
 		{
 			name: "valid hierarchy",
 			setup: func(store Store) error {
-				groups := []*Group{
-					New("tenant1", "root", TypeStatic),
-					New("tenant1", "child", TypeStatic),
+				// Create test groups
+				parent := New("tenant1", "parent", TypeStatic)
+				child := New("tenant1", "child", TypeStatic)
+
+				// First create both groups
+				if err := store.Create(context.Background(), parent); err != nil {
+					return err
+				}
+				if err := store.Create(context.Background(), child); err != nil {
+					return err
 				}
 
-				for _, g := range groups {
-					if err := store.Create(context.Background(), g); err != nil {
-						return err
-					}
-				}
-
+				// Use HierarchyManager to set up the relationship
 				manager := NewHierarchyManager(store)
-				return manager.UpdateHierarchy(context.Background(), groups[1], groups[0].ID)
+				if err := manager.UpdateHierarchy(context.Background(), child, parent.ID); err != nil {
+					return err
+				}
+
+				// Verify the setup worked
+				updatedParent, err := store.Get(context.Background(), parent.TenantID, parent.ID)
+				if err != nil {
+					return err
+				}
+				if len(updatedParent.Ancestry.Children) != 1 {
+					return fmt.Errorf("parent should have 1 child, got %d", len(updatedParent.Ancestry.Children))
+				}
+
+				return nil
 			},
 			expectError: false,
 		},

@@ -42,8 +42,8 @@ func (s *memoryStore) Create(ctx context.Context, g *Group) error {
 		return ErrGroupExists
 	}
 
-	copy := *g
-	s.groups[key] = &copy
+	// Use DeepCopy to ensure complete isolation
+	s.groups[key] = g.DeepCopy()
 	s.memberships[key] = make(map[string]struct{})
 
 	return nil
@@ -59,8 +59,8 @@ func (s *memoryStore) Get(ctx context.Context, tenantID, groupID string) (*Group
 		return nil, ErrGroupNotFound
 	}
 
-	copy := *g
-	return &copy, nil
+	// Return a deep copy to prevent modifications through the returned reference
+	return g.DeepCopy(), nil
 }
 
 func (s *memoryStore) Update(ctx context.Context, g *Group) error {
@@ -76,8 +76,8 @@ func (s *memoryStore) Update(ctx context.Context, g *Group) error {
 		return ErrGroupNotFound
 	}
 
-	copy := *g
-	s.groups[key] = &copy
+	// Store a deep copy to ensure complete isolation
+	s.groups[key] = g.DeepCopy()
 	return nil
 }
 
@@ -99,7 +99,10 @@ func (s *memoryStore) Delete(ctx context.Context, tenantID, groupID string) erro
 	if g.ParentID != "" {
 		parentKey := s.key(tenantID, g.ParentID)
 		if parent, exists := s.groups[parentKey]; exists {
-			parent.RemoveChild(groupID)
+			// Create a copy, modify it, and store it back
+			parentCopy := parent.DeepCopy()
+			parentCopy.RemoveChild(groupID)
+			s.groups[parentKey] = parentCopy
 		}
 	}
 
@@ -119,8 +122,8 @@ func (s *memoryStore) List(ctx context.Context, opts ListOptions) ([]*Group, err
 			continue
 		}
 
-		copy := *g
-		result = append(result, &copy)
+		// Append deep copy to results
+		result = append(result, g.DeepCopy())
 	}
 
 	if opts.Limit > 0 {
@@ -160,7 +163,12 @@ func (s *memoryStore) AddDevice(ctx context.Context, tenantID, groupID string, d
 
 	members := s.memberships[key]
 	members[d.ID] = struct{}{}
-	g.DeviceCount = len(members)
+
+	// Update group with new device count
+	groupCopy := g.DeepCopy()
+	groupCopy.DeviceCount = len(members)
+	s.groups[key] = groupCopy
+
 	return nil
 }
 
@@ -181,7 +189,12 @@ func (s *memoryStore) RemoveDevice(ctx context.Context, tenantID, groupID, devic
 
 	members := s.memberships[key]
 	delete(members, deviceID)
-	g.DeviceCount = len(members)
+
+	// Update group with new device count
+	groupCopy := g.DeepCopy()
+	groupCopy.DeviceCount = len(members)
+	s.groups[key] = groupCopy
+
 	return nil
 }
 
@@ -202,7 +215,7 @@ func (s *memoryStore) ListDevices(ctx context.Context, tenantID, groupID string)
 		}
 	} else {
 		s.mu.RUnlock()
-		return s.evaluateDynamicGroupMembers(ctx, g)
+		return s.evaluateDynamicGroupMembers(ctx, g.DeepCopy())
 	}
 	s.mu.RUnlock()
 
@@ -236,7 +249,9 @@ func (s *memoryStore) evaluateDynamicGroupMembers(ctx context.Context, g *Group)
 
 	s.mu.Lock()
 	if grp, exists := s.groups[s.key(g.TenantID, g.ID)]; exists {
-		grp.DeviceCount = len(devices)
+		groupCopy := grp.DeepCopy()
+		groupCopy.DeviceCount = len(devices)
+		s.groups[s.key(g.TenantID, g.ID)] = groupCopy
 	}
 	s.mu.Unlock()
 
@@ -261,8 +276,7 @@ func (s *memoryStore) GetAncestors(ctx context.Context, tenantID, groupID string
 			return nil, E("Store.GetAncestors", ErrCodeStoreOperation,
 				fmt.Sprintf("ancestor %s not found", ancestorID), nil)
 		}
-		copy := *ancestor
-		ancestors = append(ancestors, &copy)
+		ancestors = append(ancestors, ancestor.DeepCopy())
 	}
 
 	return ancestors, nil
@@ -287,8 +301,7 @@ func (s *memoryStore) GetDescendants(ctx context.Context, tenantID, groupID stri
 				fmt.Sprintf("child %s not found", childID), nil)
 		}
 
-		copy := *child
-		descendants = append(descendants, &copy)
+		descendants = append(descendants, child.DeepCopy())
 
 		childDescendants, err := s.GetDescendants(ctx, tenantID, childID)
 		if err != nil {
@@ -318,8 +331,7 @@ func (s *memoryStore) GetChildren(ctx context.Context, tenantID, groupID string)
 			return nil, E("Store.GetChildren", ErrCodeStoreOperation,
 				fmt.Sprintf("child %s not found", childID), nil)
 		}
-		copy := *child
-		children = append(children, &copy)
+		children = append(children, child.DeepCopy())
 	}
 
 	return children, nil
@@ -332,8 +344,7 @@ func (s *memoryStore) ValidateHierarchy(ctx context.Context, tenantID string) er
 	var tenantGroups []*Group
 	for _, g := range s.groups {
 		if g.TenantID == tenantID {
-			copy := *g
-			tenantGroups = append(tenantGroups, &copy)
+			tenantGroups = append(tenantGroups, g.DeepCopy())
 		}
 	}
 
