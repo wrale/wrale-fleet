@@ -9,16 +9,16 @@ import (
 type Store interface {
 	// Create stores a new device
 	Create(ctx context.Context, device *Device) error
-	
+
 	// Get retrieves a device by ID
 	Get(ctx context.Context, tenantID, deviceID string) (*Device, error)
-	
+
 	// Update modifies an existing device
 	Update(ctx context.Context, device *Device) error
-	
+
 	// Delete removes a device
 	Delete(ctx context.Context, tenantID, deviceID string) error
-	
+
 	// List retrieves devices matching the given options
 	List(ctx context.Context, opts ListOptions) ([]*Device, error)
 }

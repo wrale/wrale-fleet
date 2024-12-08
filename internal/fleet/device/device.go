@@ -13,10 +13,10 @@ import (
 type Status string
 
 const (
-	StatusUnknown   Status = "unknown"
-	StatusOnline    Status = "online"
-	StatusOffline   Status = "offline"
-	StatusError     Status = "error"
+	StatusUnknown     Status = "unknown"
+	StatusOnline      Status = "online"
+	StatusOffline     Status = "offline"
+	StatusError       Status = "error"
 	StatusMaintenance Status = "maintenance"
 )
 

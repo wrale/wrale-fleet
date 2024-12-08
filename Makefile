@@ -75,4 +75,7 @@ dev: ## Run the application with hot reload
 	@echo "==> Starting development server"
 	air -c .air.toml
 
+tree: ## Copy the file layout to clipboard on macos
+	tree --gitignore | pbcopy
+
 .PHONY: all build clean test coverage lint sec-check vet fmt help install-tools run dev

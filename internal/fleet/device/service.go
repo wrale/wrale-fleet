@@ -25,21 +25,21 @@ func NewService(store Store, logger *zap.Logger) *Service {
 // Register creates a new device in the system
 func (s *Service) Register(ctx context.Context, tenantID, name string) (*Device, error) {
 	device := New(tenantID, name)
-	
+
 	if err := device.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid device data: %w", err)
 	}
-	
+
 	if err := s.store.Create(ctx, device); err != nil {
 		return nil, fmt.Errorf("failed to create device: %w", err)
 	}
-	
+
 	s.logger.Info("registered new device",
 		zap.String("device_id", device.ID),
 		zap.String("tenant_id", device.TenantID),
 		zap.String("name", device.Name),
 	)
-	
+
 	return device, nil
 }
 
@@ -58,19 +58,19 @@ func (s *Service) UpdateStatus(ctx context.Context, tenantID, deviceID string, s
 	if err != nil {
 		return fmt.Errorf("failed to get device: %w", err)
 	}
-	
+
 	device.SetStatus(status)
-	
+
 	if err := s.store.Update(ctx, device); err != nil {
 		return fmt.Errorf("failed to update device: %w", err)
 	}
-	
+
 	s.logger.Info("updated device status",
 		zap.String("device_id", device.ID),
 		zap.String("tenant_id", device.TenantID),
 		zap.String("status", string(status)),
 	)
-	
+
 	return nil
 }
 
@@ -88,11 +88,11 @@ func (s *Service) Delete(ctx context.Context, tenantID, deviceID string) error {
 	if err := s.store.Delete(ctx, tenantID, deviceID); err != nil {
 		return fmt.Errorf("failed to delete device: %w", err)
 	}
-	
+
 	s.logger.Info("deleted device",
 		zap.String("device_id", deviceID),
 		zap.String("tenant_id", tenantID),
 	)
-	
+
 	return nil
 }
