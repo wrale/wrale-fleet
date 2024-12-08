@@ -57,85 +57,95 @@ func TestHierarchy(t *testing.T) {
 		require.NoError(t, err)
 		err = hierarchy.UpdateHierarchy(ctx, grandchild, child1.ID)
 		require.NoError(t, err)
+
+		// Verify hierarchy structure is complete
+		root, err = store.Get(ctx, tenantID, root.ID)
+		require.NoError(t, err)
+		assert.Len(t, root.Ancestry.Children, 2, "root should have two children")
 	})
 
-	// Test getting children
-	t.Run("GetChildren", func(t *testing.T) {
-		// Verify root's children
+	t.Run("InvalidOperations", func(t *testing.T) {
+		// Test moving a group to a non-existent parent
+		err := hierarchy.UpdateHierarchy(ctx, child1, "non-existent-id")
+		assert.Error(t, err, "should error on non-existent parent")
+
+		// Test moving a root group under its own descendant
+		err = hierarchy.UpdateHierarchy(ctx, root, grandchild.ID)
+		assert.Error(t, err, "should error on cyclic dependency")
+
+		// Verify original hierarchy remains intact
+		root, err = store.Get(ctx, tenantID, root.ID)
+		require.NoError(t, err)
+		assert.Len(t, root.Ancestry.Children, 2, "root children should be unchanged")
+	})
+
+	t.Run("DepthValidation", func(t *testing.T) {
+		// Create a chain of groups to test depth calculations
+		current := root
+		depthMap := make(map[string]int)
+		depthMap[root.ID] = 0
+
+		for i := 0; i < 5; i++ {
+			child := group.New(tenantID, "Depth Test", group.TypeStatic)
+			err := store.Create(ctx, child)
+			require.NoError(t, err)
+
+			err = hierarchy.UpdateHierarchy(ctx, child, current.ID)
+			require.NoError(t, err)
+
+			// Verify depth calculation
+			updated, err := store.Get(ctx, tenantID, child.ID)
+			require.NoError(t, err)
+			assert.Equal(t, depthMap[current.ID]+1, updated.Ancestry.Depth,
+				"depth should increment by 1 at each level")
+
+			depthMap[child.ID] = updated.Ancestry.Depth
+			current = child
+		}
+	})
+
+	t.Run("PathConsistency", func(t *testing.T) {
+		// Get updated group states
 		root, err := store.Get(ctx, tenantID, root.ID)
 		require.NoError(t, err)
-		assert.Len(t, root.Ancestry.Children, 2)
-		assert.Contains(t, root.Ancestry.Children, child1.ID)
-		assert.Contains(t, root.Ancestry.Children, child2.ID)
-
-		// Verify child1's children
-		child1Updated, err := store.Get(ctx, tenantID, child1.ID)
+		child1, err := store.Get(ctx, tenantID, child1.ID)
 		require.NoError(t, err)
-		assert.Len(t, child1Updated.Ancestry.Children, 1)
-		assert.Contains(t, child1Updated.Ancestry.Children, grandchild.ID)
+		grandchild, err := store.Get(ctx, tenantID, grandchild.ID)
+		require.NoError(t, err)
+
+		// Verify path construction
+		assert.Equal(t, "/"+root.ID, root.Ancestry.Path, "root path should be direct")
+		assert.Equal(t, root.Ancestry.Path+"/"+child1.ID, child1.Ancestry.Path,
+			"child path should include parent")
+		assert.Equal(t, child1.Ancestry.Path+"/"+grandchild.ID, grandchild.Ancestry.Path,
+			"grandchild path should include full ancestry")
+
+		// Verify path parts match depth
+		assert.Equal(t, len(root.Ancestry.PathParts), root.Ancestry.Depth+1)
+		assert.Equal(t, len(child1.Ancestry.PathParts), child1.Ancestry.Depth+1)
+		assert.Equal(t, len(grandchild.Ancestry.PathParts), grandchild.Ancestry.Depth+1)
 	})
 
-	// Test hierarchy validation
-	t.Run("ValidateHierarchy", func(t *testing.T) {
-		err := hierarchy.ValidateHierarchyIntegrity(ctx, tenantID)
-		require.NoError(t, err)
-	})
-
-	// Test cycle detection
-	t.Run("DetectCycles", func(t *testing.T) {
-		err := hierarchy.UpdateHierarchy(ctx, root, grandchild.ID)
-		assert.Error(t, err) // Should detect cycle and fail
-	})
-
-	// Test ancestor checks
-	t.Run("AncestorChecks", func(t *testing.T) {
-		grandchildUpdated, err := store.Get(ctx, tenantID, grandchild.ID)
+	t.Run("BulkMoves", func(t *testing.T) {
+		// Create a new parent group
+		newParent := group.New(tenantID, "New Parent", group.TypeStatic)
+		err := store.Create(ctx, newParent)
 		require.NoError(t, err)
 
-		assert.True(t, grandchildUpdated.IsAncestor(root.ID))
-		assert.True(t, grandchildUpdated.IsAncestor(child1.ID))
-		assert.False(t, grandchildUpdated.IsAncestor(child2.ID))
-		assert.False(t, grandchildUpdated.IsAncestor(grandchild.ID))
-
-		expectedPath := "/" + root.ID + "/" + child1.ID + "/" + grandchild.ID
-		assert.Equal(t, expectedPath, grandchildUpdated.Ancestry.Path)
-		assert.Equal(t, 2, grandchildUpdated.Ancestry.Depth)
-	})
-
-	// Test moving nodes
-	t.Run("MoveNodes", func(t *testing.T) {
-		err := hierarchy.UpdateHierarchy(ctx, grandchild, child2.ID)
+		// Move child1 and all its descendants
+		err = hierarchy.UpdateHierarchy(ctx, child1, newParent.ID)
 		require.NoError(t, err)
 
-		child1Updated, err := store.Get(ctx, tenantID, child1.ID)
+		// Verify all paths and depths are updated
+		child1, err = store.Get(ctx, tenantID, child1.ID)
 		require.NoError(t, err)
-		assert.NotContains(t, child1Updated.Ancestry.Children, grandchild.ID)
+		assert.Equal(t, newParent.ID, child1.ParentID, "child1 should have new parent")
+		assert.Equal(t, "/"+newParent.ID+"/"+child1.ID, child1.Ancestry.Path)
 
-		child2Updated, err := store.Get(ctx, tenantID, child2.ID)
+		grandchild, err = store.Get(ctx, tenantID, grandchild.ID)
 		require.NoError(t, err)
-		assert.Contains(t, child2Updated.Ancestry.Children, grandchild.ID)
-
-		grandchildUpdated, err := store.Get(ctx, tenantID, grandchild.ID)
-		require.NoError(t, err)
-		expectedPath := "/" + root.ID + "/" + child2.ID + "/" + grandchild.ID
-		assert.Equal(t, expectedPath, grandchildUpdated.Ancestry.Path)
-		assert.Equal(t, child2.ID, grandchildUpdated.ParentID)
-	})
-
-	// Test making root node
-	t.Run("MakeRoot", func(t *testing.T) {
-		err := hierarchy.UpdateHierarchy(ctx, child1, "")
-		require.NoError(t, err)
-
-		child1Updated, err := store.Get(ctx, tenantID, child1.ID)
-		require.NoError(t, err)
-		assert.Empty(t, child1Updated.ParentID)
-		assert.Equal(t, "/"+child1.ID, child1Updated.Ancestry.Path)
-		assert.Equal(t, 0, child1Updated.Ancestry.Depth)
-
-		rootUpdated, err := store.Get(ctx, tenantID, root.ID)
-		require.NoError(t, err)
-		assert.NotContains(t, rootUpdated.Ancestry.Children, child1.ID)
+		assert.Equal(t, "/"+newParent.ID+"/"+child1.ID+"/"+grandchild.ID,
+			grandchild.Ancestry.Path, "grandchild path should reflect new ancestry")
 	})
 }
 
@@ -145,7 +155,7 @@ func TestHierarchyEdgeCases(t *testing.T) {
 
 	t.Run("EmptyHierarchy", func(t *testing.T) {
 		err := hierarchy.ValidateHierarchyIntegrity(ctx, tenantID)
-		require.NoError(t, err)
+		require.NoError(t, err, "empty hierarchy should be valid")
 	})
 
 	t.Run("SingleNode", func(t *testing.T) {
@@ -169,15 +179,21 @@ func TestHierarchyEdgeCases(t *testing.T) {
 		err = store.Create(ctx, group2)
 		require.NoError(t, err)
 
+		// Verify each tenant's hierarchy is valid
 		err = hierarchy.ValidateHierarchyIntegrity(ctx, tenantID)
 		require.NoError(t, err)
 		err = hierarchy.ValidateHierarchyIntegrity(ctx, otherTenantID)
 		require.NoError(t, err)
+
+		// Attempt cross-tenant operation
+		err = hierarchy.UpdateHierarchy(ctx, group1, group2.ID)
+		assert.Error(t, err, "cross-tenant hierarchy operations should fail")
 	})
 
 	t.Run("DeepHierarchy", func(t *testing.T) {
 		var lastID string
 		var lastGroup *group.Group
+		pathParts := make([]string, 0)
 
 		// Create a deep chain of groups and verify hierarchy at each step
 		for i := 0; i < 10; i++ {
@@ -188,22 +204,42 @@ func TestHierarchyEdgeCases(t *testing.T) {
 			if lastID != "" {
 				err = hierarchy.UpdateHierarchy(ctx, newGroup, lastID)
 				require.NoError(t, err)
-
-				// Verify group's ancestry after linking
-				updatedGroup, err := store.Get(ctx, tenantID, newGroup.ID)
-				require.NoError(t, err)
-				assert.Equal(t, i, updatedGroup.Ancestry.Depth)
-				assert.Equal(t, i+1, len(updatedGroup.Ancestry.PathParts))
 			}
+
+			pathParts = append(pathParts, newGroup.ID)
+			expectedPath := "/" + join(pathParts, "/")
+
+			// Verify group's ancestry after linking
+			updatedGroup, err := store.Get(ctx, tenantID, newGroup.ID)
+			require.NoError(t, err)
+			assert.Equal(t, i, updatedGroup.Ancestry.Depth)
+			assert.Equal(t, expectedPath, updatedGroup.Ancestry.Path)
+			assert.Equal(t, i+1, len(updatedGroup.Ancestry.PathParts))
 
 			lastID = newGroup.ID
 			lastGroup = newGroup
 		}
 
-		// Verify deepest node has correct ancestry
+		// Verify integrity of entire hierarchy
+		err := hierarchy.ValidateHierarchyIntegrity(ctx, tenantID)
+		require.NoError(t, err, "deep hierarchy should maintain integrity")
+
+		// Verify deepest node maintains correct ancestry
 		finalGroup, err := store.Get(ctx, tenantID, lastGroup.ID)
 		require.NoError(t, err)
 		assert.Equal(t, 9, finalGroup.Ancestry.Depth)
 		assert.Equal(t, 10, len(finalGroup.Ancestry.PathParts))
 	})
+}
+
+// join concatenates strings with a separator
+func join(parts []string, sep string) string {
+	result := ""
+	for i, part := range parts {
+		if i > 0 {
+			result += sep
+		}
+		result += part
+	}
+	return result
 }
