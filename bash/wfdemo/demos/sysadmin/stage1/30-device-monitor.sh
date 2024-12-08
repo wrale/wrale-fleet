@@ -16,7 +16,7 @@ echo
 setup_demo_env
 
 step "Loading system configuration"
-for env_file in "${DEMO_TMP_DIR}/wfcentral.env" "${DEMO_TMP_DIR}/wfmachine.env"; do
+for env_file in "${DEMO_TMP_DIR}/wfcentral.env" "${DEMO_TMP_DIR}/wfdevice.env"; do
     if [[ -f "${env_file}" ]]; then
         source "${env_file}"
     else

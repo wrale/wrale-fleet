@@ -26,21 +26,21 @@ else
 fi
 
 step "Creating data directory for device agent"
-mkdir -p "${DEMO_TMP_DIR}/machine"
+mkdir -p "${DEMO_TMP_DIR}/device"
 
 step "Starting device agent"
 # Note: Device name will be set during registration
-wfmachine start \
+wfdevice start \
     --port 9090 \
-    --data-dir "${DEMO_TMP_DIR}/machine" \
+    --data-dir "${DEMO_TMP_DIR}/device" \
     --log-level info &
 
-WFMACHINE_PID=$!
-echo "${WFMACHINE_PID}" > "${DEMO_TMP_DIR}/machine.pid"
+WFdevice_PID=$!
+echo "${WFdevice_PID}" > "${DEMO_TMP_DIR}/device.pid"
 
 step "Waiting for device agent to be ready"
 for i in {1..30}; do
-    if wfmachine status | grep -q "ready"; then
+    if wfdevice status | grep -q "ready"; then
         success "Device agent is ready"
         break
     fi
@@ -52,7 +52,7 @@ for i in {1..30}; do
 done
 
 step "Registering device with control plane"
-if ! wfmachine register \
+if ! wfdevice register \
     --name "first-device" \
     --control-plane "localhost:${WFCENTRAL_PORT}"; then
     error "Failed to register device"
@@ -70,9 +70,9 @@ fi
 success "Device initialization complete"
 
 # Export configuration for other scripts
-cat > "${DEMO_TMP_DIR}/wfmachine.env" << EOF
-export WFMACHINE_PORT=9090
-export WFMACHINE_PID=${WFMACHINE_PID}
-export WFMACHINE_PID_FILE="${DEMO_TMP_DIR}/machine.pid"
+cat > "${DEMO_TMP_DIR}/wfdevice.env" << EOF
+export WFdevice_PORT=9090
+export WFdevice_PID=${WFdevice_PID}
+export WFdevice_PID_FILE="${DEMO_TMP_DIR}/device.pid"
 export DEVICE_NAME="first-device"
 EOF

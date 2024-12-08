@@ -75,7 +75,7 @@ system-test: $(TEST_OUTPUT_DIR) build ## Run system integration tests
 	@echo "==> Running system integration tests"
 	TEST_OUTPUT_DIR=$(TEST_OUTPUT_DIR) \
 	WFCENTRAL_START_TIMEOUT=60 \
-	WFMACHINE_START_TIMEOUT=60 \
+	WFDEVICE_START_TIMEOUT=60 \
 	./bash/wfdemo/demos/sysadmin/stage1/test-all.sh
 
 install-tools: ## Install required development tools
