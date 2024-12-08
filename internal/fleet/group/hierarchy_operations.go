@@ -48,10 +48,20 @@ func (h *HierarchyManager) buildAncestry(ctx context.Context, group *Group, pare
 		ancestry.PathParts = []string{group.ID}
 		ancestry.Depth = 0
 	} else {
-		// Build path by appending to parent's path
+		// Build path components by combining parent's path parts with current group
+		ancestry.PathParts = make([]string, len(parent.Ancestry.PathParts)+1)
+		copy(ancestry.PathParts, parent.Ancestry.PathParts)
+		ancestry.PathParts[len(parent.Ancestry.PathParts)] = group.ID
+
+		// Build the full path string
 		ancestry.Path = parent.Ancestry.Path + "/" + group.ID
-		ancestry.PathParts = append(append([]string{}, parent.Ancestry.PathParts...), group.ID)
 		ancestry.Depth = parent.Ancestry.Depth + 1
+
+		// Validate the ancestry chain
+		if ancestry.Depth+1 != len(ancestry.PathParts) {
+			return nil, E("buildAncestry", ErrCodeInvalidHierarchy,
+				"ancestry depth doesn't match path parts length", nil)
+		}
 	}
 
 	return ancestry, nil

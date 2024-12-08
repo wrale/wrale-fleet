@@ -2,170 +2,164 @@ package memory
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
-	"github.com/wrale/fleet/internal/fleet/device"
+	"github.com/wrale/fleet/internal/fleet/device/store/memory" // Device store for membership
 	"github.com/wrale/fleet/internal/fleet/group"
 )
 
-// Store provides an in-memory implementation of group.Store interface
+// Store implements an in-memory group store
 type Store struct {
-	mu          sync.RWMutex
-	groups      map[string]*group.Group        // key: tenantID:groupID
-	memberships map[string]map[string]struct{} // key: tenantID:groupID -> map[deviceID]struct{}
-	deviceStore device.Store
+	mu     sync.RWMutex
+	groups map[string]map[string]*group.Group // tenant -> id -> group
+	device *memory.Store                      // Device store for membership queries
 }
 
-// New creates a new in-memory group store
-func New(deviceStore device.Store) group.Store {
+// New creates a new memory store instance
+func New(deviceStore *memory.Store) *Store {
 	return &Store{
-		groups:      make(map[string]*group.Group),
-		memberships: make(map[string]map[string]struct{}),
-		deviceStore: deviceStore,
+		groups: make(map[string]map[string]*group.Group),
+		device: deviceStore,
 	}
 }
 
-// key generates the map key for a group
-func (s *Store) key(tenantID, groupID string) string {
-	return fmt.Sprintf("%s:%s", tenantID, groupID)
-}
-
-// Create implements group.Store
+// Create adds a new group
 func (s *Store) Create(ctx context.Context, g *group.Group) error {
 	if err := g.Validate(); err != nil {
-		return fmt.Errorf("validate group: %w", err)
+		return err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := s.key(g.TenantID, g.ID)
-	if _, exists := s.groups[key]; exists {
-		return group.ErrGroupExists
+	// Initialize tenant map if needed
+	if _, exists := s.groups[g.TenantID]; !exists {
+		s.groups[g.TenantID] = make(map[string]*group.Group)
 	}
 
-	// Validate parent reference if set
-	if g.ParentID != "" {
-		parentKey := s.key(g.TenantID, g.ParentID)
-		_, exists := s.groups[parentKey]
-		if !exists {
-			return group.E("Store.Create", group.ErrCodeInvalidGroup,
-				fmt.Sprintf("parent group %s does not exist", g.ParentID), nil)
-		}
+	// Check for duplicate
+	if _, exists := s.groups[g.TenantID][g.ID]; exists {
+		return group.E("Store.Create", group.ErrCodeDuplicate,
+			"group already exists", nil)
 	}
 
-	// Use DeepCopy to ensure complete isolation
-	s.groups[key] = g.DeepCopy()
-	s.memberships[key] = make(map[string]struct{})
-
+	// Store copy of group
+	s.groups[g.TenantID][g.ID] = g.DeepCopy()
 	return nil
 }
 
-// Get implements group.Store
-func (s *Store) Get(ctx context.Context, tenantID, groupID string) (*group.Group, error) {
+// Get retrieves a group by ID and tenant
+func (s *Store) Get(ctx context.Context, tenantID, id string) (*group.Group, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	key := s.key(tenantID, groupID)
-	g, exists := s.groups[key]
+	tenantGroups, exists := s.groups[tenantID]
 	if !exists {
-		return nil, group.ErrGroupNotFound
+		return nil, group.E("Store.Get", group.ErrCodeNotFound,
+			"group not found", nil)
+	}
+
+	g, exists := tenantGroups[id]
+	if !exists {
+		return nil, group.E("Store.Get", group.ErrCodeNotFound,
+			"group not found", nil)
 	}
 
 	return g.DeepCopy(), nil
 }
 
-// Update implements group.Store
+// Update modifies an existing group
 func (s *Store) Update(ctx context.Context, g *group.Group) error {
 	if err := g.Validate(); err != nil {
-		return fmt.Errorf("validate group: %w", err)
+		return err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := s.key(g.TenantID, g.ID)
-	if _, exists := s.groups[key]; !exists {
-		return group.ErrGroupNotFound
-	}
-
-	// Validate existence of referenced groups only
-	if g.ParentID != "" {
-		parentKey := s.key(g.TenantID, g.ParentID)
-		if _, exists := s.groups[parentKey]; !exists {
-			return group.E("Store.Update", group.ErrCodeInvalidGroup,
-				fmt.Sprintf("parent group %s does not exist", g.ParentID), nil)
-		}
-	}
-
-	for _, childID := range g.Ancestry.Children {
-		childKey := s.key(g.TenantID, childID)
-		if _, exists := s.groups[childKey]; !exists {
-			return group.E("Store.Update", group.ErrCodeInvalidGroup,
-				fmt.Sprintf("child group %s does not exist", childID), nil)
-		}
-	}
-
-	s.groups[key] = g.DeepCopy()
-	return nil
-}
-
-// Delete implements group.Store
-func (s *Store) Delete(ctx context.Context, tenantID, groupID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	key := s.key(tenantID, groupID)
-	g, exists := s.groups[key]
+	tenantGroups, exists := s.groups[g.TenantID]
 	if !exists {
-		return group.ErrGroupNotFound
+		return group.E("Store.Update", group.ErrCodeNotFound,
+			"group not found", nil)
 	}
 
-	if len(g.Ancestry.Children) > 0 {
-		return group.E("Store.Delete", group.ErrCodeInvalidOperation,
-			"cannot delete group with existing children", nil)
+	if _, exists := tenantGroups[g.ID]; !exists {
+		return group.E("Store.Update", group.ErrCodeNotFound,
+			"group not found", nil)
 	}
 
-	if g.ParentID != "" {
-		parentKey := s.key(tenantID, g.ParentID)
-		if parent, exists := s.groups[parentKey]; exists {
-			parentCopy := parent.DeepCopy()
-			parentCopy.RemoveChild(groupID)
-			s.groups[parentKey] = parentCopy
-		}
-	}
-
-	delete(s.groups, key)
-	delete(s.memberships, key)
+	s.groups[g.TenantID][g.ID] = g.DeepCopy()
 	return nil
 }
 
-// List implements group.Store
-func (s *Store) List(ctx context.Context, opts group.ListOptions) ([]*group.Group, error) {
+// Delete removes a group
+func (s *Store) Delete(ctx context.Context, tenantID, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tenantGroups, exists := s.groups[tenantID]
+	if !exists {
+		return group.E("Store.Delete", group.ErrCodeNotFound,
+			"group not found", nil)
+	}
+
+	if _, exists := tenantGroups[id]; !exists {
+		return group.E("Store.Delete", group.ErrCodeNotFound,
+			"group not found", nil)
+	}
+
+	delete(s.groups[tenantID], id)
+	return nil
+}
+
+// List returns groups matching the query criteria
+func (s *Store) List(ctx context.Context, tenantID string, opts group.ListOptions) ([]*group.Group, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []*group.Group
-
-	for _, g := range s.groups {
-		if !s.matchesFilter(g, opts) {
-			continue
-		}
-		result = append(result, g.DeepCopy())
+	tenantGroups, exists := s.groups[tenantID]
+	if !exists {
+		return []*group.Group{}, nil
 	}
 
-	if opts.Limit > 0 {
-		start := opts.Offset
-		if start > len(result) {
-			start = len(result)
+	var result []*group.Group
+	for _, g := range tenantGroups {
+		if matchesListOptions(g, opts) {
+			result = append(result, g.DeepCopy())
 		}
-		end := start + opts.Limit
-		if end > len(result) {
-			end = len(result)
-		}
-		result = result[start:end]
 	}
 
 	return result, nil
+}
+
+// Clear removes all groups (used for testing)
+func (s *Store) Clear(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.groups = make(map[string]map[string]*group.Group)
+	return nil
+}
+
+// matchesListOptions checks if a group matches the list criteria
+func matchesListOptions(g *group.Group, opts group.ListOptions) bool {
+	// Parent ID filter
+	if opts.ParentID != "" && g.ParentID != opts.ParentID {
+		return false
+	}
+
+	// Group type filter
+	if opts.Type != "" && g.Type != opts.Type {
+		return false
+	}
+
+	// Tags filter
+	if len(opts.Tags) > 0 {
+		for k, v := range opts.Tags {
+			if tv, ok := g.Properties.Metadata[k]; !ok || tv != v {
+				return false
+			}
+		}
+	}
+
+	return true
 }
