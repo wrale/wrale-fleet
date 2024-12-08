@@ -14,7 +14,11 @@ import (
 func main() {
 	// Initialize logger
 	logger, _ := zap.NewDevelopment()
-	defer logger.Sync()
+	defer func() {
+		if err := logger.Sync(); err != nil {
+			logger.Error("failed to sync logger", zap.Error(err))
+		}
+	}()
 
 	// Create device store and service
 	store := memory.NewDeviceStore()
