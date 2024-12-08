@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/wrale/fleet/internal/fleet/device"
@@ -81,7 +82,15 @@ func (s *Store) Delete(ctx context.Context, tenantID, deviceID string) error {
 	return nil
 }
 
-// List retrieves devices matching the given options
+// devicesList is a helper type for sorting devices
+type devicesList []*device.Device
+
+func (d devicesList) Len() int           { return len(d) }
+func (d devicesList) Swap(i, j int)      { d[i], d[j] = d[j], d[i] }
+func (d devicesList) Less(i, j int) bool { return d[i].ID < d[j].ID }
+
+// List retrieves devices matching the given options. Results are sorted by device ID
+// to ensure consistent ordering across different environments and platforms.
 func (s *Store) List(ctx context.Context, opts device.ListOptions) ([]*device.Device, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -100,6 +109,7 @@ func (s *Store) List(ctx context.Context, opts device.ListOptions) ([]*device.De
 		capacity = 10
 	}
 
+	// Collect matching devices
 	result := make([]*device.Device, 0, capacity)
 
 	for _, d := range s.devices {
@@ -126,6 +136,9 @@ func (s *Store) List(ctx context.Context, opts device.ListOptions) ([]*device.De
 
 		result = append(result, d)
 	}
+
+	// Sort devices by ID for consistent ordering
+	sort.Sort(devicesList(result))
 
 	// Apply pagination
 	if opts.Offset >= len(result) {
