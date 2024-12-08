@@ -2,7 +2,6 @@ package group
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/wrale/fleet/internal/fleet/device"
@@ -31,11 +30,11 @@ func (s *Service) Create(ctx context.Context, tenantID, name string, groupType T
 
 	group := New(tenantID, name, groupType)
 	if err := group.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid group data: %w", err)
+		return nil, E(op, ErrCodeInvalidInput, "invalid group data", err)
 	}
 
 	if err := s.store.Create(ctx, group); err != nil {
-		return nil, fmt.Errorf("failed to create group: %w", err)
+		return nil, E(op, ErrCodeStoreOperation, "failed to create group", err)
 	}
 
 	s.logger.Info("created new group",
@@ -50,7 +49,13 @@ func (s *Service) Create(ctx context.Context, tenantID, name string, groupType T
 
 // Get retrieves a group by ID
 func (s *Service) Get(ctx context.Context, tenantID, groupID string) (*Group, error) {
-	return s.store.Get(ctx, tenantID, groupID)
+	const op = "group.Service.Get"
+
+	group, err := s.store.Get(ctx, tenantID, groupID)
+	if err != nil {
+		return nil, E(op, ErrCodeStoreOperation, "failed to get group", err)
+	}
+	return group, nil
 }
 
 // Update updates an existing group
@@ -58,18 +63,18 @@ func (s *Service) Update(ctx context.Context, group *Group) error {
 	const op = "group.Service.Update"
 
 	if err := group.Validate(); err != nil {
-		return fmt.Errorf("invalid group data: %w", err)
+		return E(op, ErrCodeInvalidInput, "invalid group data", err)
 	}
 
 	// If parent ID is changing, verify no cycles would be created
 	if group.ParentID != "" {
 		if err := s.validateHierarchy(ctx, group.TenantID, group.ID, group.ParentID); err != nil {
-			return fmt.Errorf("invalid group hierarchy: %w", err)
+			return E(op, ErrCodeInvalidOperation, "invalid group hierarchy", err)
 		}
 	}
 
 	if err := s.store.Update(ctx, group); err != nil {
-		return fmt.Errorf("failed to update group: %w", err)
+		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
 
 	s.logger.Info("updated group",
@@ -91,19 +96,19 @@ func (s *Service) Delete(ctx context.Context, tenantID, groupID string) error {
 		ParentID: groupID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list child groups: %w", err)
+		return E(op, ErrCodeStoreOperation, "failed to list child groups", err)
 	}
 
 	// Delete children first
 	for _, child := range children {
 		if err := s.Delete(ctx, tenantID, child.ID); err != nil {
-			return fmt.Errorf("failed to delete child group: %w", err)
+			return E(op, ErrCodeStoreOperation, "failed to delete child group", err)
 		}
 	}
 
 	// Delete the group itself
 	if err := s.store.Delete(ctx, tenantID, groupID); err != nil {
-		return fmt.Errorf("failed to delete group: %w", err)
+		return E(op, ErrCodeStoreOperation, "failed to delete group", err)
 	}
 
 	s.logger.Info("deleted group",
@@ -117,7 +122,12 @@ func (s *Service) Delete(ctx context.Context, tenantID, groupID string) error {
 
 // List retrieves groups matching the given criteria
 func (s *Service) List(ctx context.Context, opts ListOptions) ([]*Group, error) {
-	return s.store.List(ctx, opts)
+	const op = "group.Service.List"
+	groups, err := s.store.List(ctx, opts)
+	if err != nil {
+		return nil, E(op, ErrCodeStoreOperation, "failed to list groups", err)
+	}
+	return groups, nil
 }
 
 // AddDevice adds a device to a static group
@@ -126,7 +136,7 @@ func (s *Service) AddDevice(ctx context.Context, tenantID, groupID string, devic
 
 	group, err := s.store.Get(ctx, tenantID, groupID)
 	if err != nil {
-		return fmt.Errorf("failed to get group: %w", err)
+		return E(op, ErrCodeStoreOperation, "failed to get group", err)
 	}
 
 	if group.Type != TypeStatic {
@@ -134,7 +144,7 @@ func (s *Service) AddDevice(ctx context.Context, tenantID, groupID string, devic
 	}
 
 	if err := s.store.AddDevice(ctx, tenantID, groupID, device); err != nil {
-		return fmt.Errorf("failed to add device to group: %w", err)
+		return E(op, ErrCodeStoreOperation, "failed to add device to group", err)
 	}
 
 	s.logger.Info("added device to group",
@@ -152,7 +162,7 @@ func (s *Service) RemoveDevice(ctx context.Context, tenantID, groupID, deviceID 
 
 	group, err := s.store.Get(ctx, tenantID, groupID)
 	if err != nil {
-		return fmt.Errorf("failed to get group: %w", err)
+		return E(op, ErrCodeStoreOperation, "failed to get group", err)
 	}
 
 	if group.Type != TypeStatic {
@@ -160,7 +170,7 @@ func (s *Service) RemoveDevice(ctx context.Context, tenantID, groupID, deviceID 
 	}
 
 	if err := s.store.RemoveDevice(ctx, tenantID, groupID, deviceID); err != nil {
-		return fmt.Errorf("failed to remove device from group: %w", err)
+		return E(op, ErrCodeStoreOperation, "failed to remove device from group", err)
 	}
 
 	s.logger.Info("removed device from group",
@@ -174,7 +184,13 @@ func (s *Service) RemoveDevice(ctx context.Context, tenantID, groupID, deviceID 
 
 // ListDevices lists all devices in a group
 func (s *Service) ListDevices(ctx context.Context, tenantID, groupID string) ([]*device.Device, error) {
-	return s.store.ListDevices(ctx, tenantID, groupID)
+	const op = "group.Service.ListDevices"
+	
+	devices, err := s.store.ListDevices(ctx, tenantID, groupID)
+	if err != nil {
+		return nil, E(op, ErrCodeStoreOperation, "failed to list devices in group", err)
+	}
+	return devices, nil
 }
 
 // validateHierarchy ensures no cycles would be created in the group hierarchy
@@ -184,18 +200,18 @@ func (s *Service) validateHierarchy(ctx context.Context, tenantID, groupID, newP
 	// Check that the new parent exists
 	parent, err := s.store.Get(ctx, tenantID, newParentID)
 	if err != nil {
-		return fmt.Errorf("failed to get parent group: %w", err)
+		return E(op, ErrCodeStoreOperation, "failed to get parent group", err)
 	}
 
 	// Prevent self-referential cycles
 	if groupID == newParentID {
-		return ErrCyclicDependency
+		return E(op, ErrCodeInvalidOperation, "group cannot be its own parent", ErrCyclicDependency)
 	}
 
 	// Check that the new parent isn't a descendant of the group
 	parentPath := parent.Path
 	if strings.Contains(parentPath, "/"+groupID+"/") {
-		return ErrCyclicDependency
+		return E(op, ErrCodeInvalidOperation, "cyclic dependency detected", ErrCyclicDependency)
 	}
 
 	return nil

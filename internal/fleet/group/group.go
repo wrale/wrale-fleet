@@ -20,10 +20,10 @@ const (
 
 // MembershipQuery defines criteria for dynamic group membership
 type MembershipQuery struct {
-	Tags    map[string]string `json:"tags,omitempty"`              // Tag-based matching
-	Status  device.Status     `json:"status,omitempty"`            // Status-based matching
-	Regions []string          `json:"regions,omitempty"`           // Region-based matching
-	Custom  json.RawMessage   `json:"custom_criteria,omitempty"`   // Custom query criteria
+	Tags    map[string]string `json:"tags,omitempty"`            // Tag-based matching
+	Status  device.Status     `json:"status,omitempty"`          // Status-based matching
+	Regions []string          `json:"regions,omitempty"`         // Region-based matching
+	Custom  json.RawMessage   `json:"custom_criteria,omitempty"` // Custom query criteria
 }
 
 // Properties represents group configuration properties
@@ -35,33 +35,33 @@ type Properties struct {
 
 // Group represents a collection of devices with shared management properties
 type Group struct {
-	ID           string          `json:"id"`
-	TenantID     string          `json:"tenant_id"`
-	Name         string          `json:"name"`
-	Description  string          `json:"description,omitempty"`
-	Type         Type            `json:"type"`
-	ParentID     string          `json:"parent_id,omitempty"`     // ID of parent group for inheritance
-	Path         string          `json:"path"`                     // Full path in group hierarchy
-	Query        *MembershipQuery `json:"query,omitempty"`         // Criteria for dynamic membership
-	Properties   Properties      `json:"properties"`              // Group configuration and policies
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	DeviceCount  int             `json:"device_count"`           // Count of member devices
+	ID          string           `json:"id"`
+	TenantID    string          `json:"tenant_id"`
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Type        Type             `json:"type"`
+	ParentID    string           `json:"parent_id,omitempty"` // ID of parent group for inheritance
+	Path        string           `json:"path"`                // Full path in group hierarchy
+	Query       *MembershipQuery `json:"query,omitempty"`     // Criteria for dynamic membership
+	Properties  Properties       `json:"properties"`          // Group configuration and policies
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	DeviceCount int             `json:"device_count"` // Count of member devices
 }
 
 // New creates a new Group with generated ID and timestamps
 func New(tenantID, name string, groupType Type) *Group {
 	now := time.Now().UTC()
 	return &Group{
-		ID:         uuid.New().String(),
-		TenantID:   tenantID,
-		Name:       name,
-		Type:       groupType,
+		ID:       uuid.New().String(),
+		TenantID: tenantID,
+		Name:     name,
+		Type:     groupType,
 		Properties: Properties{
 			Metadata: make(map[string]string),
 		},
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 }
 
@@ -126,8 +126,6 @@ func (g *Group) SetParent(parentID, parentPath string) error {
 
 // UpdateProperties updates the group's configuration properties
 func (g *Group) UpdateProperties(properties Properties) error {
-	const op = "Group.UpdateProperties"
-
 	g.Properties = properties
 	g.UpdatedAt = time.Now().UTC()
 	return nil
@@ -135,15 +133,9 @@ func (g *Group) UpdateProperties(properties Properties) error {
 
 // IsAncestor checks if the given group ID is an ancestor of this group
 func (g *Group) IsAncestor(groupID string) bool {
-	// Check each component of the path
-	current := g.ParentID
-	for current != "" {
-		if current == groupID {
-			return true
-		}
-		// In practice, we'd load the parent group to check its parent
-		// This is just a placeholder implementation
-		break
+	if g.ParentID == "" {
+		return false
 	}
-	return false
+	
+	return g.ParentID == groupID
 }

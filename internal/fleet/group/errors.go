@@ -4,9 +4,9 @@ import "fmt"
 
 // Error codes for the group package
 const (
-	ErrCodeInvalidGroup    = "INVALID_GROUP"
-	ErrCodeGroupExists     = "GROUP_EXISTS"
-	ErrCodeGroupNotFound   = "GROUP_NOT_FOUND"
+	ErrCodeInvalidGroup     = "INVALID_GROUP"
+	ErrCodeGroupExists      = "GROUP_EXISTS"
+	ErrCodeGroupNotFound    = "GROUP_NOT_FOUND"
 	ErrCodeInvalidOperation = "INVALID_OPERATION"
 	ErrCodeCyclicDependency = "CYCLIC_DEPENDENCY"
 )
@@ -54,7 +54,7 @@ func E(op, code, message string, err error) *Error {
 
 // Common error variables
 var (
-	ErrGroupExists       = E("group", ErrCodeGroupExists, "group already exists", nil)
-	ErrGroupNotFound     = E("group", ErrCodeGroupNotFound, "group not found", nil)
+	ErrGroupExists      = E("group", ErrCodeGroupExists, "group already exists", nil)
+	ErrGroupNotFound    = E("group", ErrCodeGroupNotFound, "group not found", nil)
 	ErrCyclicDependency = E("group", ErrCodeCyclicDependency, "cyclic dependency detected in group hierarchy", nil)
 )
