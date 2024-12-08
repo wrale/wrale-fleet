@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wrale/fleet/internal/fleet/group"
+	"github.com/wrale/wrale-fleet/internal/fleet/group"
 )
 
 // GetAncestors implements group.Store

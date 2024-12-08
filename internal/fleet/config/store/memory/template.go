@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	"github.com/wrale/fleet/internal/fleet/config"
+	"github.com/wrale/wrale-fleet/internal/fleet/config"
 )
 
 // validateTemplate ensures the template is valid before storage operations

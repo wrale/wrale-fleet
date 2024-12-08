@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wrale/fleet/internal/fleet/device"
-	devicetesting "github.com/wrale/fleet/internal/fleet/device/testing"
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
+	devicetesting "github.com/wrale/wrale-fleet/internal/fleet/device/testing"
 )
 
 func TestTenantIsolation(t *testing.T) {

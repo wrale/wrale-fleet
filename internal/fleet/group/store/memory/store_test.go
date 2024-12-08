@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	devmem "github.com/wrale/fleet/internal/fleet/device/store/memory"
-	"github.com/wrale/fleet/internal/fleet/group"
+	devmem "github.com/wrale/wrale-fleet/internal/fleet/device/store/memory"
+	"github.com/wrale/wrale-fleet/internal/fleet/group"
 )
 
 func TestStore(t *testing.T) {

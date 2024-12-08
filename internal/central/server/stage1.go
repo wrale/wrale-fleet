@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/wrale/fleet/internal/fleet/device"
-	"github.com/wrale/fleet/internal/fleet/device/store/memory"
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/device/store/memory"
 	"go.uber.org/zap"
 )
 

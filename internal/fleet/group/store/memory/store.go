@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/wrale/fleet/internal/fleet/device"
-	"github.com/wrale/fleet/internal/fleet/group"
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/group"
 )
 
 // Store implements an in-memory group store

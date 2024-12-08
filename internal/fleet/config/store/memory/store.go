@@ -3,7 +3,7 @@ package memory
 import (
 	"sync"
 
-	"github.com/wrale/fleet/internal/fleet/config"
+	"github.com/wrale/wrale-fleet/internal/fleet/config"
 )
 
 // Store implements an in-memory configuration store with thread-safe operations.

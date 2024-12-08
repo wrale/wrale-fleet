@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
 	"go.uber.org/zap"
 )
 

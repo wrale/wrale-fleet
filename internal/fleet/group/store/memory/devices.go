@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wrale/fleet/internal/fleet/device"
-	"github.com/wrale/fleet/internal/fleet/group"
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/group"
 )
 
 // AddDevice implements group.Store

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/wrale/fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
 )
 
 // Store provides an in-memory implementation of device.Store interface.

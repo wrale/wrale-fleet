@@ -3,7 +3,7 @@ package memory
 import (
 	"fmt"
 
-	"github.com/wrale/fleet/internal/fleet/config"
+	"github.com/wrale/wrale-fleet/internal/fleet/config"
 )
 
 // validateInput checks that required string fields are not empty.
