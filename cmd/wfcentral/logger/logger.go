@@ -3,6 +3,8 @@ package logger
 
 import (
 	"fmt"
+	"strings"
+	"syscall"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -41,12 +43,35 @@ func New(cfg Config) (*zap.Logger, error) {
 }
 
 // Sync safely syncs the logger, handling expected platform-specific errors.
+// A nil logger is treated as a no-op case, returning nil to support graceful
+// shutdown scenarios. This aligns with the platform's high availability goals
+// by handling edge cases robustly.
 func Sync(logger *zap.Logger) error {
-	err := logger.Sync()
-	if err != nil {
-		// Logger sync errors are expected on some platforms
-		// Just log to stderr but don't fail
-		fmt.Printf("logger sync warning: %v\n", err)
+	// Handle nil logger case gracefully
+	if logger == nil {
+		return nil
 	}
-	return nil
+
+	err := logger.Sync()
+	if err == nil {
+		return nil
+	}
+
+	// Convert to error string for pattern matching
+	errStr := err.Error()
+
+	// Handle common stdout/stderr sync issues that can be safely ignored
+	if strings.Contains(errStr, "invalid argument") ||
+		strings.Contains(errStr, "inappropriate ioctl for device") ||
+		strings.Contains(errStr, "bad file descriptor") {
+		return nil
+	}
+
+	// Handle specific syscall errors that are expected
+	if err == syscall.EINVAL {
+		return nil
+	}
+
+	// Return unexpected sync errors for handling
+	return err
 }
