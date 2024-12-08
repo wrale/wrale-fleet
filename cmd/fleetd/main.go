@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/wrale/fleet/internal/fleet/device"
-	"github.com/wrale/fleet/internal/store/memory"
+	"github.com/wrale/fleet/internal/fleet/device/store/memory"
 	"go.uber.org/zap"
 )
 
@@ -18,7 +18,7 @@ func main() {
 	logger, _ := zap.NewDevelopment()
 
 	// Create device store and service
-	store := memory.NewDeviceStore()
+	store := memory.New()
 	service := device.NewService(store, logger)
 
 	// Create context that will be canceled on interrupt
@@ -42,10 +42,10 @@ func main() {
 
 	// Wait for shutdown signal
 	<-ctx.Done()
-	
+
 	// Sync logger before final message - ignore sync errors as they're expected on some platforms
 	_ = logger.Sync()
-	
+
 	// Log final shutdown message
 	logger.Info("shutting down")
 }
@@ -90,7 +90,7 @@ func runDemo(ctx context.Context, service *device.Service, logger *zap.Logger) e
 	// 4. Configure device
 	config := map[string]interface{}{
 		"monitoring_interval": "30s",
-		"log_level":           "info",
+		"log_level":          "info",
 		"features": map[string]bool{
 			"metrics_enabled":  true,
 			"tracing_enabled":  false,

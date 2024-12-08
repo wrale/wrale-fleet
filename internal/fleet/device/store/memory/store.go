@@ -8,26 +8,31 @@ import (
 	"github.com/wrale/fleet/internal/fleet/device"
 )
 
-// DeviceStore provides an in-memory implementation of device.Store
-type DeviceStore struct {
+// Store provides an in-memory implementation of device.Store interface.
+// It is primarily used for testing and demonstration purposes.
+type Store struct {
 	mu      sync.RWMutex
 	devices map[string]*device.Device // key: tenantID:deviceID
 }
 
-// NewDeviceStore creates a new in-memory device store
-func NewDeviceStore() *DeviceStore {
-	return &DeviceStore{
+// New creates a new in-memory device store
+func New() *Store {
+	return &Store{
 		devices: make(map[string]*device.Device),
 	}
 }
 
 // key generates the map key for a device
-func (s *DeviceStore) key(tenantID, deviceID string) string {
+func (s *Store) key(tenantID, deviceID string) string {
 	return fmt.Sprintf("%s:%s", tenantID, deviceID)
 }
 
 // Create stores a new device
-func (s *DeviceStore) Create(ctx context.Context, d *device.Device) error {
+func (s *Store) Create(ctx context.Context, d *device.Device) error {
+	if err := d.Validate(); err != nil {
+		return fmt.Errorf("validate device: %w", err)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -44,7 +49,7 @@ func (s *DeviceStore) Create(ctx context.Context, d *device.Device) error {
 }
 
 // Get retrieves a device by ID
-func (s *DeviceStore) Get(ctx context.Context, tenantID, deviceID string) (*device.Device, error) {
+func (s *Store) Get(ctx context.Context, tenantID, deviceID string) (*device.Device, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -60,7 +65,11 @@ func (s *DeviceStore) Get(ctx context.Context, tenantID, deviceID string) (*devi
 }
 
 // Update modifies an existing device
-func (s *DeviceStore) Update(ctx context.Context, d *device.Device) error {
+func (s *Store) Update(ctx context.Context, d *device.Device) error {
+	if err := d.Validate(); err != nil {
+		return fmt.Errorf("validate device: %w", err)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -77,7 +86,7 @@ func (s *DeviceStore) Update(ctx context.Context, d *device.Device) error {
 }
 
 // Delete removes a device
-func (s *DeviceStore) Delete(ctx context.Context, tenantID, deviceID string) error {
+func (s *Store) Delete(ctx context.Context, tenantID, deviceID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -91,7 +100,7 @@ func (s *DeviceStore) Delete(ctx context.Context, tenantID, deviceID string) err
 }
 
 // List retrieves devices matching the given options
-func (s *DeviceStore) List(ctx context.Context, opts device.ListOptions) ([]*device.Device, error) {
+func (s *Store) List(ctx context.Context, opts device.ListOptions) ([]*device.Device, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -124,7 +133,7 @@ func (s *DeviceStore) List(ctx context.Context, opts device.ListOptions) ([]*dev
 }
 
 // matchesFilter checks if a device matches the filter criteria
-func (s *DeviceStore) matchesFilter(d *device.Device, opts device.ListOptions) bool {
+func (s *Store) matchesFilter(d *device.Device, opts device.ListOptions) bool {
 	if opts.TenantID != "" && d.TenantID != opts.TenantID {
 		return false
 	}
