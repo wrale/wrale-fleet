@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,183 +13,93 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	shutdownTimeout = 5 * time.Second
+	cleanupTimeout  = time.Second
+)
+
 func main() {
-	// Initialize logger
-	logger, _ := zap.NewDevelopment()
+	// Regular entry point runs without init signal
+	mainWithInit(nil)
+}
+
+// mainWithInit is the main program logic, optionally signaling initialization.
+// The initDone channel is used for testing to coordinate program startup.
+func mainWithInit(initDone chan<- struct{}) {
+	// Initialize logger with enhanced error handling
+	logger, err := setupLogger()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := safeSync(logger); err != nil {
+			// Logger sync errors are expected on some platforms, don't fail
+			fmt.Fprintf(os.Stderr, "logger sync warning: %v\n", err)
+		}
+	}()
 
 	// Create device store and service
 	store := memory.New()
 	service := device.NewService(store, logger)
 
-	// Create context that will be canceled on interrupt
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Create and start demo manager
+	demoManager := NewDemoManager(service, logger)
+	if err := demoManager.Start(); err != nil {
+		logger.Error("failed to start demo manager", zap.Error(err))
+		os.Exit(1)
+	}
 
-	// Handle shutdown signals
+	// Signal successful initialization if in test mode
+	if initDone != nil {
+		close(initDone)
+	}
+
+	// Set up signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	go func() {
-		sig := <-sigChan
-		logger.Info("received shutdown signal", zap.String("signal", sig.String()))
-		cancel()
-	}()
-
-	// Demonstrate core device management features
-	if err := runDemo(ctx, service, logger); err != nil {
-		logger.Fatal("demo failed", zap.Error(err))
-	}
-
 	// Wait for shutdown signal
-	<-ctx.Done()
+	sig := <-sigChan
+	logger.Info("received shutdown signal", zap.String("signal", sig.String()))
 
-	// Sync logger before final message - ignore sync errors as they're expected on some platforms
-	_ = logger.Sync()
+	// Begin graceful shutdown
+	logger.Info("initiating shutdown sequence")
 
-	// Log final shutdown message
-	logger.Info("shutting down")
-}
+	// Create shutdown context with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer shutdownCancel()
 
-func runDemo(ctx context.Context, service *device.Service, logger *zap.Logger) error {
-	const tenantID = "demo-tenant"
-
-	// 1. Device Registration
-	demoDevice, err := service.Register(ctx, tenantID, "Demo Raspberry Pi")
-	if err != nil {
-		return err
+	// Stop demo manager with timeout
+	if err := demoManager.Stop(shutdownCtx); err != nil {
+		logger.Error("failed to stop demo manager", zap.Error(err))
+		os.Exit(1)
 	}
 
-	logger.Info("registered demo device",
-		zap.String("device_id", demoDevice.ID),
-		zap.String("tenant_id", demoDevice.TenantID),
-		zap.String("name", demoDevice.Name),
-	)
+	// Clean up resources
+	if closer, ok := store.(interface{ Close() error }); ok {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cleanupCancel()
 
-	// 2. Add device metadata
-	if err := demoDevice.AddTag("environment", "production"); err != nil {
-		return err
-	}
-	if err := demoDevice.AddTag("location", "datacenter-1"); err != nil {
-		return err
-	}
+		// Create done channel for cleanup
+		done := make(chan struct{})
+		go func() {
+			if err := closer.Close(); err != nil {
+				logger.Error("failed to close store", zap.Error(err))
+				os.Exit(1)
+			}
+			close(done)
+		}()
 
-	if err := service.Update(ctx, demoDevice); err != nil {
-		return err
-	}
-
-	logger.Info("updated device tags",
-		zap.String("device_id", demoDevice.ID),
-		zap.Any("tags", demoDevice.Tags),
-	)
-
-	// 3. Update device status
-	if err := service.UpdateStatus(ctx, tenantID, demoDevice.ID, device.StatusOnline); err != nil {
-		return err
+		// Wait for cleanup or timeout
+		select {
+		case <-done:
+			logger.Info("store cleanup completed")
+		case <-cleanupCtx.Done():
+			logger.Error("store cleanup timed out")
+			os.Exit(1)
+		}
 	}
 
-	// 4. Configure device
-	config := map[string]interface{}{
-		"monitoring_interval": "30s",
-		"log_level":           "info",
-		"features": map[string]bool{
-			"metrics_enabled":  true,
-			"tracing_enabled":  false,
-			"alerting_enabled": true,
-		},
-	}
-
-	configJSON, err := json.Marshal(config)
-	if err != nil {
-		return err
-	}
-
-	if err := demoDevice.SetConfig(configJSON, "admin"); err != nil {
-		return err
-	}
-
-	if err := service.Update(ctx, demoDevice); err != nil {
-		return err
-	}
-
-	logger.Info("applied device configuration",
-		zap.String("device_id", demoDevice.ID),
-		zap.String("config_hash", demoDevice.LastConfigHash),
-	)
-
-	// 5. Validate configuration
-	if err := demoDevice.ValidateConfig(); err != nil {
-		return err
-	}
-
-	if err := service.Update(ctx, demoDevice); err != nil {
-		return err
-	}
-
-	// 6. Update network information
-	networkInfo := &device.NetworkInfo{
-		IPAddress:  "192.168.1.100",
-		MACAddress: "00:11:22:33:44:55",
-		Hostname:   "demo-device-1",
-		Port:       9100,
-	}
-
-	if err := demoDevice.UpdateDiscoveryInfo(device.DiscoveryManual, networkInfo); err != nil {
-		return err
-	}
-
-	if err := service.Update(ctx, demoDevice); err != nil {
-		return err
-	}
-
-	logger.Info("updated device network info",
-		zap.String("device_id", demoDevice.ID),
-		zap.String("ip", networkInfo.IPAddress),
-		zap.String("hostname", networkInfo.Hostname),
-	)
-
-	// 7. Demonstrate offline capabilities
-	offlineCapabilities := &device.OfflineCapabilities{
-		SupportsAirgap: true,
-		SyncInterval:   time.Hour,
-		LastSyncTime:   time.Now(),
-		OfflineOperations: []string{
-			"status_update",
-			"metric_collection",
-			"log_collection",
-		},
-		LocalBufferSize: 1024 * 1024 * 100, // 100MB
-	}
-
-	if err := demoDevice.UpdateOfflineCapabilities(offlineCapabilities); err != nil {
-		return err
-	}
-
-	if err := service.Update(ctx, demoDevice); err != nil {
-		return err
-	}
-
-	logger.Info("configured offline capabilities",
-		zap.String("device_id", demoDevice.ID),
-		zap.Bool("airgap_supported", offlineCapabilities.SupportsAirgap),
-		zap.Duration("sync_interval", offlineCapabilities.SyncInterval),
-	)
-
-	// 8. List devices
-	devices, err := service.List(ctx, device.ListOptions{
-		TenantID: tenantID,
-		Tags: map[string]string{
-			"environment": "production",
-		},
-	})
-
-	if err != nil {
-		return err
-	}
-
-	logger.Info("listed devices",
-		zap.Int("count", len(devices)),
-		zap.String("tenant_id", tenantID),
-	)
-
-	return nil
+	logger.Info("shutdown completed successfully")
 }

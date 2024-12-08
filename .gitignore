@@ -27,6 +27,3 @@ go.work.sum
 # Build directories
 build/
 bin/
-
-# Binary name
-fleetd
