@@ -93,16 +93,19 @@ func (dm *DemoManager) initialize() error {
 			Devices:  make(map[string]*device.Device),
 		}
 
+		// Create tenant-specific context for registration and setup
+		ctx := device.ContextWithTenant(dm.ctx, tenantID)
+
 		// Create devices for this tenant
 		for j := 0; j < deviceCounts[i]; j++ {
 			deviceName := fmt.Sprintf("Demo Device %d", j+1)
-			dev, err := dm.service.Register(dm.ctx, tenantID, deviceName)
+			dev, err := dm.service.Register(ctx, tenantID, deviceName)
 			if err != nil {
 				return fmt.Errorf("failed to register device for tenant %s: %w", tenantID, err)
 			}
 
-			// Setup device configuration
-			if err := dm.setupDevice(dev); err != nil {
+			// Setup device configuration using tenant context
+			if err := dm.setupDevice(ctx, dev); err != nil {
 				return fmt.Errorf("device setup failed for tenant %s: %w", tenantID, err)
 			}
 
@@ -168,7 +171,7 @@ func (dm *DemoManager) runUpdateLoop() {
 }
 
 // setupDevice performs initial device configuration
-func (dm *DemoManager) setupDevice(dev *device.Device) error {
+func (dm *DemoManager) setupDevice(ctx context.Context, dev *device.Device) error {
 	// Set environment tag based on tenant type
 	environment := "unknown"
 	switch dev.TenantID {
@@ -188,11 +191,11 @@ func (dm *DemoManager) setupDevice(dev *device.Device) error {
 		return fmt.Errorf("adding location tag: %w", err)
 	}
 
-	if err := dm.service.Update(dm.ctx, dev); err != nil {
+	if err := dm.service.Update(ctx, dev); err != nil {
 		return fmt.Errorf("updating device tags: %w", err)
 	}
 
-	if err := dm.service.UpdateStatus(dm.ctx, dev.TenantID, dev.ID, device.StatusOnline); err != nil {
+	if err := dm.service.UpdateStatus(ctx, dev.TenantID, dev.ID, device.StatusOnline); err != nil {
 		return fmt.Errorf("updating status: %w", err)
 	}
 
@@ -213,7 +216,7 @@ func (dm *DemoManager) setupDevice(dev *device.Device) error {
 		return fmt.Errorf("updating offline capabilities: %w", err)
 	}
 
-	return dm.service.Update(dm.ctx, dev)
+	return dm.service.Update(ctx, dev)
 }
 
 // updateTenant updates all devices for a specific tenant
