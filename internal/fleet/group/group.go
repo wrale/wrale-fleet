@@ -142,19 +142,24 @@ func New(tenantID, name string, groupType Type) *Group {
 	now := time.Now().UTC()
 	id := uuid.New().String()
 
+	// Create ancestry with proper path structure
+	pathStr := "/" + id
+	pathParts := []string{id}
+
 	return &Group{
 		ID:       id,
 		TenantID: tenantID,
 		Name:     name,
 		Type:     groupType,
 		Ancestry: AncestryInfo{
-			Path:      "/" + id,
-			PathParts: []string{id},
+			Path:      pathStr,
+			PathParts: pathParts,
 			Depth:     0,
 			Children:  make([]string, 0),
 		},
 		Properties: Properties{
-			Metadata: make(map[string]string),
+			Metadata:        make(map[string]string),
+			PolicyOverrides: make(map[string]json.RawMessage),
 		},
 		CreatedAt: now,
 		UpdatedAt: now,

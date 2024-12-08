@@ -23,7 +23,7 @@ func TestNew(t *testing.T) {
 	ctx := context.Background()
 	err := store.Create(ctx, dev)
 	require.NoError(t, err)
-	
+
 	retrieved, err := store.Get(ctx, dev.TenantID, dev.ID)
 	require.NoError(t, err)
 	assert.Equal(t, dev.ID, retrieved.ID)
