@@ -255,6 +255,11 @@ func (d *Device) UpdateComplianceStatus(status *ComplianceStatus) error {
 	return nil
 }
 
+// GetOfflineCapabilities returns the device's airgap support configuration
+func (d *Device) GetOfflineCapabilities() *OfflineCapabilities {
+	return d.OfflineCapabilities
+}
+
 // UpdateOfflineCapabilities updates the device's airgap support information
 func (d *Device) UpdateOfflineCapabilities(capabilities *OfflineCapabilities) error {
 	const op = "Device.UpdateOfflineCapabilities"
