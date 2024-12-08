@@ -11,11 +11,31 @@ import (
 	"github.com/wrale/fleet/internal/fleet/device"
 	"github.com/wrale/fleet/internal/fleet/device/store/memory"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
+
+// setupLogger configures the application logger based on the environment
+func setupLogger() (*zap.Logger, error) {
+	env := os.Getenv("ENVIRONMENT")
+	if env == "production" {
+		config := zap.NewProductionConfig()
+		config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
+		return config.Build()
+	}
+
+	// Default to development configuration
+	config := zap.NewDevelopmentConfig()
+	config.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
+	return config.Build()
+}
 
 func main() {
 	// Initialize logger
-	logger, _ := zap.NewDevelopment()
+	logger, err := setupLogger()
+	if err != nil {
+		os.Exit(1)
+	}
+	defer logger.Sync()
 
 	// Create device store and service
 	store := memory.New()
