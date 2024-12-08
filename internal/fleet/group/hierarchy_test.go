@@ -49,7 +49,7 @@ func TestHierarchyManager_ValidateHierarchyChange(t *testing.T) {
 				child := New("tenant1", "child", TypeStatic)
 				require.NoError(t, store.Create(context.Background(), parent))
 				require.NoError(t, store.Create(context.Background(), child))
-				child.SetParent(parent.ID, &parent.Ancestry)
+				require.NoError(t, child.SetParent(parent.ID, &parent.Ancestry))
 				require.NoError(t, store.Update(context.Background(), child))
 				return parent, child.ID
 			},
