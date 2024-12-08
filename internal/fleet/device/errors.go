@@ -39,6 +39,15 @@ const (
 	ErrCodeUnauthorized     = "UNAUTHORIZED"
 )
 
+// Common errors
+var (
+	// ErrDeviceExists indicates that a device with the given ID already exists
+	ErrDeviceExists = E("CreateDevice", ErrCodeDeviceExists, "device already exists", nil)
+
+	// ErrDeviceNotFound indicates that the requested device was not found
+	ErrDeviceNotFound = E("GetDevice", ErrCodeDeviceNotFound, "device not found", nil)
+)
+
 // E creates a new Error
 func E(op string, code string, message string, err error) *Error {
 	return &Error{
