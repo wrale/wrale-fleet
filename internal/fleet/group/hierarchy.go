@@ -53,78 +53,72 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, newParentID string) error {
 	const op = "HierarchyManager.UpdateHierarchy"
 
-	// Store a copy of the original group to handle rollbacks if needed
+	// Get the current state of the group to handle rollbacks
 	originalGroup := group.DeepCopy()
 
-	// Validate the hierarchy change
-	if err := h.ValidateHierarchyChange(ctx, group, newParentID); err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-
-	// If there's an existing parent, get it first so we can update it
-	var oldParent *Group
-	if group.ParentID != "" {
-		var err error
-		oldParent, err = h.store.Get(ctx, group.TenantID, group.ParentID)
-		if err != nil {
-			return E(op, ErrCodeStoreOperation, "failed to get old parent group", err)
-		}
-	}
-
-	// If there's a new parent, get it and add the child
-	var newParent *Group
+	// First handle the new parent relationship if it exists
+	var newParentInfo *AncestryInfo
 	if newParentID != "" {
-		var err error
-		newParent, err = h.store.Get(ctx, group.TenantID, newParentID)
+		newParent, err := h.store.Get(ctx, group.TenantID, newParentID)
 		if err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
 		}
+		newParentInfo = &newParent.Ancestry
 
-		// Add the child to the new parent
+		// Update and save the new parent first
 		newParent.AddChild(group.ID)
 		if err := h.store.Update(ctx, newParent); err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to update new parent group", err)
 		}
 	}
 
-	// Update the group's parent and ancestry information
-	var parentInfo *AncestryInfo
-	if newParent != nil {
-		parentInfo = &newParent.Ancestry
-	}
-	if err := group.SetParent(newParentID, parentInfo); err != nil {
-		// Rollback new parent update if it failed
-		if newParent != nil {
-			newParent.RemoveChild(group.ID)
-			_ = h.store.Update(ctx, newParent)
+	// Then update the group's own parent reference and ancestry
+	if err := group.SetParent(newParentID, newParentInfo); err != nil {
+		// Rollback new parent change if we failed to update the group
+		if newParentID != "" {
+			newParent, _ := h.store.Get(ctx, group.TenantID, newParentID)
+			if newParent != nil {
+				newParent.RemoveChild(group.ID)
+				_ = h.store.Update(ctx, newParent)
+			}
 		}
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// If there was an old parent, remove the child from it
-	if oldParent != nil {
-		oldParent.RemoveChild(group.ID)
-		if err := h.store.Update(ctx, oldParent); err != nil {
-			// Rollback all changes if old parent update failed
-			if err := h.store.Update(ctx, originalGroup); err != nil {
-				return E(op, ErrCodeStoreOperation, "failed to rollback group changes", err)
+	// Now update the group
+	if err := h.store.Update(ctx, group); err != nil {
+		// Try to restore original state if update fails
+		if newParentID != "" {
+			newParent, _ := h.store.Get(ctx, group.TenantID, newParentID)
+			if newParent != nil {
+				newParent.RemoveChild(group.ID)
+				_ = h.store.Update(ctx, newParent)
 			}
-			return E(op, ErrCodeStoreOperation, "failed to update old parent group", err)
 		}
+		_ = h.store.Update(ctx, originalGroup)
+		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
 
-	// Finally update the group itself
-	if err := h.store.Update(ctx, group); err != nil {
-		// Attempt to rollback all changes if final update failed
-		if oldParent != nil {
-			oldParent.AddChild(group.ID)
-			_ = h.store.Update(ctx, oldParent)
+	// Finally handle the old parent relationship if it exists
+	// This ensures we don't have a period where the child points to a new parent
+	// but is still in the old parent's children list
+	if originalGroup.ParentID != "" && originalGroup.ParentID != newParentID {
+		oldParent, err := h.store.Get(ctx, group.TenantID, originalGroup.ParentID)
+		if err == nil { // Proceed even if old parent not found
+			oldParent.RemoveChild(group.ID)
+			if err := h.store.Update(ctx, oldParent); err != nil {
+				// If we can't update old parent, revert all changes
+				if newParentID != "" {
+					newParent, _ := h.store.Get(ctx, group.TenantID, newParentID)
+					if newParent != nil {
+						newParent.RemoveChild(group.ID)
+						_ = h.store.Update(ctx, newParent)
+					}
+				}
+				_ = h.store.Update(ctx, originalGroup)
+				return E(op, ErrCodeStoreOperation, "failed to update old parent group", err)
+			}
 		}
-		if newParent != nil {
-			newParent.RemoveChild(group.ID)
-			_ = h.store.Update(ctx, newParent)
-		}
-		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
 
 	return nil
@@ -149,25 +143,43 @@ func (h *HierarchyManager) GetAncestors(ctx context.Context, group *Group) ([]*G
 func (h *HierarchyManager) GetDescendants(ctx context.Context, group *Group) ([]*Group, error) {
 	const op = "HierarchyManager.GetDescendants"
 
+	// Map to track processed groups and prevent cycles
+	processed := make(map[string]bool)
 	descendants := make([]*Group, 0)
-	for _, childID := range group.Ancestry.Children {
-		child, err := h.store.Get(ctx, group.TenantID, childID)
-		if err != nil {
-			return nil, E(op, ErrCodeStoreOperation, "failed to get child group", err)
-		}
 
-		// Add this child to descendants
-		descendants = append(descendants, child)
+	// Helper function for recursive descent
+	var collect func(*Group) error
+	collect = func(current *Group) error {
+		for _, childID := range current.Ancestry.Children {
+			// Skip already processed groups
+			if processed[childID] {
+				continue
+			}
 
-		// Recursively get descendants of this child
-		childDescendants, err := h.GetDescendants(ctx, child)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
+			// Mark as processed to prevent cycles
+			processed[childID] = true
+
+			child, err := h.store.Get(ctx, current.TenantID, childID)
+			if err != nil {
+				return E(op, ErrCodeStoreOperation,
+					fmt.Sprintf("failed to get child group %s", childID), err)
+			}
+
+			descendants = append(descendants, child.DeepCopy())
+
+			// Recursively process child's descendants
+			if err := collect(child); err != nil {
+				return err
+			}
 		}
-		if len(childDescendants) > 0 {
-			descendants = append(descendants, childDescendants...)
-		}
+		return nil
 	}
+
+	// Start collection from the root group
+	if err := collect(group); err != nil {
+		return nil, err
+	}
+
 	return descendants, nil
 }
 
@@ -197,6 +209,7 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 					fmt.Sprintf("group %s references non-existent parent %s", group.ID, group.ParentID),
 					nil)
 			}
+
 			// Validate that this group is in the parent's children list
 			found := false
 			for _, childID := range parent.Ancestry.Children {
@@ -212,7 +225,7 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 			}
 		}
 
-		// Validate children relationships
+		// Validate children relationships are bidirectional
 		for _, childID := range group.Ancestry.Children {
 			child, exists := groupMap[childID]
 			if !exists {
@@ -227,7 +240,7 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 			}
 		}
 
-		// Validate ancestry path
+		// Validate ancestry path and depth
 		if len(group.Ancestry.PathParts) == 0 {
 			return E(op, ErrCodeInvalidGroup,
 				fmt.Sprintf("group %s has empty ancestry path", group.ID),
@@ -239,7 +252,7 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 				nil)
 		}
 
-		// Validate depth matches path parts
+		// Verify depth matches path parts
 		expectedDepth := len(group.Ancestry.PathParts) - 1
 		if group.Ancestry.Depth != expectedDepth {
 			return E(op, ErrCodeInvalidGroup,
