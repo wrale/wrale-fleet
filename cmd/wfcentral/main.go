@@ -13,6 +13,7 @@ import (
 
 	"github.com/wrale/wrale-fleet/cmd/wfcentral/logger"
 	"github.com/wrale/wrale-fleet/cmd/wfcentral/options"
+	"go.uber.org/zap"
 )
 
 const (
@@ -53,7 +54,7 @@ func mainWithInit(initDone chan<- struct{}) {
 		options.WithDataDir(cfg.DataDir),
 	)
 	if err != nil {
-		log.Fatal("failed to initialize server", err)
+		log.Fatal("failed to initialize server", zap.Error(err))
 		os.Exit(1)
 	}
 
@@ -71,7 +72,7 @@ func mainWithInit(initDone chan<- struct{}) {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-sigChan
-		log.Info("received shutdown signal", "signal", sig.String())
+		log.Info("received shutdown signal", zap.String("signal", sig.String()))
 		// Create context with timeout for graceful shutdown
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer shutdownCancel()
@@ -80,13 +81,13 @@ func mainWithInit(initDone chan<- struct{}) {
 
 	// Start server
 	log.Info("starting wfcentral server",
-		"port", cfg.Port,
-		"data_dir", cfg.DataDir,
-		"log_level", cfg.LogLevel,
+		zap.String("port", cfg.Port),
+		zap.String("data_dir", cfg.DataDir),
+		zap.String("log_level", cfg.LogLevel),
 	)
 
 	if err := srv.Run(ctx); err != nil {
-		log.Error("server error", "error", err)
+		log.Error("server error", zap.Error(err))
 		os.Exit(1)
 	}
 
