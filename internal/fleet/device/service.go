@@ -9,15 +9,17 @@ import (
 
 // Service provides device management operations
 type Service struct {
-	store  Store
-	logger *zap.Logger
+	store   Store
+	logger  *zap.Logger
+	monitor *SecurityMonitor
 }
 
 // NewService creates a new device management service
 func NewService(store Store, logger *zap.Logger) *Service {
 	return &Service{
-		store:  store,
-		logger: logger,
+		store:   store,
+		logger:  logger,
+		monitor: NewSecurityMonitor(logger),
 	}
 }
 
@@ -26,10 +28,18 @@ func (s *Service) Register(ctx context.Context, tenantID, name string) (*Device,
 	device := New(tenantID, name)
 
 	if err := device.Validate(); err != nil {
+		s.monitor.RecordAuthAttempt(ctx, "", tenantID, "system", false, map[string]string{
+			"action": "register",
+			"error":  err.Error(),
+		})
 		return nil, fmt.Errorf("invalid device data: %w", err)
 	}
 
 	if err := s.store.Create(ctx, device); err != nil {
+		s.monitor.RecordAuthAttempt(ctx, device.ID, tenantID, "system", false, map[string]string{
+			"action": "register",
+			"error":  err.Error(),
+		})
 		return nil, fmt.Errorf("failed to create device: %w", err)
 	}
 
@@ -38,6 +48,11 @@ func (s *Service) Register(ctx context.Context, tenantID, name string) (*Device,
 		zap.String("tenant_id", device.TenantID),
 		zap.String("name", device.Name),
 	)
+
+	s.monitor.RecordAuthAttempt(ctx, device.ID, device.TenantID, "system", true, map[string]string{
+		"action": "register",
+		"name":   device.Name,
+	})
 
 	return device, nil
 }
@@ -55,6 +70,28 @@ func (s *Service) Get(ctx context.Context, tenantID, deviceID string) (*Device, 
 func (s *Service) Update(ctx context.Context, device *Device) error {
 	if err := device.Validate(); err != nil {
 		return fmt.Errorf("invalid device data: %w", err)
+	}
+
+	// Get existing device for comparison
+	existing, err := s.store.Get(ctx, device.TenantID, device.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get existing device: %w", err)
+	}
+
+	// Track security-relevant changes
+	if existing.NetworkInfo != device.NetworkInfo {
+		s.monitor.RecordNetworkChange(ctx, device.ID, device.TenantID, existing.NetworkInfo, device.NetworkInfo)
+	}
+
+	if existing.Status != device.Status {
+		s.monitor.RecordStatusChange(ctx, device.ID, device.TenantID, existing.Status, device.Status)
+	}
+
+	if existing.Config != device.Config {
+		s.monitor.RecordConfigChange(ctx, device.ID, device.TenantID, "system", map[string]interface{}{
+			"old_hash": existing.LastConfigHash,
+			"new_hash": device.LastConfigHash,
+		})
 	}
 
 	if err := s.store.Update(ctx, device); err != nil {
@@ -77,11 +114,14 @@ func (s *Service) UpdateStatus(ctx context.Context, tenantID, deviceID string, s
 		return fmt.Errorf("failed to get device: %w", err)
 	}
 
+	oldStatus := device.Status
 	device.SetStatus(status)
 
 	if err := s.store.Update(ctx, device); err != nil {
 		return fmt.Errorf("failed to update device: %w", err)
 	}
+
+	s.monitor.RecordStatusChange(ctx, device.ID, device.TenantID, oldStatus, status)
 
 	s.logger.Info("updated device status",
 		zap.String("device_id", device.ID),
@@ -103,6 +143,18 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]*Device, error)
 
 // Delete removes a device from the system
 func (s *Service) Delete(ctx context.Context, tenantID, deviceID string) error {
+	// Record the deletion attempt
+	s.monitor.RecordEvent(ctx, SecurityEvent{
+		Type:      EventConfigChange,
+		DeviceID:  deviceID,
+		TenantID:  tenantID,
+		Timestamp: time.Now().UTC(),
+		Success:   true,
+		Details: map[string]string{
+			"action": "delete",
+		},
+	})
+
 	if err := s.store.Delete(ctx, tenantID, deviceID); err != nil {
 		return fmt.Errorf("failed to delete device: %w", err)
 	}
