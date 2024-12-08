@@ -12,6 +12,11 @@ import (
 // This is particularly useful for handling platform-specific sync behaviors
 // and ensuring clean shutdown.
 func Sync(logger *zap.Logger) error {
+	// Handle nil logger case gracefully
+	if logger == nil {
+		return nil
+	}
+
 	err := logger.Sync()
 	if err == nil {
 		return nil
