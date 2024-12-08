@@ -48,18 +48,24 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, newParentID string) error {
 	const op = "HierarchyManager.UpdateHierarchy"
 
+	// Get a fresh copy of the group to ensure we have the latest state
+	currentGroup, err := h.store.Get(ctx, group.TenantID, group.ID)
+	if err != nil {
+		return E(op, ErrCodeStoreOperation, "failed to get current group state", err)
+	}
+
 	// Validate the hierarchy change
-	if err := h.ValidateHierarchyChange(ctx, group, newParentID); err != nil {
+	if err := h.ValidateHierarchyChange(ctx, currentGroup, newParentID); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	// If there's an existing parent, remove this group from its children
-	if group.ParentID != "" {
-		oldParent, err := h.store.Get(ctx, group.TenantID, group.ParentID)
+	if currentGroup.ParentID != "" {
+		oldParent, err := h.store.Get(ctx, currentGroup.TenantID, currentGroup.ParentID)
 		if err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to get old parent group", err)
 		}
-		oldParent.RemoveChild(group.ID)
+		oldParent.RemoveChild(currentGroup.ID)
 		if err := h.store.Update(ctx, oldParent); err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to update old parent group", err)
 		}
@@ -67,27 +73,30 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 
 	// Update the group's parent relationship
 	if newParentID != "" {
-		newParent, err := h.store.Get(ctx, group.TenantID, newParentID)
+		newParent, err := h.store.Get(ctx, currentGroup.TenantID, newParentID)
 		if err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
 		}
-		if err := group.SetParent(newParentID, &newParent.Ancestry); err != nil {
+		if err := currentGroup.SetParent(newParentID, &newParent.Ancestry); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
-		newParent.AddChild(group.ID)
+		newParent.AddChild(currentGroup.ID)
 		if err := h.store.Update(ctx, newParent); err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to update new parent group", err)
 		}
 	} else {
-		if err := group.SetParent("", nil); err != nil {
+		if err := currentGroup.SetParent("", nil); err != nil {
 			return fmt.Errorf("%s: %w", op, err)
 		}
 	}
 
-	// Update the group itself
-	if err := h.store.Update(ctx, group); err != nil {
+	// Update the group with its new state
+	if err := h.store.Update(ctx, currentGroup); err != nil {
 		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
+
+	// Update the input group to reflect the changes
+	*group = *currentGroup
 
 	return nil
 }
