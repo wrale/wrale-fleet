@@ -96,10 +96,12 @@ func TestDevice_SetConfig(t *testing.T) {
 	originalUpdate := device.UpdatedAt
 
 	config := json.RawMessage(`{"key": "value"}`)
-	device.SetConfig(config)
+	device.SetConfig(config, "test-user")
 
 	assert.Equal(t, config, device.Config, "config should be updated")
 	assert.True(t, device.UpdatedAt.After(originalUpdate), "updated timestamp should be newer")
+	assert.NotEmpty(t, device.ConfigHistory, "config history should be updated")
+	assert.Equal(t, "test-user", device.ConfigHistory[0].AppliedBy, "appliedBy should be recorded")
 }
 
 func TestDevice_Tags(t *testing.T) {

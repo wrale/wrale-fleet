@@ -31,10 +31,10 @@ const (
 
 // ComplianceStatus represents regulatory compliance state
 type ComplianceStatus struct {
-	IsCompliant   bool              `json:"is_compliant"`
-	LastCheck     time.Time         `json:"last_check"`
-	Requirements  []string          `json:"requirements"`
-	Violations    []string          `json:"violations,omitempty"`
+	IsCompliant    bool                 `json:"is_compliant"`
+	LastCheck      time.Time            `json:"last_check"`
+	Requirements   []string             `json:"requirements"`
+	Violations     []string             `json:"violations,omitempty"`
 	Certifications map[string]time.Time `json:"certifications,omitempty"`
 }
 
@@ -81,12 +81,12 @@ type Device struct {
 	LastDiscovered  time.Time         `json:"last_discovered,omitempty"`
 	DiscoveryMethod DiscoveryMethod   `json:"discovery_method,omitempty"`
 	NetworkInfo     *NetworkInfo      `json:"network_info,omitempty"`
-	
+
 	// Security and compliance fields
-	SecureBootEnabled bool             `json:"secure_boot_enabled"`
-	SecurityVersion   string           `json:"security_version,omitempty"`
+	SecureBootEnabled bool              `json:"secure_boot_enabled"`
+	SecurityVersion   string            `json:"security_version,omitempty"`
 	ComplianceStatus  *ComplianceStatus `json:"compliance_status,omitempty"`
-	
+
 	// Airgapped operation support
 	OfflineCapabilities *OfflineCapabilities `json:"offline_capabilities,omitempty"`
 }
@@ -95,13 +95,13 @@ type Device struct {
 func New(tenantID, name string) *Device {
 	now := time.Now().UTC()
 	return &Device{
-		ID:        uuid.New().String(),
-		TenantID:  tenantID,
-		Name:      name,
-		Status:    StatusUnknown,
-		Tags:      make(map[string]string),
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:            uuid.New().String(),
+		TenantID:      tenantID,
+		Name:          name,
+		Status:        StatusUnknown,
+		Tags:          make(map[string]string),
+		CreatedAt:     now,
+		UpdatedAt:     now,
 		ConfigHistory: make([]ConfigVersion, 0),
 	}
 }
@@ -147,11 +147,11 @@ func (d *Device) SetStatus(status Status) {
 // SetConfig updates the device configuration with versioning
 func (d *Device) SetConfig(config json.RawMessage, appliedBy string) {
 	now := time.Now().UTC()
-	
+
 	// Create new config version
 	version := len(d.ConfigHistory) + 1
 	hash := calculateConfigHash(config) // Implementation needed
-	
+
 	configVersion := ConfigVersion{
 		Version:   version,
 		Config:    config,
@@ -159,7 +159,7 @@ func (d *Device) SetConfig(config json.RawMessage, appliedBy string) {
 		AppliedAt: now,
 		AppliedBy: appliedBy,
 	}
-	
+
 	// Add to history and update current config
 	d.ConfigHistory = append(d.ConfigHistory, configVersion)
 	d.Config = config
