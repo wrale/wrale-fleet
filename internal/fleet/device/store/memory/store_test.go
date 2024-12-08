@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -340,12 +341,12 @@ func TestStore_Concurrency(t *testing.T) {
 	ctx := context.Background()
 
 	// Create initial device
-	device := &device.Device{
+	dev := &device.Device{
 		ID:       "test-1",
 		TenantID: "tenant-1",
 		Name:     "Test Device",
 	}
-	require.NoError(t, store.Create(ctx, device))
+	require.NoError(t, store.Create(ctx, dev))
 
 	// Test concurrent operations
 	var wg sync.WaitGroup
@@ -368,9 +369,8 @@ func TestStore_Concurrency(t *testing.T) {
 			device := &device.Device{
 				ID:       "test-1",
 				TenantID: "tenant-1",
-				Name:     "Test Device",
+				Name:     fmt.Sprintf("Updated Name %d", i),
 			}
-			device.LastUpdatedBy = string(rune(i))
 			_ = store.Update(ctx, device)
 		}(i)
 	}
