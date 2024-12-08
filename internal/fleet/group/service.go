@@ -10,17 +10,19 @@ import (
 
 // Service provides group management operations
 type Service struct {
-	store       Store
-	deviceStore device.Store
-	logger      *zap.Logger
+	store        Store
+	deviceStore  device.Store
+	logger       *zap.Logger
+	hierarchyMgr *HierarchyManager
 }
 
 // NewService creates a new group management service
 func NewService(store Store, deviceStore device.Store, logger *zap.Logger) *Service {
 	return &Service{
-		store:       store,
-		deviceStore: deviceStore,
-		logger:      logger,
+		store:        store,
+		deviceStore:  deviceStore,
+		logger:       logger,
+		hierarchyMgr: NewHierarchyManager(store),
 	}
 }
 
@@ -66,9 +68,9 @@ func (s *Service) Update(ctx context.Context, group *Group) error {
 		return E(op, ErrCodeInvalidInput, "invalid group data", err)
 	}
 
-	// If parent ID is changing, verify no cycles would be created
+	// If parent ID is changing, validate hierarchy change
 	if group.ParentID != "" {
-		if err := s.validateHierarchy(ctx, group.TenantID, group.ID, group.ParentID); err != nil {
+		if err := s.hierarchyMgr.ValidateHierarchyChange(ctx, group, group.ParentID); err != nil {
 			return E(op, ErrCodeInvalidOperation, "invalid group hierarchy", err)
 		}
 	}
@@ -90,19 +92,21 @@ func (s *Service) Update(ctx context.Context, group *Group) error {
 func (s *Service) Delete(ctx context.Context, tenantID, groupID string) error {
 	const op = "group.Service.Delete"
 
-	// Get all child groups
-	children, err := s.List(ctx, ListOptions{
-		TenantID: tenantID,
-		ParentID: groupID,
-	})
+	// Get descendants to ensure we delete from bottom up
+	group, err := s.store.Get(ctx, tenantID, groupID)
 	if err != nil {
-		return E(op, ErrCodeStoreOperation, "failed to list child groups", err)
+		return E(op, ErrCodeStoreOperation, "failed to get group", err)
 	}
 
-	// Delete children first
-	for _, child := range children {
-		if err := s.Delete(ctx, tenantID, child.ID); err != nil {
-			return E(op, ErrCodeStoreOperation, "failed to delete child group", err)
+	descendants, err := s.hierarchyMgr.GetDescendants(ctx, group)
+	if err != nil {
+		return E(op, ErrCodeStoreOperation, "failed to list descendant groups", err)
+	}
+
+	// Delete descendants from deepest to shallowest
+	for i := len(descendants) - 1; i >= 0; i-- {
+		if err := s.store.Delete(ctx, tenantID, descendants[i].ID); err != nil {
+			return E(op, ErrCodeStoreOperation, "failed to delete descendant group", err)
 		}
 	}
 
@@ -114,7 +118,7 @@ func (s *Service) Delete(ctx context.Context, tenantID, groupID string) error {
 	s.logger.Info("deleted group",
 		zap.String("group_id", groupID),
 		zap.String("tenant_id", tenantID),
-		zap.Int("child_groups_deleted", len(children)),
+		zap.Int("descendant_groups_deleted", len(descendants)),
 	)
 
 	return nil
@@ -191,28 +195,4 @@ func (s *Service) ListDevices(ctx context.Context, tenantID, groupID string) ([]
 		return nil, E(op, ErrCodeStoreOperation, "failed to list devices in group", err)
 	}
 	return devices, nil
-}
-
-// validateHierarchy ensures no cycles would be created in the group hierarchy
-func (s *Service) validateHierarchy(ctx context.Context, tenantID, groupID, newParentID string) error {
-	const op = "group.Service.validateHierarchy"
-
-	// Check that the new parent exists
-	parent, err := s.store.Get(ctx, tenantID, newParentID)
-	if err != nil {
-		return E(op, ErrCodeStoreOperation, "failed to get parent group", err)
-	}
-
-	// Prevent self-referential cycles
-	if groupID == newParentID {
-		return E(op, ErrCodeInvalidOperation, "group cannot be its own parent", ErrCyclicDependency)
-	}
-
-	// Check that the new parent isn't a descendant of the group
-	parentPath := parent.Path
-	if strings.Contains(parentPath, "/"+groupID+"/") {
-		return E(op, ErrCodeInvalidOperation, "cyclic dependency detected", ErrCyclicDependency)
-	}
-
-	return nil
 }
