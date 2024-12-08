@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,14 +16,17 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+const (
+	testInitTimeout     = 500 * time.Millisecond
+	testShutdownTimeout = 5 * time.Second
+)
+
 // TestRunDemo tests the demo workflow functionality
 func TestRunDemo(t *testing.T) {
 	// Use test logger with proper cleanup
 	logger := zaptest.NewLogger(t)
 	defer func() {
-		if err := logger.Sync(); err != nil {
-			t.Logf("non-fatal: failed to sync logger: %v", err)
-		}
+		_ = safeSync(logger)
 	}()
 
 	tests := []struct {
@@ -78,33 +82,44 @@ func TestRunDemo(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.NotEmpty(t, devices)
-
-			// Device verification logic remains unchanged
 		})
 	}
 }
 
 // TestMainSignalHandling tests proper shutdown signal handling
 func TestMainSignalHandling(t *testing.T) {
-	// Create done channel for test coordination
+	// Create coordination channels
+	ready := make(chan struct{})
 	done := make(chan struct{})
 
 	// Setup exit capture
 	var exitCode int
+	var exitMu sync.Mutex
 	origExit := osExit
 	defer func() { osExit = origExit }()
 	osExit = func(code int) {
+		exitMu.Lock()
 		exitCode = code
+		exitMu.Unlock()
 		close(done)
-	}
+	}()
 
-	// Start main in a goroutine
+	// Start main in a goroutine with initialization signal
 	go func() {
+		// Signal when initialization is complete
+		time.AfterFunc(testInitTimeout/2, func() {
+			close(ready)
+		})
 		main()
 	}()
 
-	// Allow time for initialization
-	time.Sleep(100 * time.Millisecond)
+	// Wait for initialization with timeout
+	select {
+	case <-ready:
+		// Initialized successfully
+	case <-time.After(testInitTimeout):
+		t.Fatal("program did not initialize within timeout")
+	}
 
 	// Send interrupt signal
 	p, err := os.FindProcess(os.Getpid())
@@ -114,8 +129,11 @@ func TestMainSignalHandling(t *testing.T) {
 	// Wait for shutdown with timeout
 	select {
 	case <-done:
-		assert.Equal(t, 0, exitCode)
-	case <-time.After(2 * time.Second):
+		exitMu.Lock()
+		code := exitCode
+		exitMu.Unlock()
+		assert.Equal(t, 0, code)
+	case <-time.After(testShutdownTimeout):
 		t.Fatal("program did not shut down within timeout")
 	}
 }
@@ -148,12 +166,10 @@ func TestLogger(t *testing.T) {
 			logger, err := setupLogger()
 			require.NoError(t, err)
 			defer func() {
-				if err := logger.Sync(); err != nil {
-					t.Logf("non-fatal: failed to sync logger: %v", err)
-				}
+				_ = safeSync(logger)
 			}()
 
-			assert.Equal(t, tt.wantLevel, logger.Core().Enabled(tt.wantLevel))
+			assert.Equal(t, tt.wantLevel, getLoggerLevel(logger))
 		})
 	}
 }

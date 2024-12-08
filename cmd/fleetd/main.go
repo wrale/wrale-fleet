@@ -15,17 +15,19 @@ import (
 
 const (
 	shutdownTimeout = 5 * time.Second
+	cleanupTimeout  = time.Second
 )
 
 func main() {
-	// Initialize logger
+	// Initialize logger with enhanced error handling
 	logger, err := setupLogger()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
 	defer func() {
-		if err := logger.Sync(); err != nil {
+		// Use the safe sync helper to handle stdout/stderr sync errors gracefully
+		if err := safeSync(logger); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
 		}
 	}()
@@ -34,7 +36,7 @@ func main() {
 	store := memory.New()
 	service := device.NewService(store, logger)
 
-	// Handle shutdown signals
+	// Handle shutdown signals with improved coordination
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -45,7 +47,7 @@ func main() {
 	// Create error channel for main goroutine
 	errChan := make(chan error, 1)
 
-	// Run demo in separate goroutine
+	// Run demo in separate goroutine with enhanced error propagation
 	go func() {
 		if err := runDemo(ctx, service, logger); err != nil {
 			logger.Error("demo failed", zap.Error(err))
@@ -55,7 +57,7 @@ func main() {
 		errChan <- nil
 	}()
 
-	// Wait for either signal or demo completion
+	// Wait for either signal or demo completion with improved shutdown sequence
 	var shutdownErr error
 	select {
 	case sig := <-sigChan:
@@ -71,7 +73,7 @@ func main() {
 		case err := <-errChan:
 			shutdownErr = err
 		case <-shutdownCtx.Done():
-			logger.Warn("shutdown timed out")
+			logger.Warn("shutdown timed out", zap.Error(shutdownCtx.Err()))
 			shutdownErr = shutdownCtx.Err()
 		}
 
@@ -79,24 +81,24 @@ func main() {
 		shutdownErr = err
 	}
 
-	// Begin graceful shutdown
-	logger.Info("shutting down")
+	// Begin graceful shutdown with structured cleanup
+	logger.Info("initiating shutdown sequence")
 
-	// Allow a moment for final cleanup operations
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Second)
+	// Create cleanup context with timeout for orderly shutdown
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cleanupCancel()
 
-	// Wait for cleanup or timeout
+	// Perform cleanup operations
 	select {
 	case <-time.After(500 * time.Millisecond):
-		logger.Info("cleanup completed")
+		logger.Info("cleanup completed successfully")
 	case <-cleanupCtx.Done():
-		logger.Warn("cleanup timed out")
+		logger.Warn("cleanup operation timed out", zap.Error(cleanupCtx.Err()))
 	}
 
-	// Exit with appropriate status
+	// Exit with appropriate status and logging
 	if shutdownErr != nil {
-		logger.Error("shutdown completed with error", zap.Error(shutdownErr))
+		logger.Error("shutdown completed with errors", zap.Error(shutdownErr))
 		os.Exit(1)
 	}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -29,4 +30,29 @@ func setupLogger() (*zap.Logger, error) {
 	config.ErrorOutputPaths = []string{"stderr"}
 
 	return config.Build()
+}
+
+// safeSync attempts to sync the logger, ignoring common "bad file descriptor" errors
+// that occur when syncing stdout/stderr in tests
+func safeSync(logger *zap.Logger) error {
+	err := logger.Sync()
+	if err != nil && !strings.Contains(err.Error(), "bad file descriptor") {
+		return err
+	}
+	return nil
+}
+
+// getLoggerLevel extracts the configured level from a zap.Logger
+func getLoggerLevel(logger *zap.Logger) zapcore.Level {
+	// Type assert to get the atomic level
+	if atomic, ok := logger.Core().(interface{ Level() zapcore.Level }); ok {
+		return atomic.Level()
+	}
+	// Fallback to checking each level
+	for l := zapcore.DebugLevel; l <= zapcore.FatalLevel; l++ {
+		if logger.Core().Enabled(l) {
+			return l
+		}
+	}
+	return zapcore.InfoLevel // Default fallback
 }
