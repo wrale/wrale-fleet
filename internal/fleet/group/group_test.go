@@ -251,7 +251,7 @@ func TestGroup_UpdateProperties(t *testing.T) {
 		},
 		Metadata: map[string]string{
 			"environment": "production",
-			"owner":      "platform-team",
+			"owner":       "platform-team",
 		},
 	}
 
