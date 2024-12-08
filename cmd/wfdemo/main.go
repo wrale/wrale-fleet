@@ -25,6 +25,26 @@ func init() {
 	rootCmd.AddCommand(sysadminCmd())
 }
 
+// safeSync attempts to sync the logger, handling common sync issues gracefully.
+// This is a simplified version of the sync handler used in fleetd, appropriate
+// for the demo tool's needs.
+func safeSync(logger *zap.Logger) error {
+	err := logger.Sync()
+	if err == nil {
+		return nil
+	}
+
+	// Handle common stdout/stderr sync issues that can be safely ignored
+	errStr := err.Error()
+	if strings.Contains(errStr, "invalid argument") ||
+		strings.Contains(errStr, "inappropriate ioctl for device") {
+		return nil
+	}
+
+	// Return unexpected sync errors for handling
+	return err
+}
+
 func main() {
 	logger, err := zap.NewDevelopment()
 	if err != nil {
@@ -32,12 +52,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() {
-		if err := logger.Sync(); err != nil {
-			// Ignore common sync errors that occur during shutdown
-			if !strings.Contains(err.Error(), "sync /dev/stderr: invalid argument") &&
-				!strings.Contains(err.Error(), "sync /dev/stdout: invalid argument") {
-				fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
-			}
+		if err := safeSync(logger); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
 		}
 	}()
 
