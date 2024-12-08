@@ -29,6 +29,15 @@ const (
 	DiscoveryScan      DiscoveryMethod = "network_scan"
 )
 
+// ComplianceStatus represents regulatory compliance state
+type ComplianceStatus struct {
+	IsCompliant   bool              `json:"is_compliant"`
+	LastCheck     time.Time         `json:"last_check"`
+	Requirements  []string          `json:"requirements"`
+	Violations    []string          `json:"violations,omitempty"`
+	Certifications map[string]time.Time `json:"certifications,omitempty"`
+}
+
 // NetworkInfo contains device network-related information
 type NetworkInfo struct {
 	IPAddress  string            `json:"ip_address,omitempty"`
@@ -38,6 +47,25 @@ type NetworkInfo struct {
 	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
+// ConfigVersion represents a versioned configuration
+type ConfigVersion struct {
+	Version     int             `json:"version"`
+	Config      json.RawMessage `json:"config"`
+	Hash        string          `json:"hash"`
+	AppliedAt   time.Time       `json:"applied_at"`
+	AppliedBy   string          `json:"applied_by"`
+	ValidatedAt *time.Time      `json:"validated_at,omitempty"`
+}
+
+// OfflineCapabilities represents device airgap features
+type OfflineCapabilities struct {
+	SupportsAirgap    bool          `json:"supports_airgap"`
+	LastSyncTime      time.Time     `json:"last_sync_time,omitempty"`
+	OfflineOperations []string      `json:"offline_operations,omitempty"`
+	SyncInterval      time.Duration `json:"sync_interval,omitempty"`
+	LocalBufferSize   int64         `json:"local_buffer_size,omitempty"`
+}
+
 // Device represents a managed Raspberry Pi device in the fleet
 type Device struct {
 	ID              string            `json:"id"`
@@ -45,12 +73,22 @@ type Device struct {
 	Name            string            `json:"name"`
 	Status          Status            `json:"status"`
 	Config          json.RawMessage   `json:"config,omitempty"`
+	ConfigHistory   []ConfigVersion   `json:"config_history,omitempty"`
+	LastConfigHash  string            `json:"last_config_hash,omitempty"`
 	Tags            map[string]string `json:"tags,omitempty"`
 	CreatedAt       time.Time         `json:"created_at"`
 	UpdatedAt       time.Time         `json:"updated_at"`
 	LastDiscovered  time.Time         `json:"last_discovered,omitempty"`
 	DiscoveryMethod DiscoveryMethod   `json:"discovery_method,omitempty"`
 	NetworkInfo     *NetworkInfo      `json:"network_info,omitempty"`
+	
+	// Security and compliance fields
+	SecureBootEnabled bool             `json:"secure_boot_enabled"`
+	SecurityVersion   string           `json:"security_version,omitempty"`
+	ComplianceStatus  *ComplianceStatus `json:"compliance_status,omitempty"`
+	
+	// Airgapped operation support
+	OfflineCapabilities *OfflineCapabilities `json:"offline_capabilities,omitempty"`
 }
 
 // New creates a new Device with generated ID and timestamps
@@ -64,6 +102,7 @@ func New(tenantID, name string) *Device {
 		Tags:      make(map[string]string),
 		CreatedAt: now,
 		UpdatedAt: now,
+		ConfigHistory: make([]ConfigVersion, 0),
 	}
 }
 
@@ -84,7 +123,16 @@ func (d *Device) Validate() error {
 		if d.NetworkInfo.Port < 0 || d.NetworkInfo.Port > 65535 {
 			return fmt.Errorf("invalid port number")
 		}
-		// Note: IP and MAC validation could be added here if needed
+	}
+
+	// Validate OfflineCapabilities if present
+	if d.OfflineCapabilities != nil {
+		if d.OfflineCapabilities.SyncInterval < 0 {
+			return fmt.Errorf("sync interval cannot be negative")
+		}
+		if d.OfflineCapabilities.LocalBufferSize < 0 {
+			return fmt.Errorf("local buffer size cannot be negative")
+		}
 	}
 
 	return nil
@@ -96,10 +144,36 @@ func (d *Device) SetStatus(status Status) {
 	d.UpdatedAt = time.Now().UTC()
 }
 
-// SetConfig updates the device configuration and updated timestamp
-func (d *Device) SetConfig(config json.RawMessage) {
+// SetConfig updates the device configuration with versioning
+func (d *Device) SetConfig(config json.RawMessage, appliedBy string) {
+	now := time.Now().UTC()
+	
+	// Create new config version
+	version := len(d.ConfigHistory) + 1
+	hash := calculateConfigHash(config) // Implementation needed
+	
+	configVersion := ConfigVersion{
+		Version:   version,
+		Config:    config,
+		Hash:      hash,
+		AppliedAt: now,
+		AppliedBy: appliedBy,
+	}
+	
+	// Add to history and update current config
+	d.ConfigHistory = append(d.ConfigHistory, configVersion)
 	d.Config = config
-	d.UpdatedAt = time.Now().UTC()
+	d.LastConfigHash = hash
+	d.UpdatedAt = now
+}
+
+// ValidateConfig marks the current config as validated
+func (d *Device) ValidateConfig() {
+	if len(d.ConfigHistory) > 0 {
+		now := time.Now().UTC()
+		latest := &d.ConfigHistory[len(d.ConfigHistory)-1]
+		latest.ValidatedAt = &now
+	}
 }
 
 // UpdateDiscoveryInfo updates the device's discovery-related information
@@ -126,4 +200,22 @@ func (d *Device) RemoveTag(key string) {
 		delete(d.Tags, key)
 		d.UpdatedAt = time.Now().UTC()
 	}
+}
+
+// UpdateComplianceStatus updates the device's compliance information
+func (d *Device) UpdateComplianceStatus(status *ComplianceStatus) {
+	d.ComplianceStatus = status
+	d.UpdatedAt = time.Now().UTC()
+}
+
+// UpdateOfflineCapabilities updates the device's airgap support information
+func (d *Device) UpdateOfflineCapabilities(capabilities *OfflineCapabilities) {
+	d.OfflineCapabilities = capabilities
+	d.UpdatedAt = time.Now().UTC()
+}
+
+// calculateConfigHash generates a hash of the configuration
+// Implementation needed - placeholder for now
+func calculateConfigHash(config json.RawMessage) string {
+	return "hash-placeholder" // TODO: Implement proper hashing
 }
