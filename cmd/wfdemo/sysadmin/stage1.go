@@ -8,77 +8,20 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/wrale/fleet/internal/demo/scenario"
 )
-
-// Scenario represents a single demonstration scenario
-type Scenario interface {
-	// Name returns the scenario's identifier
-	Name() string
-
-	// Description returns a human-readable description of what the scenario demonstrates
-	Description() string
-
-	// Setup prepares any necessary resources for the scenario
-	Setup(ctx context.Context) error
-
-	// Run executes the scenario's demonstration
-	Run(ctx context.Context) error
-
-	// Cleanup releases any resources created during setup
-	Cleanup(ctx context.Context) error
-}
-
-// BaseScenario provides a common implementation of the Scenario interface
-type BaseScenario struct {
-	name        string
-	description string
-	logger      *zap.Logger
-}
-
-// NewBaseScenario creates a new base scenario with the given name and description
-func NewBaseScenario(name, description string, logger *zap.Logger) *BaseScenario {
-	return &BaseScenario{
-		name:        name,
-		description: description,
-		logger:      logger,
-	}
-}
-
-// Name returns the scenario's name
-func (b *BaseScenario) Name() string {
-	return b.name
-}
-
-// Description returns the scenario's description
-func (b *BaseScenario) Description() string {
-	return b.description
-}
-
-// Setup provides a default no-op implementation
-func (b *BaseScenario) Setup(ctx context.Context) error {
-	return nil
-}
-
-// Run must be implemented by concrete scenarios
-func (b *BaseScenario) Run(ctx context.Context) error {
-	return fmt.Errorf("Run not implemented for scenario %s", b.name)
-}
-
-// Cleanup provides a default no-op implementation
-func (b *BaseScenario) Cleanup(ctx context.Context) error {
-	return nil
-}
 
 // DeviceRegistrationScenario demonstrates basic device registration workflow
 type DeviceRegistrationScenario struct {
-	base          *BaseScenario
+	base          *scenario.BaseScenario
 	wfcentralPath string
 }
 
 // NewDeviceRegistrationScenario creates a new device registration demo
 func NewDeviceRegistrationScenario(logger *zap.Logger, wfcentralPath string) *DeviceRegistrationScenario {
 	return &DeviceRegistrationScenario{
-		base:          NewBaseScenario("device-registration", "Demonstrates registering a new device with wfcentral", logger),
+		base:          scenario.NewBaseScenario("device-registration", "Demonstrates registering a new device with wfcentral", logger),
 		wfcentralPath: wfcentralPath,
 	}
 }
@@ -125,14 +68,14 @@ func (s *DeviceRegistrationScenario) Run(ctx context.Context) error {
 
 // StatusMonitoringScenario demonstrates device status monitoring
 type StatusMonitoringScenario struct {
-	base          *BaseScenario
+	base          *scenario.BaseScenario
 	wfcentralPath string
 }
 
 // NewStatusMonitoringScenario creates a new status monitoring demo
 func NewStatusMonitoringScenario(logger *zap.Logger, wfcentralPath string) *StatusMonitoringScenario {
 	return &StatusMonitoringScenario{
-		base:          NewBaseScenario("status-monitoring", "Demonstrates monitoring device status and health", logger),
+		base:          scenario.NewBaseScenario("status-monitoring", "Demonstrates monitoring device status and health", logger),
 		wfcentralPath: wfcentralPath,
 	}
 }
@@ -184,14 +127,14 @@ func (s *StatusMonitoringScenario) Run(ctx context.Context) error {
 
 // ConfigurationScenario demonstrates device configuration management
 type ConfigurationScenario struct {
-	base          *BaseScenario
+	base          *scenario.BaseScenario
 	wfcentralPath string
 }
 
 // NewConfigurationScenario creates a new configuration management demo
 func NewConfigurationScenario(logger *zap.Logger, wfcentralPath string) *ConfigurationScenario {
 	return &ConfigurationScenario{
-		base:          NewBaseScenario("configuration-management", "Demonstrates device configuration workflows", logger),
+		base:          scenario.NewBaseScenario("configuration-management", "Demonstrates device configuration workflows", logger),
 		wfcentralPath: wfcentralPath,
 	}
 }
@@ -247,8 +190,8 @@ func (s *ConfigurationScenario) Run(ctx context.Context) error {
 }
 
 // Stage1Scenarios returns all Stage 1 scenarios for the SysAdmin persona
-func Stage1Scenarios(logger *zap.Logger, wfcentralPath string) []Scenario {
-	return []Scenario{
+func Stage1Scenarios(logger *zap.Logger, wfcentralPath string) []scenario.Scenario {
+	return []scenario.Scenario{
 		NewDeviceRegistrationScenario(logger, wfcentralPath),
 		NewStatusMonitoringScenario(logger, wfcentralPath),
 		NewConfigurationScenario(logger, wfcentralPath),

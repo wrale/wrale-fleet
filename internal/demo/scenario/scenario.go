@@ -1,4 +1,5 @@
-package main
+// Package scenario provides the core types and interfaces for demo scenarios
+package scenario
 
 import (
 	"context"
@@ -24,6 +25,47 @@ type Scenario interface {
 
 	// Cleanup releases any resources created during setup
 	Cleanup(ctx context.Context) error
+}
+
+// BaseScenario provides a common implementation of the Scenario interface
+type BaseScenario struct {
+	name        string
+	description string
+	logger      *zap.Logger
+}
+
+// NewBaseScenario creates a new base scenario with the given name and description
+func NewBaseScenario(name, description string, logger *zap.Logger) *BaseScenario {
+	return &BaseScenario{
+		name:        name,
+		description: description,
+		logger:      logger,
+	}
+}
+
+// Name returns the scenario's name
+func (b *BaseScenario) Name() string {
+	return b.name
+}
+
+// Description returns the scenario's description
+func (b *BaseScenario) Description() string {
+	return b.description
+}
+
+// Setup provides a default no-op implementation
+func (b *BaseScenario) Setup(ctx context.Context) error {
+	return nil
+}
+
+// Run must be implemented by concrete scenarios
+func (b *BaseScenario) Run(ctx context.Context) error {
+	return fmt.Errorf("Run not implemented for scenario %s", b.name)
+}
+
+// Cleanup provides a default no-op implementation
+func (b *BaseScenario) Cleanup(ctx context.Context) error {
+	return nil
 }
 
 // Runner executes a series of scenarios while providing progress feedback
@@ -77,47 +119,5 @@ func (r *Runner) Run(ctx context.Context) error {
 			zap.Duration("duration", duration))
 	}
 
-	return nil
-}
-
-// BaseScenario provides a common implementation of the Scenario interface
-// that can be embedded in concrete scenarios.
-type BaseScenario struct {
-	name        string
-	description string
-	logger      *zap.Logger
-}
-
-// NewBaseScenario creates a new base scenario with the given name and description
-func NewBaseScenario(name, description string, logger *zap.Logger) BaseScenario {
-	return BaseScenario{
-		name:        name,
-		description: description,
-		logger:      logger,
-	}
-}
-
-// Name returns the scenario's name
-func (b *BaseScenario) Name() string {
-	return b.name
-}
-
-// Description returns the scenario's description
-func (b *BaseScenario) Description() string {
-	return b.description
-}
-
-// Setup provides a default no-op implementation
-func (b *BaseScenario) Setup(ctx context.Context) error {
-	return nil
-}
-
-// Run must be implemented by concrete scenarios
-func (b *BaseScenario) Run(ctx context.Context) error {
-	return fmt.Errorf("Run not implemented for scenario %s", b.name)
-}
-
-// Cleanup provides a default no-op implementation
-func (b *BaseScenario) Cleanup(ctx context.Context) error {
 	return nil
 }

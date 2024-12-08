@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/wrale/fleet/cmd/wfdemo/sysadmin"
+	"github.com/wrale/fleet/internal/demo/scenario"
 )
 
 // sysadminCmd creates the command tree for SysAdmin persona demos
@@ -48,7 +49,7 @@ func sysadminStage1Cmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger := cmd.Context().Value("logger").(*zap.Logger)
 			scenarios := sysadmin.Stage1Scenarios(logger, wfcentralPath)
-			runner := NewRunner(logger, scenarios)
+			runner := scenario.NewRunner(logger, scenarios)
 			return runner.Run(cmd.Context())
 		},
 	}
