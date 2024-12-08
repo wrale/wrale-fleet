@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -259,18 +258,4 @@ func TestTemplate_CRUD(t *testing.T) {
 			})
 		}
 	})
-}
-
-// createTestTemplate is a helper function that creates a template for testing
-func createTestTemplate(id, tenantID string) *config.Template {
-	schema, _ := json.Marshal(map[string]interface{}{
-		"type": "object",
-	})
-
-	return &config.Template{
-		ID:       id,
-		TenantID: tenantID,
-		Name:     "template-" + id,
-		Schema:   schema,
-	}
 }

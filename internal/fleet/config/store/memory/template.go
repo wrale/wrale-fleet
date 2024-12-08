@@ -22,7 +22,7 @@ func (s *Store) validateTemplate(template *config.Template) error {
 // filterTemplates applies filtering criteria to templates based on the provided options
 func (s *Store) filterTemplates(templates []*config.Template, opts config.ListOptions) []*config.Template {
 	filtered := make([]*config.Template, 0, len(templates))
-	
+
 	for _, t := range templates {
 		matches := true
 

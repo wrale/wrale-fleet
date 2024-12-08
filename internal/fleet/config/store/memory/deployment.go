@@ -25,7 +25,7 @@ func (s *Store) validateDeployment(deployment *config.Deployment) error {
 // It filters by tenant ID, device ID, and status if specified in the options.
 func (s *Store) filterDeployments(deployments []*config.Deployment, opts config.ListOptions) []*config.Deployment {
 	filtered := make([]*config.Deployment, 0, len(deployments))
-	
+
 	// Apply all filters in one pass
 	for _, d := range deployments {
 		matches := true
@@ -153,6 +153,6 @@ func (s *Store) ListDeployments(ctx context.Context, opts config.ListOptions) ([
 	if start >= len(deployments) {
 		return []*config.Deployment{}, nil
 	}
-	
+
 	return deployments[start:end], nil
 }

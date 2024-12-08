@@ -197,13 +197,3 @@ func TestDeployment_Operations(t *testing.T) {
 		}
 	})
 }
-
-// createTestDeployment is a helper function that creates a deployment for testing
-func createTestDeployment(id, tenantID, deviceID string) *config.Deployment {
-	return &config.Deployment{
-		ID:       id,
-		TenantID: tenantID,
-		DeviceID: deviceID,
-		Status:   "pending",
-	}
-}
