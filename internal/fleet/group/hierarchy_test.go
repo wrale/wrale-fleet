@@ -6,8 +6,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	testgroup "github.com/wrale/fleet/test/testing/fleet/group"
+	devmem "github.com/wrale/fleet/internal/fleet/device/store/memory"
 )
+
+func newTestStore() Store {
+	deviceStore := devmem.New()
+	return newMemoryStore(deviceStore)
+}
 
 func TestHierarchyManager_ValidateHierarchyChange(t *testing.T) {
 	tests := []struct {
@@ -64,7 +69,7 @@ func TestHierarchyManager_ValidateHierarchyChange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := testgroup.NewTestStore(nil)
+			store := newTestStore()
 			manager := NewHierarchyManager(store)
 
 			group, newParentID := tt.setupFunc(store)
@@ -143,7 +148,7 @@ func TestHierarchyManager_UpdateHierarchy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := testgroup.NewTestStore(nil)
+			store := newTestStore()
 			manager := NewHierarchyManager(store)
 
 			group, newParentID := tt.setupFunc(store)
@@ -160,7 +165,7 @@ func TestHierarchyManager_UpdateHierarchy(t *testing.T) {
 
 func TestHierarchyManager_GetAncestors(t *testing.T) {
 	ctx := context.Background()
-	store := testgroup.NewTestStore(nil)
+	store := newTestStore()
 	manager := NewHierarchyManager(store)
 
 	// Create a hierarchy: root -> parent -> child
@@ -185,7 +190,7 @@ func TestHierarchyManager_GetAncestors(t *testing.T) {
 
 func TestHierarchyManager_GetDescendants(t *testing.T) {
 	ctx := context.Background()
-	store := testgroup.NewTestStore(nil)
+	store := newTestStore()
 	manager := NewHierarchyManager(store)
 
 	// Create a hierarchy: root -> (child1, child2 -> grandchild)
@@ -278,7 +283,7 @@ func TestHierarchyManager_ValidateHierarchyIntegrity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := testgroup.NewTestStore(nil)
+			store := newTestStore()
 			manager := NewHierarchyManager(store)
 
 			require.NoError(t, tt.setup(store))
