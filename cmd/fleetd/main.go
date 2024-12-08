@@ -90,10 +90,10 @@ func runDemo(ctx context.Context, service *device.Service, logger *zap.Logger) e
 	// 4. Configure device
 	config := map[string]interface{}{
 		"monitoring_interval": "30s",
-		"log_level":          "info",
+		"log_level":           "info",
 		"features": map[string]bool{
-			"metrics_enabled":   true,
-			"tracing_enabled":   false,
+			"metrics_enabled":  true,
+			"tracing_enabled":  false,
 			"alerting_enabled": true,
 		},
 	}
