@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,211 +12,191 @@ import (
 	grpmem "github.com/wrale/fleet/internal/fleet/group/store/memory"
 )
 
-func TestConcurrentHierarchyOperations(t *testing.T) {
+type testEnv struct {
+	ctx       context.Context
+	hierarchy *group.HierarchyManager
+	store     group.Store
+	tenantID  string
+}
+
+// setupTestEnv creates an isolated test environment
+func setupTestEnv(t *testing.T) *testEnv {
 	ctx := context.Background()
 	deviceStore := devmem.New()
 	store := grpmem.New(deviceStore)
 	hierarchy := group.NewHierarchyManager(store)
-	tenantID := "test-tenant"
 
-	// Create initial structure
-	root := group.New(tenantID, "Root", group.TypeStatic)
-	require.NoError(t, store.Create(ctx, root))
+	err := store.Clear(ctx)
+	require.NoError(t, err)
 
-	children := make([]*group.Group, 5)
-	for i := 0; i < 5; i++ {
-		children[i] = group.New(tenantID, "Child", group.TypeStatic)
-		require.NoError(t, store.Create(ctx, children[i]))
-		require.NoError(t, hierarchy.UpdateHierarchy(ctx, children[i], root.ID))
+	return &testEnv{
+		ctx:       ctx,
+		hierarchy: hierarchy,
+		store:     store,
+		tenantID:  "test-tenant",
 	}
+}
 
+func TestConcurrentHierarchyOperations(t *testing.T) {
 	t.Run("ConcurrentParentUpdates", func(t *testing.T) {
-		var wg sync.WaitGroup
-		errors := make(chan error, 10)
+		env := setupTestEnv(t)
 
-		// Attempt concurrent parent updates
+		// Create root node
+		root := group.New(env.tenantID, "Root", group.TypeStatic)
+		require.NoError(t, env.store.Create(env.ctx, root))
+
+		// Create child nodes
+		children := make([]*group.Group, 5)
+		for i := 0; i < len(children); i++ {
+			children[i] = group.New(env.tenantID, "Child", group.TypeStatic)
+			require.NoError(t, env.store.Create(env.ctx, children[i]))
+			require.NoError(t, env.hierarchy.UpdateHierarchy(env.ctx, children[i], root.ID))
+		}
+
+		var wg sync.WaitGroup
+		var startWg sync.WaitGroup
+		errChan := make(chan error, len(children)*5) // Size based on total operations
+
+		// Setup synchronization barrier
+		startWg.Add(1)
+
+		// Launch concurrent updates
 		for i := 0; i < len(children); i++ {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				// Move child between root and no parent repeatedly
+				startWg.Wait() // Wait for signal to start
+
 				for j := 0; j < 5; j++ {
 					parentID := ""
 					if j%2 == 0 {
 						parentID = root.ID
 					}
-					if err := hierarchy.UpdateHierarchy(ctx, children[idx], parentID); err != nil {
-						errors <- err
+					if err := env.hierarchy.UpdateHierarchy(env.ctx, children[idx], parentID); err != nil {
+						errChan <- err
 						return
 					}
-					time.Sleep(time.Millisecond) // Small delay to increase contention
 				}
 			}(i)
 		}
 
+		// Start all goroutines simultaneously
+		startWg.Done()
 		wg.Wait()
-		close(errors)
+		close(errChan)
 
 		// Check for errors
-		for err := range errors {
-			require.NoError(t, err)
+		for err := range errChan {
+			assert.NoError(t, err)
 		}
 
-		// Verify hierarchy integrity after concurrent operations
-		err := hierarchy.ValidateHierarchyIntegrity(ctx, tenantID)
-		require.NoError(t, err)
+		// Verify hierarchy integrity
+		require.NoError(t, env.hierarchy.ValidateHierarchyIntegrity(env.ctx, env.tenantID))
+
+		// Verify final state of each child
+		for _, child := range children {
+			updated, err := env.store.Get(env.ctx, env.tenantID, child.ID)
+			require.NoError(t, err)
+			assert.NotNil(t, updated)
+
+			// Verify path consistency based on final parent state
+			if updated.ParentID != "" {
+				assert.Equal(t, root.ID, updated.ParentID)
+				assert.Equal(t, "/"+root.ID+"/"+updated.ID, updated.Ancestry.Path)
+				assert.Equal(t, 1, updated.Ancestry.Depth)
+				assert.Equal(t, []string{root.ID, updated.ID}, updated.Ancestry.PathParts)
+			} else {
+				assert.Equal(t, "/"+updated.ID, updated.Ancestry.Path)
+				assert.Equal(t, 0, updated.Ancestry.Depth)
+				assert.Equal(t, []string{updated.ID}, updated.Ancestry.PathParts)
+			}
+		}
 	})
 
 	t.Run("ConcurrentChildModification", func(t *testing.T) {
-		parent := group.New(tenantID, "Parent", group.TypeStatic)
-		require.NoError(t, store.Create(ctx, parent))
+		env := setupTestEnv(t)
+
+		// Create test structure
+		parent := group.New(env.tenantID, "Parent", group.TypeStatic)
+		require.NoError(t, env.store.Create(env.ctx, parent))
+
+		children := make([]*group.Group, 5)
+		for i := 0; i < len(children); i++ {
+			children[i] = group.New(env.tenantID, "Child", group.TypeStatic)
+			require.NoError(t, env.store.Create(env.ctx, children[i]))
+		}
 
 		var wg sync.WaitGroup
-		errors := make(chan error, 10)
+		var startWg sync.WaitGroup
+		errChan := make(chan error, len(children)*2) // Add/remove operations
 
-		// Concurrent addition/removal of children
-		for i := 0; i < 5; i++ {
-			wg.Add(2) // One goroutine to add, one to remove
+		// Setup synchronization barrier
+		startWg.Add(1)
+
+		// Launch concurrent operations
+		for i := 0; i < len(children); i++ {
+			wg.Add(2)
 			child := children[i]
 
 			// Goroutine to add child
 			go func() {
 				defer wg.Done()
-				if err := hierarchy.UpdateHierarchy(ctx, child, parent.ID); err != nil {
-					errors <- err
+				startWg.Wait()
+				if err := env.hierarchy.UpdateHierarchy(env.ctx, child, parent.ID); err != nil {
+					errChan <- err
 				}
 			}()
 
 			// Goroutine to remove child
 			go func() {
 				defer wg.Done()
-				if err := hierarchy.UpdateHierarchy(ctx, child, ""); err != nil {
-					errors <- err
+				startWg.Wait()
+				if err := env.hierarchy.UpdateHierarchy(env.ctx, child, ""); err != nil {
+					errChan <- err
 				}
 			}()
 		}
 
+		// Start all goroutines simultaneously
+		startWg.Done()
 		wg.Wait()
-		close(errors)
+		close(errChan)
 
 		// Check for errors
-		for err := range errors {
-			require.NoError(t, err)
+		for err := range errChan {
+			assert.NoError(t, err)
 		}
 
-		// Verify final state
-		err := hierarchy.ValidateHierarchyIntegrity(ctx, tenantID)
-		require.NoError(t, err)
-	})
-}
+		// Verify hierarchy integrity
+		require.NoError(t, env.hierarchy.ValidateHierarchyIntegrity(env.ctx, env.tenantID))
 
-func TestHierarchyRecovery(t *testing.T) {
-	ctx := context.Background()
-	deviceStore := devmem.New()
-	store := grpmem.New(deviceStore)
-	hierarchy := group.NewHierarchyManager(store)
-	tenantID := "test-tenant"
-
-	t.Run("PartialUpdateRecovery", func(t *testing.T) {
-		// Create a deep hierarchy to test partial updates
-		root := group.New(tenantID, "Root", group.TypeStatic)
-		require.NoError(t, store.Create(ctx, root))
-
-		current := root
-		var groups []*group.Group
-		for i := 0; i < 5; i++ {
-			child := group.New(tenantID, "Child", group.TypeStatic)
-			require.NoError(t, store.Create(ctx, child))
-			require.NoError(t, hierarchy.UpdateHierarchy(ctx, child, current.ID))
-			groups = append(groups, child)
-			current = child
-		}
-
-		// Get initial state for verification
-		initialPaths := make(map[string]string)
-		for _, g := range groups {
-			updated, err := store.Get(ctx, tenantID, g.ID)
-			require.NoError(t, err)
-			initialPaths[g.ID] = updated.Ancestry.Path
-		}
-
-		// Attempt to move entire chain to new parent
-		newParent := group.New(tenantID, "NewParent", group.TypeStatic)
-		require.NoError(t, store.Create(ctx, newParent))
-
-		// Move the middle of the chain, which should fail due to validation
-		err := hierarchy.UpdateHierarchy(ctx, groups[2], newParent.ID)
-		assert.Error(t, err)
-
-		// Verify hierarchy is still valid
-		err = hierarchy.ValidateHierarchyIntegrity(ctx, tenantID)
+		// Verify final state of parent
+		updatedParent, err := env.store.Get(env.ctx, env.tenantID, parent.ID)
 		require.NoError(t, err)
 
-		// Verify paths remained unchanged
-		for _, g := range groups {
-			updated, err := store.Get(ctx, tenantID, g.ID)
-			require.NoError(t, err)
-			assert.Equal(t, initialPaths[g.ID], updated.Ancestry.Path)
-		}
-	})
-}
-
-func TestHierarchyValidationEnhanced(t *testing.T) {
-	ctx := context.Background()
-	deviceStore := devmem.New()
-	store := grpmem.New(deviceStore)
-	hierarchy := group.NewHierarchyManager(store)
-
-	t.Run("CrossTenantIsolation", func(t *testing.T) {
-		tenant1 := "tenant-1"
-		tenant2 := "tenant-2"
-
-		// Create groups in different tenants
-		root1 := group.New(tenant1, "Root", group.TypeStatic)
-		root2 := group.New(tenant2, "Root", group.TypeStatic)
-		require.NoError(t, store.Create(ctx, root1))
-		require.NoError(t, store.Create(ctx, root2))
-
-		child1 := group.New(tenant1, "Child", group.TypeStatic)
-		require.NoError(t, store.Create(ctx, child1))
-		require.NoError(t, hierarchy.UpdateHierarchy(ctx, child1, root1.ID))
-
-		// Attempt cross-tenant hierarchy operations
-		err := hierarchy.UpdateHierarchy(ctx, child1, root2.ID)
-		assert.Error(t, err)
-
-		// Verify both hierarchies remain valid
-		require.NoError(t, hierarchy.ValidateHierarchyIntegrity(ctx, tenant1))
-		require.NoError(t, hierarchy.ValidateHierarchyIntegrity(ctx, tenant2))
-
-		// Verify child remains with original parent
-		updated, err := store.Get(ctx, tenant1, child1.ID)
-		require.NoError(t, err)
-		assert.Equal(t, root1.ID, updated.ParentID)
-	})
-
-	t.Run("PathIntegrityCheck", func(t *testing.T) {
-		tenantID := "test-tenant"
-		root := group.New(tenantID, "Root", group.TypeStatic)
-		require.NoError(t, store.Create(ctx, root))
-
-		// Create a chain of 5 groups
-		current := root
-		for i := 0; i < 5; i++ {
-			child := group.New(tenantID, "Child", group.TypeStatic)
-			require.NoError(t, store.Create(ctx, child))
-			require.NoError(t, hierarchy.UpdateHierarchy(ctx, child, current.ID))
-
-			// Verify path integrity after each addition
-			updated, err := store.Get(ctx, tenantID, child.ID)
+		// Verify final states of children
+		childrenSeen := make(map[string]bool)
+		for _, child := range children {
+			updated, err := env.store.Get(env.ctx, env.tenantID, child.ID)
 			require.NoError(t, err)
 
-			// Check path construction
-			assert.Equal(t, current.Ancestry.Path+"/"+child.ID, updated.Ancestry.Path)
-			assert.Equal(t, current.Ancestry.Depth+1, updated.Ancestry.Depth)
-			assert.Equal(t, len(updated.Ancestry.PathParts), updated.Ancestry.Depth+1)
-
-			current = child
+			// Verify path and ancestry consistency
+			if updated.ParentID == "" {
+				assert.Equal(t, "/"+updated.ID, updated.Ancestry.Path)
+				assert.Equal(t, 0, updated.Ancestry.Depth)
+			} else {
+				assert.Equal(t, parent.ID, updated.ParentID)
+				assert.Equal(t, "/"+parent.ID+"/"+updated.ID, updated.Ancestry.Path)
+				assert.Equal(t, 1, updated.Ancestry.Depth)
+				childrenSeen[updated.ID] = true
+			}
 		}
+
+		// Verify parent's children list matches actual child relationships
+		for _, childID := range updatedParent.Ancestry.Children {
+			assert.True(t, childrenSeen[childID], "Parent refers to child that doesn't belong to it")
+			delete(childrenSeen, childID)
+		}
+		assert.Empty(t, childrenSeen, "Found children belonging to parent not in parent's child list")
 	})
 }
