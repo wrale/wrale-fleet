@@ -120,7 +120,7 @@ func TestDeployment_Operations(t *testing.T) {
 
 	t.Run("List", func(t *testing.T) {
 		store.clearStore() // Reset state before list operations
-		
+
 		// Create test deployments with careful isolation
 		deployments := []*config.Deployment{
 			createTestDeployment("list-1", "tenant-list", "device-1"),
