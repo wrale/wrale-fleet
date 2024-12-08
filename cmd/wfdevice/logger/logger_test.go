@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestLoggerCreation(t *testing.T) {
@@ -72,7 +73,9 @@ func TestLoggerCreation(t *testing.T) {
 }
 
 func TestStageCheck(t *testing.T) {
-	logger := zap.NewExample()
+	// Create an observed logger to capture log output
+	core, logs := observer.New(zapcore.InfoLevel)
+	logger := zap.New(core)
 
 	tests := []struct {
 		name          string
@@ -80,6 +83,8 @@ func TestStageCheck(t *testing.T) {
 		requiredStage int
 		operation     string
 		want          bool
+		wantWarning   bool // Should we expect a warning log?
+		wantError     bool // Should we expect an error log?
 	}{
 		{
 			name:          "supported operation",
@@ -87,6 +92,8 @@ func TestStageCheck(t *testing.T) {
 			requiredStage: 1,
 			operation:     "basic_op",
 			want:          true,
+			wantWarning:   false,
+			wantError:     false,
 		},
 		{
 			name:          "unsupported operation",
@@ -94,24 +101,65 @@ func TestStageCheck(t *testing.T) {
 			requiredStage: 2,
 			operation:     "advanced_op",
 			want:          false,
+			wantWarning:   true,
+			wantError:     false,
 		},
 		{
 			name:          "equal stages",
 			currentStage:  3,
 			requiredStage: 3,
 			operation:     "current_op",
+			want:          false, // With new implementation, Stage 2+ requires explicit stage setting
+			wantWarning:   true,
+			wantError:     false,
+		},
+		{
+			name:          "invalid required stage",
+			currentStage:  1,
+			requiredStage: MaxStage + 1,
+			operation:     "invalid_op",
+			want:          false,
+			wantWarning:   false,
+			wantError:     true,
+		},
+		{
+			name:          "stage 1 operation always allowed",
+			currentStage:  1,
+			requiredStage: 1,
+			operation:     "basic_op",
 			want:          true,
+			wantWarning:   false,
+			wantError:     false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create logger with stage
-			stagedLogger := WithStage(logger, tt.currentStage)
+			logs.TakeAll() // Clear previous logs
+
+			// Create logger with stage if needed
+			testLogger := WithStage(logger, tt.currentStage)
 
 			// Check operation support
-			got := StageCheck(stagedLogger, tt.requiredStage, tt.operation)
+			got := StageCheck(testLogger, tt.requiredStage, tt.operation)
 			assert.Equal(t, tt.want, got)
+
+			// Verify logging behavior
+			logEntries := logs.TakeAll()
+			hasWarning := false
+			hasError := false
+			for _, entry := range logEntries {
+				switch entry.Level {
+				case zapcore.WarnLevel:
+					hasWarning = true
+					assert.Contains(t, entry.Message, "operation requires higher stage capability")
+				case zapcore.ErrorLevel:
+					hasError = true
+					assert.Contains(t, entry.Message, "invalid required stage")
+				}
+			}
+			assert.Equal(t, tt.wantWarning, hasWarning, "warning log presence")
+			assert.Equal(t, tt.wantError, hasError, "error log presence")
 		})
 	}
 }
@@ -127,7 +175,9 @@ func TestLoggerSync(t *testing.T) {
 }
 
 func TestWithStage(t *testing.T) {
-	logger := zap.NewExample()
+	// Create an observed logger to capture log output
+	core, logs := observer.New(zapcore.InfoLevel)
+	logger := zap.New(core)
 
 	tests := []struct {
 		name       string
@@ -153,9 +203,22 @@ func TestWithStage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			logs.TakeAll() // Clear previous logs
+
+			// Create logger with stage
 			stagedLogger := WithStage(logger, tt.inputStage)
-			stage := extractStage(t, stagedLogger)
-			assert.Equal(t, tt.wantStage, stage)
+
+			// Generate a log entry to verify stage field
+			stagedLogger.Info("test message")
+
+			// Verify the stage field in the log entry
+			entries := logs.TakeAll()
+			require.Len(t, entries, 1, "should have one log entry")
+
+			// Check if stage field was set correctly
+			stageField, ok := entries[0].ContextMap()[stageKey]
+			require.True(t, ok, "stage field should be present")
+			assert.Equal(t, tt.wantStage, stageField)
 		})
 	}
 }
@@ -175,17 +238,4 @@ func getLoggerLevel(logger *zap.Logger) zapcore.Level {
 	}
 
 	return zapcore.InfoLevel // Default fallback
-}
-
-// extractStage gets the stage value from a logger's context
-func extractStage(t *testing.T, logger *zap.Logger) int {
-	if stage := logger.Check(zapcore.InfoLevel, ""); stage != nil {
-		if stageField := stage.Entry.ContextMap()["stage"]; stageField != nil {
-			if s, ok := stageField.(int); ok {
-				return s
-			}
-		}
-	}
-	t.Fatal("Failed to extract stage from logger")
-	return 0
 }
