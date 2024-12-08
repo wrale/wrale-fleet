@@ -45,6 +45,36 @@ func (s *Store) Create(ctx context.Context, g *group.Group) error {
 		return group.ErrGroupExists
 	}
 
+	// Validate parent reference if set
+	if g.ParentID != "" {
+		parentKey := s.key(g.TenantID, g.ParentID)
+		parent, exists := s.groups[parentKey]
+		if !exists {
+			return group.E("Store.Create", group.ErrCodeInvalidGroup,
+				fmt.Sprintf("parent group %s does not exist", g.ParentID), nil)
+		}
+
+		// Ensure bidirectional relationship
+		parent.AddChild(g.ID)
+		s.groups[parentKey] = parent
+	}
+
+	// Validate child references
+	for _, childID := range g.Ancestry.Children {
+		childKey := s.key(g.TenantID, childID)
+		child, exists := s.groups[childKey]
+		if !exists {
+			return group.E("Store.Create", group.ErrCodeInvalidGroup,
+				fmt.Sprintf("child group %s does not exist", childID), nil)
+		}
+
+		// Verify child's parent reference
+		if child.ParentID != g.ID {
+			return group.E("Store.Create", group.ErrCodeInvalidGroup,
+				fmt.Sprintf("child group %s does not reference this group as parent", childID), nil)
+		}
+	}
+
 	// Use DeepCopy to ensure complete isolation
 	s.groups[key] = g.DeepCopy()
 	s.memberships[key] = make(map[string]struct{})
@@ -78,6 +108,32 @@ func (s *Store) Update(ctx context.Context, g *group.Group) error {
 	key := s.key(g.TenantID, g.ID)
 	if _, exists := s.groups[key]; !exists {
 		return group.ErrGroupNotFound
+	}
+
+	// Validate parent reference if set
+	if g.ParentID != "" {
+		parentKey := s.key(g.TenantID, g.ParentID)
+		_, exists := s.groups[parentKey]
+		if !exists {
+			return group.E("Store.Update", group.ErrCodeInvalidGroup,
+				fmt.Sprintf("parent group %s does not exist", g.ParentID), nil)
+		}
+	}
+
+	// Validate child references
+	for _, childID := range g.Ancestry.Children {
+		childKey := s.key(g.TenantID, childID)
+		child, exists := s.groups[childKey]
+		if !exists {
+			return group.E("Store.Update", group.ErrCodeInvalidGroup,
+				fmt.Sprintf("child group %s does not exist", childID), nil)
+		}
+
+		// Verify child's parent reference
+		if child.ParentID != g.ID {
+			return group.E("Store.Update", group.ErrCodeInvalidGroup,
+				fmt.Sprintf("child group %s does not reference this group as parent", childID), nil)
+		}
 	}
 
 	s.groups[key] = g.DeepCopy()
@@ -141,4 +197,13 @@ func (s *Store) List(ctx context.Context, opts group.ListOptions) ([]*group.Grou
 	}
 
 	return result, nil
+}
+
+// matchesFilter checks if a group matches the list options filters
+func (s *Store) matchesFilter(g *group.Group, opts group.ListOptions) bool {
+	if opts.TenantID != "" && g.TenantID != opts.TenantID {
+		return false
+	}
+
+	return true
 }

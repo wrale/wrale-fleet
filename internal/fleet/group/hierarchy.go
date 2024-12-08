@@ -36,14 +36,18 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 		return E(op, ErrCodeCyclicDependency, "group cannot be its own parent", nil)
 	}
 
-	// Check for hierarchical cycles
-	if group.IsAncestor(newParentID) {
-		return E(op, ErrCodeCyclicDependency,
-			fmt.Sprintf("cannot set parent to %s as it is already an ancestor", newParentID), nil)
+	// Check if new parent is a descendant of the current group
+	descendants, err := h.GetDescendants(ctx, group)
+	if err != nil {
+		return E(op, ErrCodeStoreOperation, "failed to get descendants", err)
 	}
-	if newParent.IsAncestor(group.ID) {
-		return E(op, ErrCodeCyclicDependency,
-			fmt.Sprintf("cannot set parent to %s as it is a descendant", newParentID), nil)
+
+	// Check if the new parent is among the descendants
+	for _, desc := range descendants {
+		if desc.ID == newParentID {
+			return E(op, ErrCodeCyclicDependency,
+				fmt.Sprintf("cannot set parent to %s as it would create a cycle", newParentID), nil)
+		}
 	}
 
 	return nil
@@ -52,6 +56,11 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 // UpdateHierarchy updates a group's position in the hierarchy
 func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, newParentID string) error {
 	const op = "HierarchyManager.UpdateHierarchy"
+
+	// Validate the hierarchy change first
+	if err := h.ValidateHierarchyChange(ctx, group, newParentID); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
 
 	// Get the current state of the group to handle rollbacks
 	originalGroup := group.DeepCopy()
@@ -100,8 +109,6 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 	}
 
 	// Finally handle the old parent relationship if it exists
-	// This ensures we don't have a period where the child points to a new parent
-	// but is still in the old parent's children list
 	if originalGroup.ParentID != "" && originalGroup.ParentID != newParentID {
 		oldParent, err := h.store.Get(ctx, group.TenantID, originalGroup.ParentID)
 		if err == nil { // Proceed even if old parent not found
@@ -201,6 +208,11 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 
 	// Validate each group's hierarchy information
 	for _, group := range groups {
+		// Skip invalid/inconsistent groups
+		if err := group.Validate(); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+
 		// Validate parent relationship
 		if group.ParentID != "" {
 			parent, exists := groupMap[group.ParentID]
@@ -240,7 +252,7 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 			}
 		}
 
-		// Validate ancestry path and depth
+		// Validate ancestry path
 		if len(group.Ancestry.PathParts) == 0 {
 			return E(op, ErrCodeInvalidGroup,
 				fmt.Sprintf("group %s has empty ancestry path", group.ID),
@@ -250,6 +262,35 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 			return E(op, ErrCodeInvalidGroup,
 				fmt.Sprintf("group %s has invalid ancestry path - last part should be own ID", group.ID),
 				nil)
+		}
+
+		// Verify ancestry path matches parent chain
+		if group.ParentID != "" {
+			expectedPathParts := make([]string, 0)
+			currentID := group.ID
+			for currentID != "" {
+				expectedPathParts = append([]string{currentID}, expectedPathParts...)
+				current := groupMap[currentID]
+				if current == nil {
+					return E(op, ErrCodeInvalidGroup,
+						fmt.Sprintf("group %s has invalid ancestry path - missing group in chain", group.ID),
+						nil)
+				}
+				currentID = current.ParentID
+			}
+			actualPath := group.Ancestry.PathParts
+			if len(actualPath) != len(expectedPathParts) {
+				return E(op, ErrCodeInvalidGroup,
+					fmt.Sprintf("group %s has incorrect ancestry path length", group.ID),
+					nil)
+			}
+			for i := range expectedPathParts {
+				if actualPath[i] != expectedPathParts[i] {
+					return E(op, ErrCodeInvalidGroup,
+						fmt.Sprintf("group %s has incorrect ancestry path", group.ID),
+						nil)
+				}
+			}
 		}
 
 		// Verify depth matches path parts
