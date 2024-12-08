@@ -16,10 +16,13 @@ BINARY_PATH=$(BINARY_OUTPUT_DIR)/$(BINARY_NAME)
 GOLINT=golangci-lint
 GOSEC=gosec
 
+# Test parameters
+TEST_OUTPUT_DIR=test-output
+
 # Build flags
 LDFLAGS=-ldflags "-s -w"
 
-.PHONY: all clean test coverage lint sec-check vet fmt help install-tools run dev tree
+.PHONY: all clean test coverage lint sec-check vet fmt help install-tools run dev tree system-test
 
 help: ## Display this help message
 	@echo "Wrale Fleet Management Platform - Make Targets"
@@ -30,9 +33,13 @@ help: ## Display this help message
 $(BINARY_OUTPUT_DIR):
 	mkdir -p $(BINARY_OUTPUT_DIR)
 
+$(TEST_OUTPUT_DIR):
+	mkdir -p $(TEST_OUTPUT_DIR)
+
 clean: ## Remove build artifacts
 	$(GOCLEAN)
 	rm -rf $(BINARY_OUTPUT_DIR)
+	rm -rf $(TEST_OUTPUT_DIR)
 	rm -f coverage.out
 
 fmt: ## Format code using gofmt
@@ -51,8 +58,8 @@ sec-check: ## Run security checks
 	@echo "==> Running security checks"
 	$(GOSEC) ./...
 
-test: ## Run tests
-	@echo "==> Running tests"
+test: ## Run unit tests
+	@echo "==> Running unit tests"
 	$(GOTEST) -v -race ./...
 
 coverage: ## Generate test coverage report
@@ -64,12 +71,19 @@ build: $(BINARY_OUTPUT_DIR) ## Build the binary
 	@echo "==> Building $(BINARY_NAME)"
 	$(GOBUILD) $(LDFLAGS) -o $(BINARY_PATH) ./cmd/fleetd
 
+system-test: $(TEST_OUTPUT_DIR) build ## Run system integration tests
+	@echo "==> Running system integration tests"
+	TEST_OUTPUT_DIR=$(TEST_OUTPUT_DIR) \
+	WFCENTRAL_START_TIMEOUT=60 \
+	WFMACHINE_START_TIMEOUT=60 \
+	./bash/wfdemo/demos/sysadmin/stage1/test-all.sh
+
 install-tools: ## Install required development tools
 	@echo "==> Installing development tools"
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 
-all: fmt vet lint sec-check test build ## Run all checks and build
+all: fmt vet lint sec-check test build system-test ## Run all checks, tests, and build
 
 # Development targets
 run: build ## Run the application
