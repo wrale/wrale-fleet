@@ -3,6 +3,7 @@ package group
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // GetDescendants returns all descendant groups of the given group
@@ -34,6 +35,27 @@ func (h *HierarchyManager) GetDescendants(ctx context.Context, group *Group) ([]
 	}
 
 	return descendants, nil
+}
+
+// buildAncestry constructs the ancestry information for a group
+func (h *HierarchyManager) buildAncestry(ctx context.Context, group *Group, parent *Group) (*Ancestry, error) {
+	ancestry := &Ancestry{
+		Children: make([]string, 0),
+	}
+
+	if parent == nil {
+		// Root node
+		ancestry.Path = "/" + group.ID
+		ancestry.PathParts = []string{group.ID}
+		ancestry.Depth = 0
+	} else {
+		// Build path by appending to parent's path
+		ancestry.Path = parent.Ancestry.Path + "/" + group.ID
+		ancestry.PathParts = append(append([]string{}, parent.Ancestry.PathParts...), group.ID)
+		ancestry.Depth = parent.Ancestry.Depth + 1
+	}
+
+	return ancestry, nil
 }
 
 // UpdateHierarchy updates a group's position in the hierarchy
@@ -73,30 +95,65 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 		}
 	}
 
+	// Update the group's ancestry
+	newAncestry, err := h.buildAncestry(ctx, currentGroup, newParent)
+	if err != nil {
+		return E(op, ErrCodeStoreOperation, "failed to build ancestry", err)
+	}
+
 	// Prepare the new parent update if needed
 	if newParent != nil {
 		newParentCopy := newParent.DeepCopy()
-		newParentCopy.AddChild(currentGroup.ID)
-		if err := h.store.Update(ctx, newParentCopy); err != nil {
-			return E(op, ErrCodeStoreOperation, "failed to update new parent group", err)
+		if !contains(newParentCopy.Ancestry.Children, currentGroup.ID) {
+			newParentCopy.AddChild(currentGroup.ID)
+			if err := h.store.Update(ctx, newParentCopy); err != nil {
+				return E(op, ErrCodeStoreOperation, "failed to update new parent group", err)
+			}
 		}
 	}
 
-	// Finally update the group itself
+	// Update the group with new ancestry
 	groupCopy := currentGroup.DeepCopy()
-	if newParent != nil {
-		if err := groupCopy.SetParent(newParentID, &newParent.Ancestry); err != nil {
-			return E(op, ErrCodeStoreOperation, "failed to set parent reference", err)
-		}
-	} else {
-		if err := groupCopy.SetParent("", nil); err != nil {
-			return E(op, ErrCodeStoreOperation, "failed to set as root group", err)
-		}
-	}
+	groupCopy.ParentID = newParentID
+	groupCopy.Ancestry = *newAncestry
 
 	if err := h.store.Update(ctx, groupCopy); err != nil {
 		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
 
+	// Update all descendants with new paths
+	descendants, err := h.GetDescendants(ctx, groupCopy)
+	if err != nil {
+		return E(op, ErrCodeStoreOperation, "failed to get descendants for path update", err)
+	}
+
+	for _, desc := range descendants {
+		parent, err := h.store.Get(ctx, desc.TenantID, desc.ParentID)
+		if err != nil {
+			return E(op, ErrCodeStoreOperation, fmt.Sprintf("failed to get parent for descendant %s", desc.ID), err)
+		}
+
+		descCopy := desc.DeepCopy()
+		descAncestry, err := h.buildAncestry(ctx, descCopy, parent)
+		if err != nil {
+			return E(op, ErrCodeStoreOperation, fmt.Sprintf("failed to build ancestry for descendant %s", desc.ID), err)
+		}
+
+		descCopy.Ancestry = *descAncestry
+		if err := h.store.Update(ctx, descCopy); err != nil {
+			return E(op, ErrCodeStoreOperation, fmt.Sprintf("failed to update descendant %s", desc.ID), err)
+		}
+	}
+
 	return nil
+}
+
+// contains checks if a string slice contains a value
+func contains(slice []string, value string) bool {
+	for _, item := range slice {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
