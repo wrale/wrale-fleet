@@ -3,7 +3,6 @@ package group
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 // GetDescendants returns all descendant groups of the given group
@@ -38,8 +37,8 @@ func (h *HierarchyManager) GetDescendants(ctx context.Context, group *Group) ([]
 }
 
 // buildAncestry constructs the ancestry information for a group
-func (h *HierarchyManager) buildAncestry(ctx context.Context, group *Group, parent *Group) (*Ancestry, error) {
-	ancestry := &Ancestry{
+func (h *HierarchyManager) buildAncestry(ctx context.Context, group *Group, parent *Group) (*AncestryInfo, error) {
+	ancestry := &AncestryInfo{
 		Children: make([]string, 0),
 	}
 
