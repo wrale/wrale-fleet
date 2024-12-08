@@ -25,6 +25,17 @@ const (
 	testShutdownTimeout = 2 * time.Second // Time allowed for clean shutdown
 )
 
+// findDeviceByName is a helper function that finds a device by name in a slice of devices.
+// Returns nil if no device with the given name is found.
+func findDeviceByName(devices []*device.Device, name string) *device.Device {
+	for _, dev := range devices {
+		if dev.Name == name {
+			return dev
+		}
+	}
+	return nil
+}
+
 // TestDemoManager verifies the continuous demo operation capabilities,
 // including startup, running state, and graceful shutdown.
 func TestDemoManager(t *testing.T) {
@@ -49,14 +60,28 @@ func TestDemoManager(t *testing.T) {
 	// Let the demo run for a while to verify continuous operation
 	time.Sleep(testRunTime)
 
-	// Verify that the demo device exists and is being maintained
-	devices, err := service.List(context.Background(), device.ListOptions{
-		TenantID: "demo-tenant",
+	// Create context with proper tenant scope
+	ctx := device.ContextWithTenant(context.Background(), "tenant-production")
+
+	// Verify that the demo devices exist and are being maintained
+	devices, err := service.List(ctx, device.ListOptions{
+		TenantID: "tenant-production",
 	})
 	require.NoError(t, err, "Should be able to list devices")
-	require.Len(t, devices, 1, "Should have exactly one demo device")
-	assert.Equal(t, "Demo Raspberry Pi", devices[0].Name)
-	assert.Equal(t, device.StatusOnline, devices[0].Status)
+	require.Len(t, devices, 3, "Should have exactly three demo devices")
+
+	// Find and verify specific devices
+	device1 := findDeviceByName(devices, "Demo Device 1")
+	require.NotNil(t, device1, "Demo Device 1 should exist")
+	assert.Equal(t, device.StatusOnline, device1.Status, "Demo Device 1 should be online")
+
+	device2 := findDeviceByName(devices, "Demo Device 2")
+	require.NotNil(t, device2, "Demo Device 2 should exist")
+	assert.Equal(t, device.StatusOnline, device2.Status, "Demo Device 2 should be online")
+
+	device3 := findDeviceByName(devices, "Demo Device 3")
+	require.NotNil(t, device3, "Demo Device 3 should exist")
+	assert.Equal(t, device.StatusOnline, device3.Status, "Demo Device 3 should be online")
 
 	// Create shutdown context with timeout
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), testShutdownTimeout)
