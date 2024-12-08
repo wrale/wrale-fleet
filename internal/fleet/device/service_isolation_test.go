@@ -143,7 +143,7 @@ func TestTenantListIsolation(t *testing.T) {
 
 		// Test listing with explicit tenant filter
 		devices, err := service.List(ctx, device.ListOptions{TenantID: tenantID})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Len(t, devices, len(expectedDevices))
 		for _, d := range devices {
 			assert.Equal(t, tenantID, d.TenantID)
@@ -151,7 +151,7 @@ func TestTenantListIsolation(t *testing.T) {
 
 		// Test listing without tenant filter (should still be isolated)
 		devices, err = service.List(ctx, device.ListOptions{})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		for _, d := range devices {
 			assert.Equal(t, tenantID, d.TenantID)
 		}
@@ -161,9 +161,13 @@ func TestTenantListIsolation(t *testing.T) {
 			if otherTenant == tenantID {
 				continue
 			}
-			devices, err = service.List(ctx, device.ListOptions{TenantID: otherTenant})
+
+			// Try to list other tenant's devices
+			var otherDevices []*device.Device
+			otherDevices, err = service.List(ctx, device.ListOptions{TenantID: otherTenant})
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "unauthorized")
+			assert.Empty(t, otherDevices, "should not return any devices from other tenants")
 		}
 	}
 }

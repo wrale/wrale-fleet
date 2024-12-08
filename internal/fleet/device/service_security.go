@@ -28,7 +28,11 @@ func (s *Service) recordDeviceAccess(ctx context.Context, device *Device, op str
 
 	// Add any provided details to the logged event
 	for k, v := range details {
-		s.monitor.AddEventDetail(ctx, device.ID, k, v)
+		if err := s.monitor.AddEventDetail(ctx, device.ID, k, v); err != nil {
+			s.logError("recordDeviceAccess", fmt.Errorf("failed to add event detail: %w", err),
+				zap.String("device_id", device.ID),
+				zap.String("key", k))
+		}
 	}
 }
 

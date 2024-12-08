@@ -9,27 +9,22 @@ import (
 
 // Register creates a new device in the system with proper tenant isolation.
 func (s *Service) Register(ctx context.Context, tenantID, name string) (*Device, error) {
-	// Validate tenant context
-	ctxTenant, err := TenantFromContext(ctx)
-	if err != nil {
-		s.logError("Register", err)
+	if err := s.validateSecurityContext(ctx); err != nil {
 		return nil, err
 	}
-	if err := ValidateTenantMatch(ctxTenant, tenantID); err != nil {
-		s.logError("Register", err,
-			zap.String("context_tenant", ctxTenant),
-			zap.String("requested_tenant", tenantID))
+
+	if err := s.validateTenantOperation(ctx, "Register", tenantID); err != nil {
 		return nil, err
 	}
 
 	device := New(tenantID, name)
 
-	if err := device.Validate(); err != nil {
+	if err := s.validateDeviceUpdate(ctx, device); err != nil {
 		s.monitor.RecordAuthAttempt(ctx, "", tenantID, "system", false, map[string]string{
 			"action": "register",
 			"error":  err.Error(),
 		})
-		return nil, fmt.Errorf("invalid device data: %w", err)
+		return nil, err
 	}
 
 	if err := s.store.Create(ctx, device); err != nil {
@@ -45,9 +40,8 @@ func (s *Service) Register(ctx context.Context, tenantID, name string) (*Device,
 		zap.String("tenant_id", device.TenantID),
 		zap.String("name", device.Name))
 
-	s.monitor.RecordAuthAttempt(ctx, device.ID, device.TenantID, "system", true, map[string]string{
-		"action": "register",
-		"name":   device.Name,
+	s.recordDeviceAccess(ctx, device, "register", true, map[string]string{
+		"name": device.Name,
 	})
 
 	return device, nil
@@ -55,47 +49,19 @@ func (s *Service) Register(ctx context.Context, tenantID, name string) (*Device,
 
 // Get retrieves a device by ID with tenant validation.
 func (s *Service) Get(ctx context.Context, tenantID, deviceID string) (*Device, error) {
-	// Validate tenant context
-	ctxTenant, err := TenantFromContext(ctx)
+	device, err := s.validateDeviceOperation(ctx, "Get", tenantID, deviceID)
 	if err != nil {
-		s.logError("Get", err)
-		return nil, err
-	}
-	if err := ValidateTenantMatch(ctxTenant, tenantID); err != nil {
-		s.logError("Get", err,
-			zap.String("context_tenant", ctxTenant),
-			zap.String("requested_tenant", tenantID),
-			zap.String("device_id", deviceID))
 		return nil, err
 	}
 
-	device, err := s.store.Get(ctx, tenantID, deviceID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get device: %w", err)
-	}
-
-	if err := ValidateTenantAccess(ctx, device); err != nil {
-		return nil, err
-	}
-
+	s.recordDeviceAccess(ctx, device, "get", true, nil)
 	return device, nil
 }
 
 // List retrieves devices matching the given criteria with tenant filtering.
 func (s *Service) List(ctx context.Context, opts ListOptions) ([]*Device, error) {
-	// Validate tenant context matches list options
-	if opts.TenantID != "" {
-		ctxTenant, err := TenantFromContext(ctx)
-		if err != nil {
-			s.logError("List", err)
-			return nil, err
-		}
-		if err := ValidateTenantMatch(ctxTenant, opts.TenantID); err != nil {
-			s.logError("List", err,
-				zap.String("context_tenant", ctxTenant),
-				zap.String("requested_tenant", opts.TenantID))
-			return nil, err
-		}
+	if err := s.validateListOperation(ctx, opts); err != nil {
+		return nil, err
 	}
 
 	devices, err := s.store.List(ctx, opts)
@@ -109,6 +75,7 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]*Device, error)
 		for _, device := range devices {
 			if device.TenantID == ctxTenant {
 				allowedDevices = append(allowedDevices, device)
+				s.recordDeviceAccess(ctx, device, "list", true, nil)
 			}
 		}
 		return allowedDevices, nil
@@ -119,40 +86,19 @@ func (s *Service) List(ctx context.Context, opts ListOptions) ([]*Device, error)
 
 // Delete removes a device from the system with tenant validation.
 func (s *Service) Delete(ctx context.Context, tenantID, deviceID string) error {
-	// Validate tenant context
-	ctxTenant, err := TenantFromContext(ctx)
-	if err != nil {
-		s.logError("Delete", err)
-		return err
-	}
-	if err := ValidateTenantMatch(ctxTenant, tenantID); err != nil {
-		s.logError("Delete", err,
-			zap.String("context_tenant", ctxTenant),
-			zap.String("requested_tenant", tenantID),
-			zap.String("device_id", deviceID))
-		return err
-	}
-
-	// Verify device exists and belongs to tenant
-	device, err := s.Get(ctx, tenantID, deviceID)
+	device, err := s.validateDeviceOperation(ctx, "Delete", tenantID, deviceID)
 	if err != nil {
 		return err
 	}
 
 	if err := s.store.Delete(ctx, tenantID, deviceID); err != nil {
+		s.recordDeviceAccess(ctx, device, "delete", false, map[string]string{
+			"error": err.Error(),
+		})
 		return fmt.Errorf("failed to delete device: %w", err)
 	}
 
-	s.monitor.RecordEvent(ctx, SecurityEvent{
-		Type:      EventConfigChange,
-		DeviceID:  device.ID,
-		TenantID:  device.TenantID,
-		Timestamp: device.UpdatedAt,
-		Success:   true,
-		Details: map[string]string{
-			"action": "delete",
-		},
-	})
+	s.recordDeviceAccess(ctx, device, "delete", true, nil)
 
 	s.logInfo("Delete",
 		zap.String("device_id", deviceID),
