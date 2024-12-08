@@ -22,7 +22,7 @@ func ContextWithTenant(ctx context.Context, tenantID string) context.Context {
 func TenantFromContext(ctx context.Context) (string, error) {
 	tenantID, ok := ctx.Value(tenantIDKey).(string)
 	if !ok || tenantID == "" {
-		return "", NewError(ErrCodeUnauthorized, "tenant ID not found in context", "device.TenantFromContext")
+		return "", E("device.TenantFromContext", ErrCodeUnauthorized, "tenant ID not found in context", nil)
 	}
 	return tenantID, nil
 }
@@ -35,7 +35,7 @@ func ValidateTenantAccess(ctx context.Context, d *Device) error {
 	}
 
 	if d.TenantID != tenantID {
-		return NewError(ErrCodeUnauthorized, "unauthorized access to device", "device.ValidateTenantAccess").
+		return E("device.ValidateTenantAccess", ErrCodeUnauthorized, "unauthorized access to device", nil).
 			WithField("device_tenant", d.TenantID).
 			WithField("context_tenant", tenantID)
 	}
@@ -46,7 +46,7 @@ func ValidateTenantAccess(ctx context.Context, d *Device) error {
 // ValidateTenantMatch ensures two tenant IDs match
 func ValidateTenantMatch(tenantID1, tenantID2 string) error {
 	if tenantID1 != tenantID2 {
-		return NewError(ErrCodeUnauthorized, "tenant ID mismatch", "device.ValidateTenantMatch").
+		return E("device.ValidateTenantMatch", ErrCodeUnauthorized, "tenant ID mismatch", nil).
 			WithField("tenant1", tenantID1).
 			WithField("tenant2", tenantID2)
 	}
