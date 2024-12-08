@@ -16,7 +16,7 @@ func TestHierarchy(t *testing.T) {
 	deviceStore := devmem.New()
 	store := grpmem.New(deviceStore)
 	hierarchy := group.NewHierarchyManager(store)
-	
+
 	ctx := context.Background()
 	tenantID := "test-tenant"
 
@@ -153,7 +153,7 @@ func TestHierarchyEdgeCases(t *testing.T) {
 	deviceStore := devmem.New()
 	store := grpmem.New(deviceStore)
 	hierarchy := group.NewHierarchyManager(store)
-	
+
 	ctx := context.Background()
 	tenantID := "test-tenant"
 
@@ -175,7 +175,7 @@ func TestHierarchyEdgeCases(t *testing.T) {
 
 	t.Run("CrossTenantHierarchy", func(t *testing.T) {
 		otherTenantID := "other-tenant"
-		
+
 		// Create groups in different tenants
 		group1 := group.New(tenantID, "Group 1", group.TypeStatic)
 		group2 := group.New(otherTenantID, "Group 2", group.TypeStatic)
