@@ -124,9 +124,9 @@ func (s *Service) Delete(ctx context.Context, tenantID, groupID string) error {
 }
 
 // List retrieves groups matching the given criteria
-func (s *Service) List(ctx context.Context, opts ListOptions) ([]*Group, error) {
+func (s *Service) List(ctx context.Context, tenantID string, opts ListOptions) ([]*Group, error) {
 	const op = "group.Service.List"
-	groups, err := s.store.List(ctx, opts)
+	groups, err := s.store.List(ctx, tenantID, opts)
 	if err != nil {
 		return nil, E(op, ErrCodeStoreOperation, "failed to list groups", err)
 	}

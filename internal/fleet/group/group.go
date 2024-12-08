@@ -58,10 +58,93 @@ type Group struct {
 	DeviceCount int              `json:"device_count"` // Count of member devices
 }
 
+// DeepCopy creates a deep copy of a Group and all its nested structures
+func (g *Group) DeepCopy() *Group {
+	if g == nil {
+		return nil
+	}
+
+	result := &Group{
+		ID:          g.ID,
+		TenantID:    g.TenantID,
+		Name:        g.Name,
+		Description: g.Description,
+		Type:        g.Type,
+		ParentID:    g.ParentID,
+		CreatedAt:   g.CreatedAt,
+		UpdatedAt:   g.UpdatedAt,
+		DeviceCount: g.DeviceCount,
+	}
+
+	// Deep copy Ancestry with proper slice initialization
+	result.Ancestry = AncestryInfo{
+		Path:      g.Ancestry.Path,
+		Depth:     g.Ancestry.Depth,
+		PathParts: make([]string, len(g.Ancestry.PathParts)),
+		Children:  make([]string, len(g.Ancestry.Children)),
+	}
+
+	copy(result.Ancestry.PathParts, g.Ancestry.PathParts)
+	copy(result.Ancestry.Children, g.Ancestry.Children)
+
+	// Deep copy Query if present
+	if g.Query != nil {
+		result.Query = &MembershipQuery{
+			Status: g.Query.Status,
+		}
+
+		if g.Query.Tags != nil {
+			result.Query.Tags = make(map[string]string, len(g.Query.Tags))
+			for k, v := range g.Query.Tags {
+				result.Query.Tags[k] = v
+			}
+		}
+
+		if g.Query.Regions != nil {
+			result.Query.Regions = make([]string, len(g.Query.Regions))
+			copy(result.Query.Regions, g.Query.Regions)
+		}
+
+		if g.Query.Custom != nil {
+			result.Query.Custom = make(json.RawMessage, len(g.Query.Custom))
+			copy(result.Query.Custom, g.Query.Custom)
+		}
+	}
+
+	// Deep copy Properties
+	result.Properties = Properties{
+		Metadata: make(map[string]string, len(g.Properties.Metadata)),
+	}
+
+	if g.Properties.ConfigTemplate != nil {
+		result.Properties.ConfigTemplate = make(json.RawMessage, len(g.Properties.ConfigTemplate))
+		copy(result.Properties.ConfigTemplate, g.Properties.ConfigTemplate)
+	}
+
+	if g.Properties.PolicyOverrides != nil {
+		result.Properties.PolicyOverrides = make(map[string]json.RawMessage, len(g.Properties.PolicyOverrides))
+		for k, v := range g.Properties.PolicyOverrides {
+			newValue := make(json.RawMessage, len(v))
+			copy(newValue, v)
+			result.Properties.PolicyOverrides[k] = newValue
+		}
+	}
+
+	for k, v := range g.Properties.Metadata {
+		result.Properties.Metadata[k] = v
+	}
+
+	return result
+}
+
 // New creates a new Group with generated ID and timestamps
 func New(tenantID, name string, groupType Type) *Group {
 	now := time.Now().UTC()
 	id := uuid.New().String()
+
+	// Create ancestry with proper path structure
+	pathStr := "/" + id
+	pathParts := []string{id}
 
 	return &Group{
 		ID:       id,
@@ -69,13 +152,14 @@ func New(tenantID, name string, groupType Type) *Group {
 		Name:     name,
 		Type:     groupType,
 		Ancestry: AncestryInfo{
-			Path:      "/" + id,
-			PathParts: []string{id},
+			Path:      pathStr,
+			PathParts: pathParts,
 			Depth:     0,
 			Children:  make([]string, 0),
 		},
 		Properties: Properties{
-			Metadata: make(map[string]string),
+			Metadata:        make(map[string]string),
+			PolicyOverrides: make(map[string]json.RawMessage),
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -146,7 +230,9 @@ func (g *Group) SetParent(parentID string, parentInfo *AncestryInfo) error {
 		// Update ancestry information
 		g.ParentID = parentID
 		g.Ancestry.Path = parentInfo.Path + "/" + g.ID
-		g.Ancestry.PathParts = append(append([]string{}, parentInfo.PathParts...), g.ID)
+		g.Ancestry.PathParts = make([]string, len(parentInfo.PathParts)+1)
+		copy(g.Ancestry.PathParts, parentInfo.PathParts)
+		g.Ancestry.PathParts[len(parentInfo.PathParts)] = g.ID
 		g.Ancestry.Depth = parentInfo.Depth + 1
 	} else {
 		// Reset to root group
@@ -169,6 +255,12 @@ func (g *Group) UpdateProperties(properties Properties) error {
 
 // AddChild adds a child group ID to this group's children list
 func (g *Group) AddChild(childID string) {
+	// Check if child already exists to prevent duplicates
+	for _, id := range g.Ancestry.Children {
+		if id == childID {
+			return
+		}
+	}
 	g.Ancestry.Children = append(g.Ancestry.Children, childID)
 	g.UpdatedAt = time.Now().UTC()
 }
@@ -187,7 +279,8 @@ func (g *Group) RemoveChild(childID string) {
 
 // IsAncestor checks if the given group ID is an ancestor of this group
 func (g *Group) IsAncestor(groupID string) bool {
-	for _, id := range g.Ancestry.PathParts {
+	// Only check actual ancestors (exclude self from check)
+	for _, id := range g.Ancestry.PathParts[:len(g.Ancestry.PathParts)-1] {
 		if id == groupID {
 			return true
 		}
@@ -220,7 +313,9 @@ func (g *Group) IsDescendant(groupID string) bool {
 
 // GetAncestryPath returns the full ancestry path as a string slice
 func (g *Group) GetAncestryPath() []string {
-	return append([]string{}, g.Ancestry.PathParts...)
+	result := make([]string, len(g.Ancestry.PathParts))
+	copy(result, g.Ancestry.PathParts)
+	return result
 }
 
 // GetEffectivePath returns the human-readable path using group names

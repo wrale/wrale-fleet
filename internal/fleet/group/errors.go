@@ -7,9 +7,10 @@ const (
 	ErrCodeInvalidGroup     = "INVALID_GROUP"
 	ErrCodeGroupExists      = "GROUP_EXISTS"
 	ErrCodeGroupNotFound    = "GROUP_NOT_FOUND"
+	ErrCodeInvalidHierarchy = "INVALID_HIERARCHY"
 	ErrCodeInvalidOperation = "INVALID_OPERATION"
-	ErrCodeCyclicDependency = "CYCLIC_DEPENDENCY"
 	ErrCodeInvalidInput     = "INVALID_INPUT"
+	ErrCodeCyclicDependency = "CYCLIC_DEPENDENCY"
 	ErrCodeStoreOperation   = "STORE_OPERATION"
 )
 

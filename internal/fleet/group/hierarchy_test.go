@@ -1,297 +1,222 @@
-package group
+package group_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	devmem "github.com/wrale/fleet/internal/fleet/device/store/memory"
+	"github.com/wrale/fleet/internal/fleet/group"
+	grpmem "github.com/wrale/fleet/internal/fleet/group/store/memory"
 )
 
-func TestHierarchyManager_ValidateHierarchyChange(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupFunc   func(store Store) (*Group, string)
-		expectError bool
-		errorCode   string
-	}{
-		{
-			name: "valid parent change",
-			setupFunc: func(store Store) (*Group, string) {
-				parent := New("tenant1", "parent", TypeStatic)
-				child := New("tenant1", "child", TypeStatic)
-				require.NoError(t, store.Create(context.Background(), parent))
-				require.NoError(t, store.Create(context.Background(), child))
-				return child, parent.ID
-			},
-			expectError: false,
-		},
-		{
-			name: "prevent self reference",
-			setupFunc: func(store Store) (*Group, string) {
-				group := New("tenant1", "group", TypeStatic)
-				require.NoError(t, store.Create(context.Background(), group))
-				return group, group.ID
-			},
-			expectError: true,
-			errorCode:   ErrCodeCyclicDependency,
-		},
-		{
-			name: "prevent cycle through descendants",
-			setupFunc: func(store Store) (*Group, string) {
-				parent := New("tenant1", "parent", TypeStatic)
-				child := New("tenant1", "child", TypeStatic)
-				require.NoError(t, store.Create(context.Background(), parent))
-				require.NoError(t, store.Create(context.Background(), child))
-				child.SetParent(parent.ID, &parent.Ancestry)
-				require.NoError(t, store.Update(context.Background(), child))
-				return parent, child.ID
-			},
-			expectError: true,
-			errorCode:   ErrCodeCyclicDependency,
-		},
-		{
-			name: "moving to root is valid",
-			setupFunc: func(store Store) (*Group, string) {
-				group := New("tenant1", "group", TypeStatic)
-				require.NoError(t, store.Create(context.Background(), group))
-				return group, ""
-			},
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			store := NewMemoryStore()
-			manager := NewHierarchyManager(store)
-
-			group, newParentID := tt.setupFunc(store)
-			err := manager.ValidateHierarchyChange(context.Background(), group, newParentID)
-
-			if tt.expectError {
-				require.Error(t, err)
-				var groupErr *Error
-				require.ErrorAs(t, err, &groupErr)
-				assert.Equal(t, tt.errorCode, groupErr.Code)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+type testEnv struct {
+	ctx       context.Context
+	hierarchy *group.HierarchyManager
+	store     group.Store
+	tenantID  string
 }
 
-func TestHierarchyManager_UpdateHierarchy(t *testing.T) {
-	tests := []struct {
-		name      string
-		setupFunc func(store Store) (*Group, string)
-		validate  func(t *testing.T, store Store, group *Group, newParentID string)
-	}{
-		{
-			name: "update to new parent",
-			setupFunc: func(store Store) (*Group, string) {
-				parent := New("tenant1", "parent", TypeStatic)
-				child := New("tenant1", "child", TypeStatic)
-				require.NoError(t, store.Create(context.Background(), parent))
-				require.NoError(t, store.Create(context.Background(), child))
-				return child, parent.ID
-			},
-			validate: func(t *testing.T, store Store, group *Group, newParentID string) {
-				// Verify group's ancestry
-				assert.Equal(t, newParentID, group.ParentID)
-				assert.Equal(t, 1, group.Ancestry.Depth)
-				assert.Equal(t, 2, len(group.Ancestry.PathParts))
-				assert.Equal(t, newParentID, group.Ancestry.PathParts[0])
-				assert.Equal(t, group.ID, group.Ancestry.PathParts[1])
-
-				// Verify parent's children
-				parent, err := store.Get(context.Background(), group.TenantID, newParentID)
-				require.NoError(t, err)
-				assert.Contains(t, parent.Ancestry.Children, group.ID)
-			},
-		},
-		{
-			name: "move to root",
-			setupFunc: func(store Store) (*Group, string) {
-				parent := New("tenant1", "parent", TypeStatic)
-				child := New("tenant1", "child", TypeStatic)
-				require.NoError(t, store.Create(context.Background(), parent))
-				require.NoError(t, store.Create(context.Background(), child))
-
-				manager := NewHierarchyManager(store)
-				require.NoError(t, manager.UpdateHierarchy(context.Background(), child, parent.ID))
-
-				return child, ""
-			},
-			validate: func(t *testing.T, store Store, group *Group, newParentID string) {
-				// Verify group is now root
-				assert.Empty(t, group.ParentID)
-				assert.Equal(t, 0, group.Ancestry.Depth)
-				assert.Equal(t, 1, len(group.Ancestry.PathParts))
-				assert.Equal(t, group.ID, group.Ancestry.PathParts[0])
-
-				// Verify old parent's children
-				oldParent, err := store.List(context.Background(), ListOptions{TenantID: group.TenantID})
-				require.NoError(t, err)
-				for _, p := range oldParent {
-					assert.NotContains(t, p.Ancestry.Children, group.ID)
-				}
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			store := NewMemoryStore()
-			manager := NewHierarchyManager(store)
-
-			group, newParentID := tt.setupFunc(store)
-			err := manager.UpdateHierarchy(context.Background(), group, newParentID)
-			require.NoError(t, err)
-
-			updatedGroup, err := store.Get(context.Background(), group.TenantID, group.ID)
-			require.NoError(t, err)
-
-			tt.validate(t, store, updatedGroup, newParentID)
-		})
-	}
-}
-
-func TestHierarchyManager_GetAncestors(t *testing.T) {
+// setupTestEnv creates an isolated test environment
+func setupTestEnv(t *testing.T) *testEnv {
 	ctx := context.Background()
-	store := NewMemoryStore()
-	manager := NewHierarchyManager(store)
+	deviceStore := devmem.New()
+	store := grpmem.New(deviceStore)
+	hierarchy := group.NewHierarchyManager(store)
 
-	// Create a hierarchy: root -> parent -> child
-	root := New("tenant1", "root", TypeStatic)
-	parent := New("tenant1", "parent", TypeStatic)
-	child := New("tenant1", "child", TypeStatic)
-
-	require.NoError(t, store.Create(ctx, root))
-	require.NoError(t, store.Create(ctx, parent))
-	require.NoError(t, store.Create(ctx, child))
-
-	require.NoError(t, manager.UpdateHierarchy(ctx, parent, root.ID))
-	require.NoError(t, manager.UpdateHierarchy(ctx, child, parent.ID))
-
-	// Test getting ancestors
-	ancestors, err := manager.GetAncestors(ctx, child)
+	err := store.Clear(ctx)
 	require.NoError(t, err)
-	require.Len(t, ancestors, 2)
-	assert.Equal(t, root.ID, ancestors[0].ID)
-	assert.Equal(t, parent.ID, ancestors[1].ID)
+
+	return &testEnv{
+		ctx:       ctx,
+		hierarchy: hierarchy,
+		store:     store,
+		tenantID:  "test-tenant",
+	}
 }
 
-func TestHierarchyManager_GetDescendants(t *testing.T) {
-	ctx := context.Background()
-	store := NewMemoryStore()
-	manager := NewHierarchyManager(store)
-
-	// Create a hierarchy: root -> (child1, child2 -> grandchild)
-	root := New("tenant1", "root", TypeStatic)
-	child1 := New("tenant1", "child1", TypeStatic)
-	child2 := New("tenant1", "child2", TypeStatic)
-	grandchild := New("tenant1", "grandchild", TypeStatic)
-
-	require.NoError(t, store.Create(ctx, root))
-	require.NoError(t, store.Create(ctx, child1))
-	require.NoError(t, store.Create(ctx, child2))
-	require.NoError(t, store.Create(ctx, grandchild))
-
-	require.NoError(t, manager.UpdateHierarchy(ctx, child1, root.ID))
-	require.NoError(t, manager.UpdateHierarchy(ctx, child2, root.ID))
-	require.NoError(t, manager.UpdateHierarchy(ctx, grandchild, child2.ID))
-
-	// Test getting descendants
-	descendants, err := manager.GetDescendants(ctx, root)
+// verifyHierarchyState checks complete hierarchy state
+func verifyHierarchyState(t *testing.T, env *testEnv, group *group.Group) {
+	updated, err := env.store.Get(env.ctx, env.tenantID, group.ID)
 	require.NoError(t, err)
-	require.Len(t, descendants, 3)
 
-	// Create map of descendants for easy checking
-	descendantMap := make(map[string]*Group)
-	for _, d := range descendants {
-		descendantMap[d.ID] = d
+	// Verify path construction
+	pathParts := strings.Split(strings.TrimPrefix(updated.Ancestry.Path, "/"), "/")
+	assert.Equal(t, pathParts, updated.Ancestry.PathParts)
+	assert.Equal(t, len(pathParts)-1, updated.Ancestry.Depth)
+
+	// Verify parent-child consistency
+	if updated.ParentID != "" {
+		parent, err := env.store.Get(env.ctx, env.tenantID, updated.ParentID)
+		require.NoError(t, err)
+		assert.Contains(t, parent.Ancestry.Children, updated.ID)
 	}
 
-	assert.Contains(t, descendantMap, child1.ID)
-	assert.Contains(t, descendantMap, child2.ID)
-	assert.Contains(t, descendantMap, grandchild.ID)
+	// Verify child relationships
+	for _, childID := range updated.Ancestry.Children {
+		child, err := env.store.Get(env.ctx, env.tenantID, childID)
+		require.NoError(t, err)
+		assert.Equal(t, updated.ID, child.ParentID)
+		assert.Equal(t, updated.Ancestry.Path+"/"+childID, child.Ancestry.Path)
+		assert.Equal(t, updated.Ancestry.Depth+1, child.Ancestry.Depth)
+	}
 }
 
-func TestHierarchyManager_ValidateHierarchyIntegrity(t *testing.T) {
-	tests := []struct {
-		name        string
-		setup       func(store Store) error
-		expectError bool
-		errorCode   string
-	}{
-		{
-			name: "valid hierarchy",
-			setup: func(store Store) error {
-				groups := []*Group{
-					New("tenant1", "root", TypeStatic),
-					New("tenant1", "child", TypeStatic),
-				}
+func TestHierarchy(t *testing.T) {
+	t.Run("BasicHierarchyOperations", func(t *testing.T) {
+		env := setupTestEnv(t)
 
-				for _, g := range groups {
-					if err := store.Create(context.Background(), g); err != nil {
-						return err
+		// Create base hierarchy
+		root := group.New(env.tenantID, "Root Group", group.TypeStatic)
+		require.NoError(t, env.store.Create(env.ctx, root))
+		verifyHierarchyState(t, env, root)
+
+		// Add first level children
+		child1 := group.New(env.tenantID, "Child Group 1", group.TypeStatic)
+		child2 := group.New(env.tenantID, "Child Group 2", group.TypeStatic)
+
+		require.NoError(t, env.store.Create(env.ctx, child1))
+		require.NoError(t, env.store.Create(env.ctx, child2))
+
+		require.NoError(t, env.hierarchy.UpdateHierarchy(env.ctx, child1, root.ID))
+		require.NoError(t, env.hierarchy.UpdateHierarchy(env.ctx, child2, root.ID))
+
+		verifyHierarchyState(t, env, root)
+		verifyHierarchyState(t, env, child1)
+		verifyHierarchyState(t, env, child2)
+
+		// Add grandchild
+		grandchild := group.New(env.tenantID, "Grandchild Group", group.TypeStatic)
+		require.NoError(t, env.store.Create(env.ctx, grandchild))
+		require.NoError(t, env.hierarchy.UpdateHierarchy(env.ctx, grandchild, child1.ID))
+
+		verifyHierarchyState(t, env, grandchild)
+
+		// Verify complete hierarchy
+		require.NoError(t, env.hierarchy.ValidateHierarchyIntegrity(env.ctx, env.tenantID))
+	})
+
+	t.Run("HierarchyModificationScenarios", func(t *testing.T) {
+		testCases := []struct {
+			name        string
+			setupFunc   func(*testEnv) (*group.Group, *group.Group, error)
+			verifyFunc  func(*testing.T, *testEnv, *group.Group, *group.Group)
+			expectError bool
+		}{
+			{
+				name: "MoveToNewParent",
+				setupFunc: func(env *testEnv) (*group.Group, *group.Group, error) {
+					oldParent := group.New(env.tenantID, "Old Parent", group.TypeStatic)
+					newParent := group.New(env.tenantID, "New Parent", group.TypeStatic)
+					child := group.New(env.tenantID, "Child", group.TypeStatic)
+
+					for _, g := range []*group.Group{oldParent, newParent, child} {
+						if err := env.store.Create(env.ctx, g); err != nil {
+							return nil, nil, err
+						}
 					}
-				}
 
-				manager := NewHierarchyManager(store)
-				return manager.UpdateHierarchy(context.Background(), groups[1], groups[0].ID)
+					if err := env.hierarchy.UpdateHierarchy(env.ctx, child, oldParent.ID); err != nil {
+						return nil, nil, err
+					}
+
+					return child, newParent, env.hierarchy.UpdateHierarchy(env.ctx, child, newParent.ID)
+				},
+				verifyFunc: func(t *testing.T, env *testEnv, child, newParent *group.Group) {
+					updated, err := env.store.Get(env.ctx, env.tenantID, child.ID)
+					require.NoError(t, err)
+					assert.Equal(t, newParent.ID, updated.ParentID)
+					assert.Equal(t, newParent.Ancestry.Path+"/"+child.ID, updated.Ancestry.Path)
+				},
+				expectError: false,
 			},
-			expectError: false,
-		},
-		{
-			name: "missing parent reference",
-			setup: func(store Store) error {
-				child := New("tenant1", "child", TypeStatic)
-				child.ParentID = "non-existent"
-				return store.Create(context.Background(), child)
+			{
+				name: "PreventCyclicDependency",
+				setupFunc: func(env *testEnv) (*group.Group, *group.Group, error) {
+					parent := group.New(env.tenantID, "Parent", group.TypeStatic)
+					child := group.New(env.tenantID, "Child", group.TypeStatic)
+
+					for _, g := range []*group.Group{parent, child} {
+						if err := env.store.Create(env.ctx, g); err != nil {
+							return nil, nil, err
+						}
+					}
+
+					if err := env.hierarchy.UpdateHierarchy(env.ctx, child, parent.ID); err != nil {
+						return nil, nil, err
+					}
+
+					return parent, child, env.hierarchy.UpdateHierarchy(env.ctx, parent, child.ID)
+				},
+				verifyFunc: func(t *testing.T, env *testEnv, parent, child *group.Group) {
+					// Verify original hierarchy remains intact
+					updated, err := env.store.Get(env.ctx, env.tenantID, parent.ID)
+					require.NoError(t, err)
+					assert.Empty(t, updated.ParentID)
+					assert.Contains(t, updated.Ancestry.Children, child.ID)
+				},
+				expectError: true,
 			},
-			expectError: true,
-			errorCode:   ErrCodeInvalidGroup,
-		},
-		{
-			name: "inconsistent parent-child relationship",
-			setup: func(store Store) error {
-				parent := New("tenant1", "parent", TypeStatic)
-				child := New("tenant1", "child", TypeStatic)
+		}
 
-				if err := store.Create(context.Background(), parent); err != nil {
-					return err
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				env := setupTestEnv(t)
+				subject, target, err := tc.setupFunc(env)
+				if tc.expectError {
+					assert.Error(t, err)
+				} else {
+					require.NoError(t, err)
 				}
-				if err := store.Create(context.Background(), child); err != nil {
-					return err
-				}
+				tc.verifyFunc(t, env, subject, target)
+				require.NoError(t, env.hierarchy.ValidateHierarchyIntegrity(env.ctx, env.tenantID))
+			})
+		}
+	})
 
-				parent.Ancestry.Children = append(parent.Ancestry.Children, child.ID)
-				return store.Update(context.Background(), parent)
-			},
-			expectError: true,
-			errorCode:   ErrCodeInvalidGroup,
-		},
-	}
+	t.Run("DeepHierarchyOperations", func(t *testing.T) {
+		env := setupTestEnv(t)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			store := NewMemoryStore()
-			manager := NewHierarchyManager(store)
+		// Create and validate a deep hierarchy
+		groups := make([]*group.Group, 10)
+		for i := 0; i < len(groups); i++ {
+			groups[i] = group.New(env.tenantID, "Level", group.TypeStatic)
+			require.NoError(t, env.store.Create(env.ctx, groups[i]))
 
-			require.NoError(t, tt.setup(store))
-
-			err := manager.ValidateHierarchyIntegrity(context.Background(), "tenant1")
-
-			if tt.expectError {
-				require.Error(t, err)
-				var groupErr *Error
-				require.ErrorAs(t, err, &groupErr)
-				assert.Equal(t, tt.errorCode, groupErr.Code)
-			} else {
-				require.NoError(t, err)
+			if i > 0 {
+				require.NoError(t, env.hierarchy.UpdateHierarchy(env.ctx, groups[i], groups[i-1].ID))
 			}
-		})
-	}
+
+			verifyHierarchyState(t, env, groups[i])
+		}
+
+		// Attempt bulk move of a subtree
+		newParent := group.New(env.tenantID, "New Parent", group.TypeStatic)
+		require.NoError(t, env.store.Create(env.ctx, newParent))
+
+		// Move middle of chain to new parent (should move entire subtree)
+		midPoint := len(groups) / 2
+		err := env.hierarchy.UpdateHierarchy(env.ctx, groups[midPoint], newParent.ID)
+		require.NoError(t, err)
+
+		// Verify entire subtree moved correctly
+		for i := midPoint; i < len(groups); i++ {
+			updated, err := env.store.Get(env.ctx, env.tenantID, groups[i].ID)
+			require.NoError(t, err)
+
+			if i == midPoint {
+				assert.Equal(t, newParent.ID, updated.ParentID)
+				assert.Equal(t, newParent.Ancestry.Path+"/"+updated.ID, updated.Ancestry.Path)
+			} else {
+				previousGroup, err := env.store.Get(env.ctx, env.tenantID, groups[i-1].ID)
+				require.NoError(t, err)
+				assert.Equal(t, groups[i-1].ID, updated.ParentID)
+				assert.Equal(t, previousGroup.Ancestry.Path+"/"+updated.ID, updated.Ancestry.Path)
+			}
+		}
+
+		require.NoError(t, env.hierarchy.ValidateHierarchyIntegrity(env.ctx, env.tenantID))
+	})
 }

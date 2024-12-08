@@ -14,7 +14,19 @@ import (
 
 func TestNew(t *testing.T) {
 	store := New()
-	require.NotNil(t, store.devices, "devices map should be initialized")
+	// Test store initialization by creating and retrieving a device
+	dev := &device.Device{
+		ID:       "test-init",
+		TenantID: "tenant-init",
+		Name:     "Test Init Device",
+	}
+	ctx := context.Background()
+	err := store.Create(ctx, dev)
+	require.NoError(t, err)
+
+	retrieved, err := store.Get(ctx, dev.TenantID, dev.ID)
+	require.NoError(t, err)
+	assert.Equal(t, dev.ID, retrieved.ID)
 }
 
 func TestStore_Create(t *testing.T) {

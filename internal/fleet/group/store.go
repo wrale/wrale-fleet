@@ -6,52 +6,42 @@ import (
 	"github.com/wrale/fleet/internal/fleet/device"
 )
 
-// Store defines the interface for group persistence
+// Store defines the interface for group storage operations
 type Store interface {
-	// Core CRUD Operations
+	// Create creates a new group
 	Create(ctx context.Context, group *Group) error
-	Get(ctx context.Context, tenantID, groupID string) (*Group, error)
-	Update(ctx context.Context, group *Group) error
-	Delete(ctx context.Context, tenantID, groupID string) error
-	List(ctx context.Context, opts ListOptions) ([]*Group, error)
 
-	// Device Management Operations
+	// Get retrieves a group by ID and tenant
+	Get(ctx context.Context, tenantID, id string) (*Group, error)
+
+	// Update updates an existing group
+	Update(ctx context.Context, group *Group) error
+
+	// Delete removes a group
+	Delete(ctx context.Context, tenantID, id string) error
+
+	// List returns groups matching the query criteria
+	List(ctx context.Context, tenantID string, opts ListOptions) ([]*Group, error)
+
+	// AddDevice adds a device to a static group
 	AddDevice(ctx context.Context, tenantID, groupID string, device *device.Device) error
-	RemoveDevice(ctx context.Context, tenantID, groupID string, deviceID string) error
+
+	// RemoveDevice removes a device from a static group
+	RemoveDevice(ctx context.Context, tenantID, groupID, deviceID string) error
+
+	// ListDevices returns all devices in a group
 	ListDevices(ctx context.Context, tenantID, groupID string) ([]*device.Device, error)
 
-	// Hierarchy Operations
-	GetAncestors(ctx context.Context, tenantID, groupID string) ([]*Group, error)
-	GetDescendants(ctx context.Context, tenantID, groupID string) ([]*Group, error)
-	GetChildren(ctx context.Context, tenantID, groupID string) ([]*Group, error)
-	ValidateHierarchy(ctx context.Context, tenantID string) error
+	// Clear removes all groups (used for testing)
+	Clear(ctx context.Context) error
 }
 
-// ListOptions defines parameters for listing groups
+// ListOptions defines criteria for listing groups
 type ListOptions struct {
-	TenantID  string
-	ParentID  string            // Filter by parent group
-	Type      Type              // Filter by group type
-	Tags      map[string]string // Filter by metadata tags
-	Depth     int               // Filter by hierarchy depth (-1 for all)
-	Offset    int
-	Limit     int
-	SortBy    string // Field to sort by
-	SortOrder string // "asc" or "desc"
-}
-
-// QueryOptions defines advanced query parameters for group operations
-type QueryOptions struct {
-	IncludeChildren    bool              // Include child groups in operations
-	IncludeDescendants bool              // Include all descendant groups in operations
-	IncludeDevices     bool              // Include device information
-	FilterTags         map[string]string // Additional tag-based filtering
-	MaxDepth           int               // Maximum depth for hierarchy operations (-1 for unlimited)
-}
-
-// BatchOperation represents a batch update operation for groups
-type BatchOperation struct {
-	GroupIDs []string          // Groups to update
-	Updates  map[string]string // Key-value pairs of updates to apply
-	Options  QueryOptions      // Operation options
+	ParentID     string            // Filter by parent ID
+	Type         Type              // Filter by group type
+	Tags         map[string]string // Filter by tags
+	IncludeEmpty bool              // Include groups with no devices
+	Offset       int               // Pagination offset
+	Limit        int               // Pagination limit
 }

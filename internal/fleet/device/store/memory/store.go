@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/wrale/fleet/internal/fleet/device"
@@ -16,35 +15,27 @@ type Store struct {
 }
 
 // New creates a new in-memory device store
-func New() *Store {
+func New() device.Store {
 	return &Store{
 		devices: make(map[string]*device.Device),
 	}
 }
 
-// key generates the map key for a device
-func (s *Store) key(tenantID, deviceID string) string {
-	return fmt.Sprintf("%s:%s", tenantID, deviceID)
-}
-
 // Create stores a new device
 func (s *Store) Create(ctx context.Context, d *device.Device) error {
 	if err := d.Validate(); err != nil {
-		return fmt.Errorf("validate device: %w", err)
+		return device.E("Store.Create", device.ErrCodeInvalidDevice, "invalid device", err)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := s.key(d.TenantID, d.ID)
+	key := s.deviceKey(d.TenantID, d.ID)
 	if _, exists := s.devices[key]; exists {
-		return device.ErrDeviceExists
+		return device.E("Store.Create", device.ErrCodeDeviceExists, "device already exists", nil)
 	}
 
-	// Store a copy to prevent external modifications
-	copy := *d
-	s.devices[key] = &copy
-
+	s.devices[key] = d
 	return nil
 }
 
@@ -53,35 +44,26 @@ func (s *Store) Get(ctx context.Context, tenantID, deviceID string) (*device.Dev
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	key := s.key(tenantID, deviceID)
+	key := s.deviceKey(tenantID, deviceID)
 	d, exists := s.devices[key]
 	if !exists {
-		return nil, device.ErrDeviceNotFound
+		return nil, device.E("Store.Get", device.ErrCodeDeviceNotFound, "device not found", nil)
 	}
 
-	// Return a copy to prevent external modifications
-	copy := *d
-	return &copy, nil
+	return d, nil
 }
 
 // Update modifies an existing device
 func (s *Store) Update(ctx context.Context, d *device.Device) error {
-	if err := d.Validate(); err != nil {
-		return fmt.Errorf("validate device: %w", err)
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := s.key(d.TenantID, d.ID)
+	key := s.deviceKey(d.TenantID, d.ID)
 	if _, exists := s.devices[key]; !exists {
-		return device.ErrDeviceNotFound
+		return device.E("Store.Update", device.ErrCodeDeviceNotFound, "device not found", nil)
 	}
 
-	// Store a copy to prevent external modifications
-	copy := *d
-	s.devices[key] = &copy
-
+	s.devices[key] = d
 	return nil
 }
 
@@ -90,9 +72,9 @@ func (s *Store) Delete(ctx context.Context, tenantID, deviceID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := s.key(tenantID, deviceID)
+	key := s.deviceKey(tenantID, deviceID)
 	if _, exists := s.devices[key]; !exists {
-		return device.ErrDeviceNotFound
+		return device.E("Store.Delete", device.ErrCodeDeviceNotFound, "device not found", nil)
 	}
 
 	delete(s.devices, key)
@@ -104,50 +86,61 @@ func (s *Store) List(ctx context.Context, opts device.ListOptions) ([]*device.De
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []*device.Device
+	// Estimate initial capacity to avoid resizing
+	capacity := len(s.devices)
+	if opts.TenantID != "" {
+		// If filtering by tenant, estimate lower capacity
+		capacity = capacity / 2
+	}
+	if len(opts.Tags) > 0 {
+		// If filtering by tags, estimate even lower
+		capacity = capacity / 4
+	}
+	if capacity < 10 {
+		capacity = 10
+	}
+
+	result := make([]*device.Device, 0, capacity)
 
 	for _, d := range s.devices {
-		if !s.matchesFilter(d, opts) {
+		if opts.TenantID != "" && d.TenantID != opts.TenantID {
 			continue
 		}
 
-		// Add a copy to prevent external modifications
-		copy := *d
-		result = append(result, &copy)
+		if opts.Status != "" && d.Status != opts.Status {
+			continue
+		}
+
+		if len(opts.Tags) > 0 {
+			matches := true
+			for k, v := range opts.Tags {
+				if d.Tags[k] != v {
+					matches = false
+					break
+				}
+			}
+			if !matches {
+				continue
+			}
+		}
+
+		result = append(result, d)
 	}
 
-	// Apply pagination if specified
-	if opts.Limit > 0 {
-		start := opts.Offset
-		if start > len(result) {
-			start = len(result)
-		}
-		end := start + opts.Limit
-		if end > len(result) {
-			end = len(result)
-		}
-		result = result[start:end]
+	// Apply pagination
+	if opts.Offset >= len(result) {
+		return make([]*device.Device, 0), nil
 	}
 
-	return result, nil
+	end := opts.Offset + opts.Limit
+	if opts.Limit <= 0 || end > len(result) {
+		end = len(result)
+	}
+
+	return result[opts.Offset:end], nil
 }
 
-// matchesFilter checks if a device matches the filter criteria
-func (s *Store) matchesFilter(d *device.Device, opts device.ListOptions) bool {
-	if opts.TenantID != "" && d.TenantID != opts.TenantID {
-		return false
-	}
-
-	if opts.Status != "" && d.Status != opts.Status {
-		return false
-	}
-
-	// Check if all required tags are present with matching values
-	for key, value := range opts.Tags {
-		if d.Tags[key] != value {
-			return false
-		}
-	}
-
-	return true
+// deviceKey generates a composite key for storing devices
+func (s *Store) deviceKey(tenantID, deviceID string) string {
+	return tenantID + ":" + deviceID
 }
