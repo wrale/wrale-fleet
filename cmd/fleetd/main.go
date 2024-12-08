@@ -16,11 +16,6 @@ import (
 func main() {
 	// Initialize logger
 	logger, _ := zap.NewDevelopment()
-	defer func() {
-		if err := logger.Sync(); err != nil {
-			logger.Error("failed to sync logger", zap.Error(err))
-		}
-	}()
 
 	// Create device store and service
 	store := memory.NewDeviceStore()
@@ -47,6 +42,11 @@ func main() {
 
 	// Wait for shutdown signal
 	<-ctx.Done()
+	
+	// Sync logger before final message - ignore sync errors as they're expected on some platforms
+	_ = logger.Sync()
+	
+	// Log final shutdown message
 	logger.Info("shutting down")
 }
 
