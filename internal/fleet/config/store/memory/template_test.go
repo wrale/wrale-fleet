@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +13,9 @@ import (
 func TestTemplate_CRUD(t *testing.T) {
 	store := New()
 	ctx := context.Background()
+
+	// Reset store before each test
+	t.Cleanup(store.clearStore)
 
 	t.Run("Create", func(t *testing.T) {
 		tests := []struct {
@@ -48,6 +52,7 @@ func TestTemplate_CRUD(t *testing.T) {
 	})
 
 	t.Run("Get", func(t *testing.T) {
+		store.clearStore() // Reset state before get operations
 		template := createTestTemplate("test-2", "tenant-2")
 		require.NoError(t, store.CreateTemplate(ctx, template))
 
@@ -92,6 +97,7 @@ func TestTemplate_CRUD(t *testing.T) {
 	})
 
 	t.Run("Update", func(t *testing.T) {
+		store.clearStore() // Reset state before update operations
 		template := createTestTemplate("test-3", "tenant-3")
 		require.NoError(t, store.CreateTemplate(ctx, template))
 
@@ -138,6 +144,7 @@ func TestTemplate_CRUD(t *testing.T) {
 	})
 
 	t.Run("Delete", func(t *testing.T) {
+		store.clearStore() // Reset state before delete operations
 		template := createTestTemplate("test-4", "tenant-4")
 		require.NoError(t, store.CreateTemplate(ctx, template))
 
@@ -183,7 +190,9 @@ func TestTemplate_CRUD(t *testing.T) {
 	})
 
 	t.Run("List", func(t *testing.T) {
-		// Create fresh templates for listing tests
+		store.clearStore() // Reset state before list operations
+
+		// Create fresh templates for listing tests with careful isolation
 		templates := []*config.Template{
 			createTestTemplate("list-1", "tenant-list"),
 			createTestTemplate("list-2", "tenant-list"),
@@ -250,4 +259,18 @@ func TestTemplate_CRUD(t *testing.T) {
 			})
 		}
 	})
+}
+
+// createTestTemplate is a helper function that creates a template for testing
+func createTestTemplate(id, tenantID string) *config.Template {
+	schema, _ := json.Marshal(map[string]interface{}{
+		"type": "object",
+	})
+
+	return &config.Template{
+		ID:       id,
+		TenantID: tenantID,
+		Name:     "template-" + id,
+		Schema:   schema,
+	}
 }

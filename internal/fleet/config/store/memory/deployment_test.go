@@ -13,6 +13,9 @@ func TestDeployment_Operations(t *testing.T) {
 	store := New()
 	ctx := context.Background()
 
+	// Reset store before each test
+	t.Cleanup(store.clearStore)
+
 	t.Run("Create", func(t *testing.T) {
 		tests := []struct {
 			name       string
@@ -50,6 +53,7 @@ func TestDeployment_Operations(t *testing.T) {
 	})
 
 	t.Run("Get", func(t *testing.T) {
+		store.clearStore() // Reset state before get operations
 		deployment := createTestDeployment("deploy-2", "tenant-2", "device-2")
 		require.NoError(t, store.CreateDeployment(ctx, deployment))
 
@@ -94,6 +98,7 @@ func TestDeployment_Operations(t *testing.T) {
 	})
 
 	t.Run("Update", func(t *testing.T) {
+		store.clearStore() // Reset state before update operations
 		deployment := createTestDeployment("deploy-3", "tenant-3", "device-3")
 		require.NoError(t, store.CreateDeployment(ctx, deployment))
 
@@ -114,7 +119,9 @@ func TestDeployment_Operations(t *testing.T) {
 	})
 
 	t.Run("List", func(t *testing.T) {
-		// Create test deployments
+		store.clearStore() // Reset state before list operations
+		
+		// Create test deployments with careful isolation
 		deployments := []*config.Deployment{
 			createTestDeployment("list-1", "tenant-list", "device-1"),
 			createTestDeployment("list-2", "tenant-list", "device-1"),
@@ -162,6 +169,15 @@ func TestDeployment_Operations(t *testing.T) {
 				want:    1,
 				wantIDs: []string{"list-2"},
 			},
+			{
+				name: "pagination - out of range",
+				opts: config.ListOptions{
+					Offset: 10,
+					Limit:  1,
+				},
+				want:    0,
+				wantIDs: []string{},
+			},
 		}
 
 		for _, tt := range tests {
@@ -180,4 +196,14 @@ func TestDeployment_Operations(t *testing.T) {
 			})
 		}
 	})
+}
+
+// createTestDeployment is a helper function that creates a deployment for testing
+func createTestDeployment(id, tenantID, deviceID string) *config.Deployment {
+	return &config.Deployment{
+		ID:       id,
+		TenantID: tenantID,
+		DeviceID: deviceID,
+		Status:   "pending",
+	}
 }

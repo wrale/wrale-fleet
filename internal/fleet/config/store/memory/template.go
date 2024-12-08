@@ -19,22 +19,27 @@ func (s *Store) validateTemplate(template *config.Template) error {
 	})
 }
 
-// filterTemplates applies filtering criteria to templates
+// filterTemplates applies filtering criteria to templates based on the provided options
 func (s *Store) filterTemplates(templates []*config.Template, opts config.ListOptions) []*config.Template {
-	if opts.TenantID == "" {
-		return templates
-	}
-
-	filtered := make([]*config.Template, 0)
+	filtered := make([]*config.Template, 0, len(templates))
+	
 	for _, t := range templates {
-		if t.TenantID == opts.TenantID {
+		matches := true
+
+		// Apply tenant filter if specified
+		if opts.TenantID != "" && t.TenantID != opts.TenantID {
+			matches = false
+		}
+
+		if matches {
 			filtered = append(filtered, t)
 		}
 	}
+
 	return filtered
 }
 
-// sortTemplates sorts templates by creation time and ID
+// sortTemplates sorts templates by creation time and ID for consistent ordering
 func (s *Store) sortTemplates(templates []*config.Template) {
 	sort.Slice(templates, func(i, j int) bool {
 		if templates[i].CreatedAt.Equal(templates[j].CreatedAt) {
@@ -62,7 +67,7 @@ func (s *Store) CreateTemplate(ctx context.Context, template *config.Template) e
 	return nil
 }
 
-// GetTemplate retrieves a configuration template
+// GetTemplate retrieves a specific configuration template
 func (s *Store) GetTemplate(ctx context.Context, tenantID, templateID string) (*config.Template, error) {
 	if err := s.validateInput("get template", map[string]string{
 		"tenant ID":   tenantID,
@@ -128,19 +133,23 @@ func (s *Store) ListTemplates(ctx context.Context, opts config.ListOptions) ([]*
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Collect all templates
+	// Collect all templates in a slice for processing
 	templates := make([]*config.Template, 0, len(s.templates))
 	for _, t := range s.templates {
 		templates = append(templates, t)
 	}
 
-	// Apply filters
+	// Apply filters before sorting
 	templates = s.filterTemplates(templates, opts)
 
 	// Sort for consistent ordering
 	s.sortTemplates(templates)
 
-	// Apply pagination
+	// Apply pagination last
 	start, end := s.applyPagination(len(templates), opts)
+	if start >= len(templates) {
+		return []*config.Template{}, nil
+	}
+
 	return templates[start:end], nil
 }

@@ -24,22 +24,33 @@ func (s *Store) validateDeployment(deployment *config.Deployment) error {
 // filterDeployments applies filtering criteria to deployments based on the provided options.
 // It filters by tenant ID, device ID, and status if specified in the options.
 func (s *Store) filterDeployments(deployments []*config.Deployment, opts config.ListOptions) []*config.Deployment {
-	filtered := make([]*config.Deployment, 0)
+	filtered := make([]*config.Deployment, 0, len(deployments))
+	
+	// Apply all filters in one pass
 	for _, d := range deployments {
+		matches := true
+
 		// Apply tenant filter if specified
 		if opts.TenantID != "" && d.TenantID != opts.TenantID {
-			continue
+			matches = false
 		}
+
 		// Apply device filter if specified
-		if opts.DeviceID != "" && d.DeviceID != opts.DeviceID {
-			continue
+		if matches && opts.DeviceID != "" && d.DeviceID != opts.DeviceID {
+			matches = false
 		}
+
 		// Apply status filter if specified
-		if opts.Status != "" && d.Status != opts.Status {
-			continue
+		if matches && opts.Status != "" && d.Status != opts.Status {
+			matches = false
 		}
-		filtered = append(filtered, d)
+
+		// Only append if all filters pass
+		if matches {
+			filtered = append(filtered, d)
+		}
 	}
+
 	return filtered
 }
 
@@ -125,19 +136,23 @@ func (s *Store) ListDeployments(ctx context.Context, opts config.ListOptions) ([
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Collect all deployments
+	// Collect all deployments in a slice for processing
 	deployments := make([]*config.Deployment, 0, len(s.deployments))
 	for _, d := range s.deployments {
 		deployments = append(deployments, d)
 	}
 
-	// Apply filters
+	// Apply filters before sorting
 	deployments = s.filterDeployments(deployments, opts)
 
 	// Sort for consistent ordering
 	s.sortDeployments(deployments)
 
-	// Apply pagination
+	// Apply pagination last
 	start, end := s.applyPagination(len(deployments), opts)
+	if start >= len(deployments) {
+		return []*config.Deployment{}, nil
+	}
+	
 	return deployments[start:end], nil
 }
