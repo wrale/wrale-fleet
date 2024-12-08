@@ -24,15 +24,10 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 		return E(op, ErrCodeCyclicDependency, "group cannot be its own parent", nil)
 	}
 
-	// Check that the new parent isn't a descendant of the group
-	descendants, err := h.GetDescendants(ctx, group)
-	if err != nil {
-		return E(op, ErrCodeStoreOperation, "failed to check descendants", err)
-	}
-	for _, descendant := range descendants {
-		if descendant.ID == newParentID {
-			return E(op, ErrCodeCyclicDependency, "cyclic dependency detected", nil)
-		}
+	// Check that the new parent isn't a descendant of the group by checking
+	// if the group ID appears in its ancestry path
+	if newParent.IsAncestor(group.ID) {
+		return E(op, ErrCodeCyclicDependency, "cyclic dependency detected", nil)
 	}
 
 	return nil
