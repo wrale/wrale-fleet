@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/wrale/fleet/internal/fleet/device"
-	"github.com/wrale/fleet/internal/fleet/group/store/memory"
 )
 
 // Store defines the interface for group persistence
@@ -26,12 +25,6 @@ type Store interface {
 	GetDescendants(ctx context.Context, tenantID, groupID string) ([]*Group, error)
 	GetChildren(ctx context.Context, tenantID, groupID string) ([]*Group, error)
 	ValidateHierarchy(ctx context.Context, tenantID string) error
-}
-
-// NewMemoryStore creates a new in-memory implementation of the Store interface.
-// This is primarily used for testing and demonstration purposes.
-func NewMemoryStore(deviceStore device.Store) Store {
-	return memory.New(deviceStore)
 }
 
 // ListOptions defines parameters for listing groups
