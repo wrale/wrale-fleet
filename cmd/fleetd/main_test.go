@@ -58,8 +58,12 @@ func TestDemoManager(t *testing.T) {
 	assert.Equal(t, "Demo Raspberry Pi", devices[0].Name)
 	assert.Equal(t, device.StatusOnline, devices[0].Status)
 
+	// Create shutdown context with timeout
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), testShutdownTimeout)
+	defer cancel()
+
 	// Verify graceful shutdown
-	err = dm.Stop()
+	err = dm.Stop(shutdownCtx)
 	assert.NoError(t, err, "Demo should stop gracefully")
 }
 
