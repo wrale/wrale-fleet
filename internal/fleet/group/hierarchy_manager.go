@@ -1,7 +1,5 @@
 package group
 
-import "context"
-
 // HierarchyManager provides operations for managing group hierarchies
 type HierarchyManager struct {
 	store Store

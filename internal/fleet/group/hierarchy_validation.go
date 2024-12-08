@@ -14,8 +14,7 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 	}
 
 	// Check that the new parent exists and is in the same tenant
-	newParent, err := h.store.Get(ctx, group.TenantID, newParentID)
-	if err != nil {
+	if _, err := h.store.Get(ctx, group.TenantID, newParentID); err != nil {
 		return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
 	}
 
