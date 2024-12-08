@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joshuapare/wrale-fleet/cmd/wfcentral/logger"
-	"github.com/joshuapare/wrale-fleet/cmd/wfcentral/options"
+	"github.com/wrale/wrale-fleet/cmd/wfcentral/logger"
+	"github.com/wrale/wrale-fleet/cmd/wfcentral/options"
 )
 
 const (

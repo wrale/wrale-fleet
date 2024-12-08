@@ -4,8 +4,8 @@ package options
 import (
 	"fmt"
 
-	"github.com/joshuapare/wrale-fleet/cmd/wfcentral/logger"
-	"github.com/joshuapare/wrale-fleet/cmd/wfcentral/server"
+	"github.com/wrale/wrale-fleet/cmd/wfcentral/logger"
+	"github.com/wrale/wrale-fleet/cmd/wfcentral/server"
 )
 
 // Config holds the command-line options for wfcentral.
