@@ -25,7 +25,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	deviceStore := devmem.New()
 	store := grpmem.New(deviceStore)
 	hierarchy := group.NewHierarchyManager(store)
-	
+
 	err := store.Clear(ctx)
 	require.NoError(t, err)
 
@@ -76,10 +76,10 @@ func TestHierarchy(t *testing.T) {
 		// Add first level children
 		child1 := group.New(env.tenantID, "Child Group 1", group.TypeStatic)
 		child2 := group.New(env.tenantID, "Child Group 2", group.TypeStatic)
-		
+
 		require.NoError(t, env.store.Create(env.ctx, child1))
 		require.NoError(t, env.store.Create(env.ctx, child2))
-		
+
 		require.NoError(t, env.hierarchy.UpdateHierarchy(env.ctx, child1, root.ID))
 		require.NoError(t, env.hierarchy.UpdateHierarchy(env.ctx, child2, root.ID))
 
@@ -184,7 +184,7 @@ func TestHierarchy(t *testing.T) {
 		for i := 0; i < len(groups); i++ {
 			groups[i] = group.New(env.tenantID, "Level", group.TypeStatic)
 			require.NoError(t, env.store.Create(env.ctx, groups[i]))
-			
+
 			if i > 0 {
 				require.NoError(t, env.hierarchy.UpdateHierarchy(env.ctx, groups[i], groups[i-1].ID))
 			}
@@ -195,7 +195,7 @@ func TestHierarchy(t *testing.T) {
 		// Attempt bulk move of a subtree
 		newParent := group.New(env.tenantID, "New Parent", group.TypeStatic)
 		require.NoError(t, env.store.Create(env.ctx, newParent))
-		
+
 		// Move middle of chain to new parent (should move entire subtree)
 		midPoint := len(groups) / 2
 		err := env.hierarchy.UpdateHierarchy(env.ctx, groups[midPoint], newParent.ID)

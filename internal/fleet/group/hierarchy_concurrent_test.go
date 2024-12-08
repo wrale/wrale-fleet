@@ -12,15 +12,15 @@ import (
 	grpmem "github.com/wrale/fleet/internal/fleet/group/store/memory"
 )
 
-type testEnv struct {
+type concurrentTestEnv struct {
 	ctx       context.Context
 	hierarchy *group.HierarchyManager
 	store     group.Store
 	tenantID  string
 }
 
-// setupTestEnv creates an isolated test environment
-func setupTestEnv(t *testing.T) *testEnv {
+// setupConcurrentTestEnv creates an isolated test environment for concurrent testing
+func setupConcurrentTestEnv(t *testing.T) *concurrentTestEnv {
 	ctx := context.Background()
 	deviceStore := devmem.New()
 	store := grpmem.New(deviceStore)
@@ -29,7 +29,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	err := store.Clear(ctx)
 	require.NoError(t, err)
 
-	return &testEnv{
+	return &concurrentTestEnv{
 		ctx:       ctx,
 		hierarchy: hierarchy,
 		store:     store,
@@ -39,7 +39,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 func TestConcurrentHierarchyOperations(t *testing.T) {
 	t.Run("ConcurrentParentUpdates", func(t *testing.T) {
-		env := setupTestEnv(t)
+		env := setupConcurrentTestEnv(t)
 
 		// Create root node
 		root := group.New(env.tenantID, "Root", group.TypeStatic)
@@ -114,7 +114,7 @@ func TestConcurrentHierarchyOperations(t *testing.T) {
 	})
 
 	t.Run("ConcurrentChildModification", func(t *testing.T) {
-		env := setupTestEnv(t)
+		env := setupConcurrentTestEnv(t)
 
 		// Create test structure
 		parent := group.New(env.tenantID, "Parent", group.TypeStatic)
