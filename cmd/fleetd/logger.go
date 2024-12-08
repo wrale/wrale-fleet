@@ -35,24 +35,34 @@ func setupLogger() (*zap.Logger, error) {
 
 // safeSync attempts to sync the logger, handling common sync issues gracefully.
 // It returns nil for expected sync errors that shouldn't impact application operation.
+// This function handles various sync-related errors that can occur across different
+// platforms and environments (especially in CI/CD pipelines), including:
+// - "invalid argument" errors when syncing stdout/stderr
+// - "inappropriate ioctl for device" on some Unix systems
+// - "bad file descriptor" errors during shutdown
+// - General EINVAL errors from syscall operations
 func safeSync(logger *zap.Logger) error {
 	err := logger.Sync()
 	if err == nil {
 		return nil
 	}
 
-	// Check for common sync issues that can be safely ignored
-	if strings.Contains(err.Error(), "inappropriate ioctl for device") {
-		return nil // Common stdout/stderr sync issue
-	}
-	if err == syscall.EINVAL {
-		return nil // Another common sync error
-	}
-	if strings.Contains(err.Error(), "bad file descriptor") {
-		return nil // Common during shutdown
+	// Convert to error string for pattern matching
+	errStr := err.Error()
+
+	// Common stdout/stderr sync issues that can be safely ignored
+	if strings.Contains(errStr, "invalid argument") ||
+		strings.Contains(errStr, "inappropriate ioctl for device") ||
+		strings.Contains(errStr, "bad file descriptor") {
+		return nil
 	}
 
-	// Return other sync errors for handling
+	// Check for specific syscall errors
+	if err == syscall.EINVAL {
+		return nil
+	}
+
+	// Return unexpected sync errors for handling
 	return err
 }
 
