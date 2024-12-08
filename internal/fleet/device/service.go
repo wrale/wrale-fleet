@@ -51,6 +51,25 @@ func (s *Service) Get(ctx context.Context, tenantID, deviceID string) (*Device, 
 	return device, nil
 }
 
+// Update updates an existing device
+func (s *Service) Update(ctx context.Context, device *Device) error {
+	if err := device.Validate(); err != nil {
+		return fmt.Errorf("invalid device data: %w", err)
+	}
+
+	if err := s.store.Update(ctx, device); err != nil {
+		return fmt.Errorf("failed to update device: %w", err)
+	}
+
+	s.logger.Info("updated device",
+		zap.String("device_id", device.ID),
+		zap.String("tenant_id", device.TenantID),
+		zap.Time("updated_at", device.UpdatedAt),
+	)
+
+	return nil
+}
+
 // UpdateStatus changes the device status
 func (s *Service) UpdateStatus(ctx context.Context, tenantID, deviceID string, status Status) error {
 	device, err := s.store.Get(ctx, tenantID, deviceID)
