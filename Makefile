@@ -9,8 +9,8 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOVET=$(GOCMD) vet
 BINARY_NAME=fleetd
-BUILD_DIR=build
-BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)
+BINARY_OUTPUT_DIR=bin
+BINARY_PATH=$(BINARY_OUTPUT_DIR)/$(BINARY_NAME)
 
 # Tools
 GOLINT=golangci-lint
@@ -19,7 +19,7 @@ GOSEC=gosec
 # Build flags
 LDFLAGS=-ldflags "-s -w"
 
-.PHONY: all build clean test coverage lint sec-check vet fmt help
+.PHONY: all clean test coverage lint sec-check vet fmt help install-tools run dev tree
 
 help: ## Display this help message
 	@echo "Wrale Fleet Management Platform - Make Targets"
@@ -27,12 +27,12 @@ help: ## Display this help message
 	@echo "Usage:"
 	@awk 'BEGIN {FS = ":.*##"; printf "  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+$(BINARY_OUTPUT_DIR):
+	mkdir -p $(BINARY_OUTPUT_DIR)
 
 clean: ## Remove build artifacts
 	$(GOCLEAN)
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BINARY_OUTPUT_DIR)
 	rm -f coverage.out
 
 fmt: ## Format code using gofmt
@@ -60,7 +60,7 @@ coverage: ## Generate test coverage report
 	$(GOTEST) -v -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out
 
-build: $(BUILD_DIR) ## Build the binary
+build: $(BINARY_OUTPUT_DIR) ## Build the binary
 	@echo "==> Building $(BINARY_NAME)"
 	$(GOBUILD) $(LDFLAGS) -o $(BINARY_PATH) ./cmd/fleetd
 
@@ -82,5 +82,3 @@ dev: ## Run the application with hot reload
 
 tree: ## Copy the file layout to clipboard on macos
 	tree --gitignore | pbcopy
-
-.PHONY: all build clean test coverage lint sec-check vet fmt help install-tools run dev

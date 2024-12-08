@@ -16,9 +16,9 @@ func TestNew(t *testing.T) {
 
 	device := New(tenantID, name)
 
-	assert.NotEmpty(t, device.ID, "device ID should be generated")
-	assert.Equal(t, tenantID, device.TenantID, "tenant ID should match")
-	assert.Equal(t, name, device.Name, "device name should match")
+	require.NotEmpty(t, device.ID, "device ID should be generated")
+	require.Equal(t, tenantID, device.TenantID, "tenant ID should match")
+	require.Equal(t, name, device.Name, "device name should match")
 	assert.Equal(t, StatusUnknown, device.Status, "initial status should be unknown")
 	assert.NotNil(t, device.Tags, "tags map should be initialized")
 	assert.False(t, device.CreatedAt.IsZero(), "created timestamp should be set")
@@ -70,9 +70,9 @@ func TestDevice_Validate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.device.Validate()
 			if tt.wantErr {
-				assert.Error(t, err)
+				require.Error(t, err)
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 		})
 	}
