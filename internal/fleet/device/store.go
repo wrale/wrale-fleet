@@ -2,7 +2,6 @@ package device
 
 import (
 	"context"
-	"fmt"
 )
 
 // Store defines the interface for device persistence
@@ -31,9 +30,3 @@ type ListOptions struct {
 	Offset   int
 	Limit    int
 }
-
-// ErrDeviceNotFound indicates the requested device doesn't exist
-var ErrDeviceNotFound = fmt.Errorf("device not found")
-
-// ErrDeviceExists indicates a device with the same ID already exists
-var ErrDeviceExists = fmt.Errorf("device already exists")

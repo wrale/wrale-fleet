@@ -10,16 +10,16 @@ type ErrorCode string
 const (
 	// ErrCodeNotFound indicates the requested device doesn't exist
 	ErrCodeNotFound ErrorCode = "DEVICE_NOT_FOUND"
-	
+
 	// ErrCodeAlreadyExists indicates a device with the same ID already exists
 	ErrCodeAlreadyExists ErrorCode = "DEVICE_ALREADY_EXISTS"
-	
+
 	// ErrCodeInvalidData indicates invalid device data
 	ErrCodeInvalidData ErrorCode = "DEVICE_INVALID_DATA"
-	
+
 	// ErrCodeUnauthorized indicates lack of permission to access the device
 	ErrCodeUnauthorized ErrorCode = "DEVICE_UNAUTHORIZED"
-	
+
 	// ErrCodeInternal indicates an internal server error
 	ErrCodeInternal ErrorCode = "DEVICE_INTERNAL_ERROR"
 )
@@ -28,16 +28,16 @@ const (
 type Error struct {
 	// Code is a machine-readable error code
 	Code ErrorCode
-	
+
 	// Message is a human-readable error description
 	Message string
-	
+
 	// Op is the operation being performed
 	Op string
-	
+
 	// Err is the underlying error (if any)
 	Err error
-	
+
 	// Fields contains additional error context
 	Fields map[string]interface{}
 }
