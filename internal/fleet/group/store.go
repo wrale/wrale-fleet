@@ -8,37 +8,50 @@ import (
 
 // Store defines the interface for group persistence
 type Store interface {
-	// Create stores a new group
+	// Core CRUD Operations
 	Create(ctx context.Context, group *Group) error
-
-	// Get retrieves a group by ID
 	Get(ctx context.Context, tenantID, groupID string) (*Group, error)
-
-	// Update modifies an existing group
 	Update(ctx context.Context, group *Group) error
-
-	// Delete removes a group
 	Delete(ctx context.Context, tenantID, groupID string) error
-
-	// List retrieves groups matching the given options
 	List(ctx context.Context, opts ListOptions) ([]*Group, error)
 
-	// AddDevice adds a device to a static group
+	// Device Management Operations
 	AddDevice(ctx context.Context, tenantID, groupID string, device *device.Device) error
-
-	// RemoveDevice removes a device from a static group
 	RemoveDevice(ctx context.Context, tenantID, groupID string, deviceID string) error
-
-	// ListDevices lists all devices in a group (both static and dynamic)
 	ListDevices(ctx context.Context, tenantID, groupID string) ([]*device.Device, error)
+
+	// Hierarchy Operations
+	GetAncestors(ctx context.Context, tenantID, groupID string) ([]*Group, error)
+	GetDescendants(ctx context.Context, tenantID, groupID string) ([]*Group, error)
+	GetChildren(ctx context.Context, tenantID, groupID string) ([]*Group, error)
+	ValidateHierarchy(ctx context.Context, tenantID string) error
 }
 
 // ListOptions defines parameters for listing groups
 type ListOptions struct {
-	TenantID string
-	ParentID string            // Filter by parent group
-	Type     Type              // Filter by group type
-	Tags     map[string]string // Filter by metadata tags
-	Offset   int
-	Limit    int
+	TenantID  string
+	ParentID  string            // Filter by parent group
+	Type      Type              // Filter by group type
+	Tags      map[string]string // Filter by metadata tags
+	Depth     int               // Filter by hierarchy depth (-1 for all)
+	Offset    int
+	Limit     int
+	SortBy    string // Field to sort by
+	SortOrder string // "asc" or "desc"
+}
+
+// QueryOptions defines advanced query parameters for group operations
+type QueryOptions struct {
+	IncludeChildren    bool              // Include child groups in operations
+	IncludeDescendants bool              // Include all descendant groups in operations
+	IncludeDevices     bool              // Include device information
+	FilterTags         map[string]string // Additional tag-based filtering
+	MaxDepth           int               // Maximum depth for hierarchy operations (-1 for unlimited)
+}
+
+// BatchOperation represents a batch update operation for groups
+type BatchOperation struct {
+	GroupIDs []string          // Groups to update
+	Updates  map[string]string // Key-value pairs of updates to apply
+	Options  QueryOptions      // Operation options
 }
