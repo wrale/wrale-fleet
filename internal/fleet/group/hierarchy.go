@@ -53,49 +53,77 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, newParentID string) error {
 	const op = "HierarchyManager.UpdateHierarchy"
 
+	// Store a copy of the original group to handle rollbacks if needed
+	originalGroup := group.DeepCopy()
+
 	// Validate the hierarchy change
 	if err := h.ValidateHierarchyChange(ctx, group, newParentID); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// If there's an existing parent, remove this group from its children
+	// If there's an existing parent, get it first so we can update it
+	var oldParent *Group
 	if group.ParentID != "" {
-		oldParent, err := h.store.Get(ctx, group.TenantID, group.ParentID)
+		var err error
+		oldParent, err = h.store.Get(ctx, group.TenantID, group.ParentID)
 		if err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to get old parent group", err)
 		}
-		oldParent.RemoveChild(group.ID)
-		if err := h.store.Update(ctx, oldParent); err != nil {
-			return E(op, ErrCodeStoreOperation, "failed to update old parent group", err)
-		}
 	}
 
-	// Update the group's parent relationship
+	// If there's a new parent, get it and add the child
+	var newParent *Group
 	if newParentID != "" {
-		newParent, err := h.store.Get(ctx, group.TenantID, newParentID)
+		var err error
+		newParent, err = h.store.Get(ctx, group.TenantID, newParentID)
 		if err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to get new parent group", err)
 		}
 
-		// First set the parent reference to ensure correct ancestry path
-		if err := group.SetParent(newParentID, &newParent.Ancestry); err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
-
-		// Update parent's children list and save
+		// Add the child to the new parent
 		newParent.AddChild(group.ID)
 		if err := h.store.Update(ctx, newParent); err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to update new parent group", err)
 		}
-	} else {
-		// Reset to root group
-		if err := group.SetParent("", nil); err != nil {
-			return fmt.Errorf("%s: %w", op, err)
+	}
+
+	// Update the group's parent and ancestry information
+	var parentInfo *AncestryInfo
+	if newParent != nil {
+		parentInfo = &newParent.Ancestry
+	}
+	if err := group.SetParent(newParentID, parentInfo); err != nil {
+		// Rollback new parent update if it failed
+		if newParent != nil {
+			newParent.RemoveChild(group.ID)
+			_ = h.store.Update(ctx, newParent)
+		}
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	// If there was an old parent, remove the child from it
+	if oldParent != nil {
+		oldParent.RemoveChild(group.ID)
+		if err := h.store.Update(ctx, oldParent); err != nil {
+			// Rollback all changes if old parent update failed
+			if err := h.store.Update(ctx, originalGroup); err != nil {
+				return E(op, ErrCodeStoreOperation, "failed to rollback group changes", err)
+			}
+			return E(op, ErrCodeStoreOperation, "failed to update old parent group", err)
 		}
 	}
 
-	// Update the group itself with all changes
+	// Finally update the group itself
 	if err := h.store.Update(ctx, group); err != nil {
+		// Attempt to rollback all changes if final update failed
+		if oldParent != nil {
+			oldParent.AddChild(group.ID)
+			_ = h.store.Update(ctx, oldParent)
+		}
+		if newParent != nil {
+			newParent.RemoveChild(group.ID)
+			_ = h.store.Update(ctx, newParent)
+		}
 		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
 
@@ -127,6 +155,8 @@ func (h *HierarchyManager) GetDescendants(ctx context.Context, group *Group) ([]
 		if err != nil {
 			return nil, E(op, ErrCodeStoreOperation, "failed to get child group", err)
 		}
+
+		// Add this child to descendants
 		descendants = append(descendants, child)
 
 		// Recursively get descendants of this child
@@ -134,7 +164,9 @@ func (h *HierarchyManager) GetDescendants(ctx context.Context, group *Group) ([]
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", op, err)
 		}
-		descendants = append(descendants, childDescendants...)
+		if len(childDescendants) > 0 {
+			descendants = append(descendants, childDescendants...)
+		}
 	}
 	return descendants, nil
 }
