@@ -12,10 +12,10 @@ import (
 // Store provides an in-memory implementation of group.Store interface.
 // It is primarily used for testing and demonstration purposes.
 type Store struct {
-	mu            sync.RWMutex
-	groups        map[string]*group.Group        // key: tenantID:groupID
-	memberships   map[string]map[string]struct{} // key: tenantID:groupID -> map[deviceID]struct{}
-	deviceStore   device.Store
+	mu          sync.RWMutex
+	groups      map[string]*group.Group        // key: tenantID:groupID
+	memberships map[string]map[string]struct{} // key: tenantID:groupID -> map[deviceID]struct{}
+	deviceStore device.Store
 }
 
 // New creates a new in-memory group store

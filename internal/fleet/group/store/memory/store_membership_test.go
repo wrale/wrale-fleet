@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wrale/fleet/internal/fleet/device"
 	"github.com/wrale/fleet/internal/fleet/group"
 )
 
