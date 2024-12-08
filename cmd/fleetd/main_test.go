@@ -96,13 +96,21 @@ func TestMainSignalHandling(t *testing.T) {
 	var exitCode int
 	var exitMu sync.Mutex
 	origExit := osExit
-	defer func() { osExit = origExit }()
+
+	// Properly restore original exit function with parameter passing
+	defer func() {
+		osExit = func(code int) {
+			origExit(code)
+		}
+	}()
+
+	// Mock exit function that captures the exit code
 	osExit = func(code int) {
 		exitMu.Lock()
 		exitCode = code
 		exitMu.Unlock()
 		close(done)
-	}()
+	}
 
 	// Start main in a goroutine with initialization signal
 	go func() {
