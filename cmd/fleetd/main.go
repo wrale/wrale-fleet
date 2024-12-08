@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -33,9 +34,15 @@ func main() {
 	// Initialize logger
 	logger, err := setupLogger()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
-	defer logger.Sync()
+	// Handle sync errors on shutdown - we use a closure to access the logger
+	defer func() {
+		if err := logger.Sync(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
+		}
+	}()
 
 	// Create device store and service
 	store := memory.New()
@@ -62,9 +69,6 @@ func main() {
 
 	// Wait for shutdown signal
 	<-ctx.Done()
-
-	// Sync logger before final message - ignore sync errors as they're expected on some platforms
-	_ = logger.Sync()
 
 	// Log final shutdown message
 	logger.Info("shutting down")

@@ -193,7 +193,12 @@ func TestLogger(t *testing.T) {
 			// Create logger
 			logger, err := setupLogger()
 			require.NoError(t, err)
-			defer logger.Sync()
+			// Handle sync errors appropriately in test context
+			defer func() {
+				if err := logger.Sync(); err != nil {
+					t.Logf("non-fatal: failed to sync logger: %v", err)
+				}
+			}()
 
 			// Verify logger level
 			assert.Equal(t, tt.wantLevel, logger.Core().Enabled(tt.wantLevel))
