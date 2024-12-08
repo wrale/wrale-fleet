@@ -175,21 +175,3 @@ func (s *Server) routes() http.Handler {
 
 	return mux
 }
-
-// checkHealth performs comprehensive health checks.
-func (s *Server) checkHealth(ctx context.Context) error {
-	// Basic connectivity check
-	if s.httpSrv == nil {
-		return fmt.Errorf("http server not initialized")
-	}
-
-	// Check component health
-	components := s.getComponentHealth(ctx)
-	for name, health := range components {
-		if health.Status != "healthy" {
-			return fmt.Errorf("component %s is unhealthy: %s", name, health.Message)
-		}
-	}
-
-	return nil
-}

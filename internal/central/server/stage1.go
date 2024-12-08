@@ -88,7 +88,12 @@ func (s *Server) handleHealth() http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(response)
+		if _, err := w.Write(response); err != nil {
+			s.logger.Error("failed to write health check response",
+				zap.Error(err),
+			)
+			// Note: Cannot write error to response here as headers are already sent
+		}
 	}
 }
 
