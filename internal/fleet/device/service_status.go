@@ -29,6 +29,15 @@ func (s *Service) UpdateStatus(ctx context.Context, tenantID, deviceID string, s
 		return fmt.Errorf("failed to get device: %w", err)
 	}
 
+	// Validate the status change is allowed
+	if err := ValidateTenantAccess(ctx, device); err != nil {
+		s.logError("UpdateStatus", err,
+			zap.String("device_id", device.ID),
+			zap.String("device_tenant", device.TenantID),
+			zap.String("new_status", string(status)))
+		return err
+	}
+
 	oldStatus := device.Status
 	device.SetStatus(status)
 
@@ -55,7 +64,7 @@ func (s *Service) Update(ctx context.Context, device *Device) error {
 		return fmt.Errorf("invalid device data: %w", err)
 	}
 
-	// Validate tenant access
+	// Validate tenant access and configuration
 	if err := ValidateTenantAccess(ctx, device); err != nil {
 		s.logError("Update", err,
 			zap.String("device_id", device.ID),
@@ -79,10 +88,7 @@ func (s *Service) Update(ctx context.Context, device *Device) error {
 	}
 
 	if existing.LastConfigHash != device.LastConfigHash {
-		s.monitor.RecordConfigChange(ctx, device.ID, device.TenantID, "system", map[string]interface{}{
-			"old_hash": existing.LastConfigHash,
-			"new_hash": device.LastConfigHash,
-		})
+		s.recordConfigChange(ctx, device, existing.LastConfigHash, device.LastConfigHash)
 	}
 
 	if err := s.store.Update(ctx, device); err != nil {

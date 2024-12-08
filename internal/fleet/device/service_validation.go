@@ -82,32 +82,3 @@ func (s *Service) validateListOperation(ctx context.Context, opts ListOptions) e
 
 	return nil
 }
-
-// validateConfig checks if a device's configuration update is valid
-// within the context of its tenant.
-func (s *Service) validateConfig(ctx context.Context, device *Device, config interface{}) error {
-	if err := ValidateTenantAccess(ctx, device); err != nil {
-		s.logError("validateConfig", err,
-			zap.String("device_id", device.ID),
-			zap.String("device_tenant", device.TenantID))
-		return err
-	}
-
-	// Add any additional configuration validation logic here
-	return nil
-}
-
-// validateStatus ensures a status transition is valid and authorized
-// within the tenant context.
-func (s *Service) validateStatus(ctx context.Context, device *Device, newStatus Status) error {
-	if err := ValidateTenantAccess(ctx, device); err != nil {
-		s.logError("validateStatus", err,
-			zap.String("device_id", device.ID),
-			zap.String("device_tenant", device.TenantID),
-			zap.String("new_status", string(newStatus)))
-		return err
-	}
-
-	// Add any status transition validation logic here
-	return nil
-}

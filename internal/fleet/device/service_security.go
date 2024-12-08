@@ -81,9 +81,3 @@ func (s *Service) validateSecurityContext(ctx context.Context) error {
 
 	return nil
 }
-
-// recordStatusTransition logs status changes with security context
-// to maintain an audit trail of device state changes.
-func (s *Service) recordStatusTransition(ctx context.Context, device *Device, oldStatus, newStatus Status) {
-	s.monitor.RecordStatusChange(ctx, device.ID, device.TenantID, oldStatus, newStatus)
-}
