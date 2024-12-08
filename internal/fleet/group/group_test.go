@@ -24,6 +24,12 @@ func TestNew(t *testing.T) {
 	assert.NotNil(t, group.Properties.Metadata, "metadata map should be initialized")
 	assert.False(t, group.CreatedAt.IsZero(), "created timestamp should be set")
 	assert.False(t, group.UpdatedAt.IsZero(), "updated timestamp should be set")
+
+	// Verify ancestry initialization
+	assert.Equal(t, "/"+group.ID, group.Ancestry.Path)
+	assert.Equal(t, []string{group.ID}, group.Ancestry.PathParts)
+	assert.Equal(t, 0, group.Ancestry.Depth)
+	assert.Empty(t, group.Ancestry.Children)
 }
 
 func TestGroup_Validate(t *testing.T) {
@@ -39,6 +45,10 @@ func TestGroup_Validate(t *testing.T) {
 				TenantID: "test-tenant",
 				Name:     "test-group",
 				Type:     TypeStatic,
+				Ancestry: AncestryInfo{
+					Path:      "/test-id",
+					PathParts: []string{"test-id"},
+				},
 			},
 			wantErr: false,
 		},
@@ -51,6 +61,10 @@ func TestGroup_Validate(t *testing.T) {
 				Type:     TypeDynamic,
 				Query: &MembershipQuery{
 					Tags: map[string]string{"env": "prod"},
+				},
+				Ancestry: AncestryInfo{
+					Path:      "/test-id",
+					PathParts: []string{"test-id"},
 				},
 			},
 			wantErr: false,
@@ -189,33 +203,42 @@ func TestGroup_SetParent(t *testing.T) {
 		name       string
 		group      *Group
 		parentID   string
-		parentPath string
+		parentInfo *AncestryInfo
 		wantErr    bool
 		wantPath   string
+		wantDepth  int
+		wantParts  []string
 	}{
 		{
-			name:       "set valid parent",
-			group:      &Group{ID: "child"},
-			parentID:   "parent",
-			parentPath: "/parent",
-			wantErr:    false,
-			wantPath:   "/parent/child",
+			name:     "set valid parent",
+			group:    &Group{ID: "child"},
+			parentID: "parent",
+			parentInfo: &AncestryInfo{
+				Path:      "/parent",
+				PathParts: []string{"parent"},
+				Depth:     0,
+			},
+			wantErr:   false,
+			wantPath:  "/parent/child",
+			wantDepth: 1,
+			wantParts: []string{"parent", "child"},
 		},
 		{
 			name:       "clear parent",
 			group:      &Group{ID: "child"},
 			parentID:   "",
-			parentPath: "",
+			parentInfo: nil,
 			wantErr:    false,
-			wantPath:   "child",
+			wantPath:   "/child",
+			wantDepth:  0,
+			wantParts:  []string{"child"},
 		},
 		{
-			name:       "invalid parent path",
+			name:       "missing parent info",
 			group:      &Group{ID: "child"},
 			parentID:   "parent",
-			parentPath: "",
+			parentInfo: nil,
 			wantErr:    true,
-			wantPath:   "",
 		},
 	}
 
@@ -224,7 +247,7 @@ func TestGroup_SetParent(t *testing.T) {
 			originalUpdate := tt.group.UpdatedAt
 			time.Sleep(time.Millisecond) // Ensure timestamp changes
 
-			err := tt.group.SetParent(tt.parentID, tt.parentPath)
+			err := tt.group.SetParent(tt.parentID, tt.parentInfo)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Equal(t, ErrCodeInvalidOperation, err.(*Error).Code)
@@ -233,7 +256,9 @@ func TestGroup_SetParent(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.parentID, tt.group.ParentID)
-			assert.Equal(t, tt.wantPath, tt.group.Path)
+			assert.Equal(t, tt.wantPath, tt.group.Ancestry.Path)
+			assert.Equal(t, tt.wantDepth, tt.group.Ancestry.Depth)
+			assert.Equal(t, tt.wantParts, tt.group.Ancestry.PathParts)
 			assert.True(t, tt.group.UpdatedAt.After(originalUpdate))
 		})
 	}
@@ -276,6 +301,11 @@ func TestGroup_IsAncestor(t *testing.T) {
 			group: &Group{
 				ID:       "child",
 				ParentID: "parent",
+				Ancestry: AncestryInfo{
+					Path:      "/parent/child",
+					PathParts: []string{"parent", "child"},
+					Depth:     1,
+				},
 			},
 			ancestorID: "parent",
 			want:       true,
@@ -285,6 +315,11 @@ func TestGroup_IsAncestor(t *testing.T) {
 			group: &Group{
 				ID:       "child",
 				ParentID: "parent",
+				Ancestry: AncestryInfo{
+					Path:      "/parent/child",
+					PathParts: []string{"parent", "child"},
+					Depth:     1,
+				},
 			},
 			ancestorID: "other",
 			want:       false,
@@ -293,6 +328,11 @@ func TestGroup_IsAncestor(t *testing.T) {
 			name: "no parent",
 			group: &Group{
 				ID: "child",
+				Ancestry: AncestryInfo{
+					Path:      "/child",
+					PathParts: []string{"child"},
+					Depth:     0,
+				},
 			},
 			ancestorID: "parent",
 			want:       false,
@@ -302,6 +342,11 @@ func TestGroup_IsAncestor(t *testing.T) {
 			group: &Group{
 				ID:       "group1",
 				ParentID: "parent",
+				Ancestry: AncestryInfo{
+					Path:      "/parent/group1",
+					PathParts: []string{"parent", "group1"},
+					Depth:     1,
+				},
 			},
 			ancestorID: "group1",
 			want:       false,

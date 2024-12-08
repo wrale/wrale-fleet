@@ -2,7 +2,6 @@ package group
 
 import (
 	"context"
-	"strings"
 
 	"github.com/wrale/fleet/internal/fleet/device"
 	"go.uber.org/zap"
@@ -195,4 +194,33 @@ func (s *Service) ListDevices(ctx context.Context, tenantID, groupID string) ([]
 		return nil, E(op, ErrCodeStoreOperation, "failed to list devices in group", err)
 	}
 	return devices, nil
+}
+
+// ValidateHierarchy validates the group hierarchy for a tenant
+func (s *Service) ValidateHierarchy(ctx context.Context, tenantID string) error {
+	const op = "group.Service.ValidateHierarchy"
+
+	if err := s.hierarchyMgr.ValidateHierarchyIntegrity(ctx, tenantID); err != nil {
+		return E(op, ErrCodeInvalidOperation, "invalid group hierarchy", err)
+	}
+
+	return nil
+}
+
+// UpdateHierarchy updates a group's position in the hierarchy
+func (s *Service) UpdateHierarchy(ctx context.Context, group *Group, newParentID string) error {
+	const op = "group.Service.UpdateHierarchy"
+
+	if err := s.hierarchyMgr.UpdateHierarchy(ctx, group, newParentID); err != nil {
+		return E(op, ErrCodeInvalidOperation, "failed to update hierarchy", err)
+	}
+
+	s.logger.Info("updated group hierarchy",
+		zap.String("group_id", group.ID),
+		zap.String("tenant_id", group.TenantID),
+		zap.String("new_parent_id", newParentID),
+		zap.Int("new_depth", group.Ancestry.Depth),
+	)
+
+	return nil
 }
