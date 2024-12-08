@@ -182,7 +182,7 @@ func TestWithStage(t *testing.T) {
 	tests := []struct {
 		name       string
 		inputStage int
-		wantStage  int
+		wantStage  int64 // Changed to int64 to match zap's internal representation
 	}{
 		{
 			name:       "normal stage",
