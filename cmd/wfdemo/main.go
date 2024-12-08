@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -30,7 +31,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
-	defer logger.Sync()
+	defer func() {
+		if err := logger.Sync(); err != nil {
+			// Ignore common sync errors that occur during shutdown
+			if !strings.Contains(err.Error(), "sync /dev/stderr: invalid argument") &&
+				!strings.Contains(err.Error(), "sync /dev/stdout: invalid argument") {
+				fmt.Fprintf(os.Stderr, "failed to sync logger: %v\n", err)
+			}
+		}
+	}()
 
 	// Setup signal handling
 	ctx, cancel := context.WithCancel(context.Background())
