@@ -53,11 +53,24 @@ func (dm *DemoManager) Start() error {
 	return nil
 }
 
-// Stop gracefully shuts down demo operations
-func (dm *DemoManager) Stop() error {
+// Stop gracefully shuts down demo operations with timeout from the provided context
+func (dm *DemoManager) Stop(ctx context.Context) error {
 	dm.cancel()
-	dm.wg.Wait()
-	return nil
+
+	// Create a channel to signal WaitGroup completion
+	done := make(chan struct{})
+	go func() {
+		dm.wg.Wait()
+		close(done)
+	}()
+
+	// Wait for either completion or context timeout
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("shutdown timed out: %w", ctx.Err())
+	}
 }
 
 // initialize sets up the initial demo environment

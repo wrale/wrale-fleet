@@ -54,19 +54,37 @@ func main() {
 	// Begin graceful shutdown
 	logger.Info("initiating shutdown sequence")
 
-	// Stop demo manager
+	// Create shutdown context with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	if err := demoManager.Stop(); err != nil {
+	// Stop demo manager with timeout
+	if err := demoManager.Stop(shutdownCtx); err != nil {
 		logger.Error("failed to stop demo manager", zap.Error(err))
 		os.Exit(1)
 	}
 
 	// Clean up resources
 	if closer, ok := store.(interface{ Close() error }); ok {
-		if err := closer.Close(); err != nil {
-			logger.Error("failed to close store", zap.Error(err))
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cleanupCancel()
+
+		// Create done channel for cleanup
+		done := make(chan struct{})
+		go func() {
+			if err := closer.Close(); err != nil {
+				logger.Error("failed to close store", zap.Error(err))
+				os.Exit(1)
+			}
+			close(done)
+		}()
+
+		// Wait for cleanup or timeout
+		select {
+		case <-done:
+			logger.Info("store cleanup completed")
+		case <-cleanupCtx.Done():
+			logger.Error("store cleanup timed out")
 			os.Exit(1)
 		}
 	}
