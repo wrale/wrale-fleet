@@ -77,7 +77,8 @@ func setupLogger() (*zap.Logger, error) {
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
-	// Create the encoder based on configuration
+	// Create the encoder based on configuration - using JSON for production/staging,
+	// console output for development for better readability
 	var encoder zapcore.Encoder
 	if cfg.JSONOutput {
 		encoder = zapcore.NewJSONEncoder(encConfig)
@@ -134,7 +135,7 @@ func setupLogger() (*zap.Logger, error) {
 		logger = logger.WithOptions(zap.AddStacktrace(zapcore.ErrorLevel))
 	}
 
-	// Add global fields
+	// Add global fields that help with log aggregation and filtering
 	logger = logger.With(
 		zap.String("environment", cfg.Environment),
 		zap.String("app", "fleetd"),
@@ -158,14 +159,6 @@ func parseLogLevel(level string) zapcore.Level {
 	default:
 		return zapcore.InfoLevel
 	}
-}
-
-// selectEncoding returns the appropriate encoding based on configuration
-func selectEncoding(useJSON bool) string {
-	if useJSON {
-		return "json"
-	}
-	return "console"
 }
 
 // safeSync attempts to sync the logger, handling common sync issues gracefully.
