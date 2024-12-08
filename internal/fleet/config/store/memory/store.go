@@ -2,12 +2,15 @@ package memory
 
 import (
 	"context"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/wrale/fleet/internal/fleet/config"
 )
 
-// Store implements an in-memory configuration store with thread-safe operations
+// Store implements an in-memory configuration store with thread-safe operations.
+// It ensures proper validation, consistent ordering, and safe concurrent access.
 type Store struct {
 	mu          sync.RWMutex
 	templates   map[string]*config.Template   // key: tenantID/templateID
@@ -15,13 +18,23 @@ type Store struct {
 	deployments map[string]*config.Deployment // key: tenantID/deploymentID
 }
 
-// New creates a new in-memory configuration store
+// New creates a new in-memory configuration store with initialized maps
 func New() *Store {
 	return &Store{
 		templates:   make(map[string]*config.Template),
 		versions:    make(map[string][]*config.Version),
 		deployments: make(map[string]*config.Deployment),
 	}
+}
+
+// validateInput is a helper function to check for required string fields
+func (s *Store) validateInput(op string, fields map[string]string) error {
+	for name, value := range fields {
+		if value == "" {
+			return config.NewError(op, config.ErrValidationFailed, name+" is required")
+		}
+	}
+	return nil
 }
 
 // templateKey generates a unique key for template storage
@@ -34,8 +47,36 @@ func (s *Store) deploymentKey(tenantID, deploymentID string) string {
 	return tenantID + "/" + deploymentID
 }
 
+// validateTemplate ensures the template is valid before storage operations
+func (s *Store) validateTemplate(template *config.Template) error {
+	if template == nil {
+		return config.NewError("validate template", config.ErrInvalidTemplate, "template is nil")
+	}
+	return s.validateInput("validate template", map[string]string{
+		"template ID": template.ID,
+		"tenant ID":   template.TenantID,
+		"name":        template.Name,
+	})
+}
+
+// validateDeployment ensures the deployment is valid before storage operations
+func (s *Store) validateDeployment(deployment *config.Deployment) error {
+	if deployment == nil {
+		return config.NewError("validate deployment", config.ErrInvalidDeployment, "deployment is nil")
+	}
+	return s.validateInput("validate deployment", map[string]string{
+		"deployment ID": deployment.ID,
+		"tenant ID":     deployment.TenantID,
+		"device ID":     deployment.DeviceID,
+	})
+}
+
 // CreateTemplate stores a new configuration template
 func (s *Store) CreateTemplate(ctx context.Context, template *config.Template) error {
+	if err := s.validateTemplate(template); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -50,6 +91,13 @@ func (s *Store) CreateTemplate(ctx context.Context, template *config.Template) e
 
 // GetTemplate retrieves a configuration template
 func (s *Store) GetTemplate(ctx context.Context, tenantID, templateID string) (*config.Template, error) {
+	if err := s.validateInput("get template", map[string]string{
+		"tenant ID":   tenantID,
+		"template ID": templateID,
+	}); err != nil {
+		return nil, err
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -64,6 +112,10 @@ func (s *Store) GetTemplate(ctx context.Context, tenantID, templateID string) (*
 
 // UpdateTemplate updates an existing configuration template
 func (s *Store) UpdateTemplate(ctx context.Context, template *config.Template) error {
+	if err := s.validateTemplate(template); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -78,6 +130,13 @@ func (s *Store) UpdateTemplate(ctx context.Context, template *config.Template) e
 
 // DeleteTemplate removes a configuration template and its versions
 func (s *Store) DeleteTemplate(ctx context.Context, tenantID, templateID string) error {
+	if err := s.validateInput("delete template", map[string]string{
+		"tenant ID":   tenantID,
+		"template ID": templateID,
+	}); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -104,7 +163,15 @@ func (s *Store) ListTemplates(ctx context.Context, opts config.ListOptions) ([]*
 		templates = append(templates, template)
 	}
 
-	// Apply pagination
+	// Sort templates by creation time then ID for consistent ordering
+	sort.Slice(templates, func(i, j int) bool {
+		if templates[i].CreatedAt.Equal(templates[j].CreatedAt) {
+			return templates[i].ID < templates[j].ID
+		}
+		return templates[i].CreatedAt.Before(templates[j].CreatedAt)
+	})
+
+	// Apply pagination after sorting
 	if opts.Offset >= len(templates) {
 		return []*config.Template{}, nil
 	}
@@ -119,6 +186,16 @@ func (s *Store) ListTemplates(ctx context.Context, opts config.ListOptions) ([]*
 
 // CreateVersion stores a new configuration version
 func (s *Store) CreateVersion(ctx context.Context, tenantID, templateID string, version *config.Version) error {
+	if err := s.validateInput("create version", map[string]string{
+		"tenant ID":   tenantID,
+		"template ID": templateID,
+	}); err != nil {
+		return err
+	}
+	if version == nil {
+		return config.NewError("create version", config.ErrInvalidVersion, "version is nil")
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -135,6 +212,13 @@ func (s *Store) CreateVersion(ctx context.Context, tenantID, templateID string, 
 
 // GetVersion retrieves a specific configuration version
 func (s *Store) GetVersion(ctx context.Context, tenantID, templateID string, versionNumber int) (*config.Version, error) {
+	if err := s.validateInput("get version", map[string]string{
+		"tenant ID":   tenantID,
+		"template ID": templateID,
+	}); err != nil {
+		return nil, err
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -149,6 +233,13 @@ func (s *Store) GetVersion(ctx context.Context, tenantID, templateID string, ver
 
 // ListVersions retrieves all versions for a template
 func (s *Store) ListVersions(ctx context.Context, tenantID, templateID string) ([]*config.Version, error) {
+	if err := s.validateInput("list versions", map[string]string{
+		"tenant ID":   tenantID,
+		"template ID": templateID,
+	}); err != nil {
+		return nil, err
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -166,6 +257,16 @@ func (s *Store) ListVersions(ctx context.Context, tenantID, templateID string) (
 
 // UpdateVersion updates an existing configuration version
 func (s *Store) UpdateVersion(ctx context.Context, tenantID, templateID string, version *config.Version) error {
+	if err := s.validateInput("update version", map[string]string{
+		"tenant ID":   tenantID,
+		"template ID": templateID,
+	}); err != nil {
+		return err
+	}
+	if version == nil {
+		return config.NewError("update version", config.ErrInvalidVersion, "version is nil")
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -181,6 +282,10 @@ func (s *Store) UpdateVersion(ctx context.Context, tenantID, templateID string, 
 
 // CreateDeployment stores a new configuration deployment
 func (s *Store) CreateDeployment(ctx context.Context, deployment *config.Deployment) error {
+	if err := s.validateDeployment(deployment); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -189,12 +294,23 @@ func (s *Store) CreateDeployment(ctx context.Context, deployment *config.Deploym
 		return config.NewError("create deployment", config.ErrInvalidDeployment, "deployment already exists")
 	}
 
+	if deployment.DeployedAt.IsZero() {
+		deployment.DeployedAt = time.Now()
+	}
+
 	s.deployments[key] = deployment
 	return nil
 }
 
 // GetDeployment retrieves a specific deployment
 func (s *Store) GetDeployment(ctx context.Context, tenantID, deploymentID string) (*config.Deployment, error) {
+	if err := s.validateInput("get deployment", map[string]string{
+		"tenant ID":     tenantID,
+		"deployment ID": deploymentID,
+	}); err != nil {
+		return nil, err
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -209,6 +325,10 @@ func (s *Store) GetDeployment(ctx context.Context, tenantID, deploymentID string
 
 // UpdateDeployment updates an existing deployment
 func (s *Store) UpdateDeployment(ctx context.Context, deployment *config.Deployment) error {
+	if err := s.validateDeployment(deployment); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -226,6 +346,7 @@ func (s *Store) ListDeployments(ctx context.Context, opts config.ListOptions) ([
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// First collect all matching deployments
 	var deployments []*config.Deployment
 	for _, deployment := range s.deployments {
 		if opts.TenantID != "" && deployment.TenantID != opts.TenantID {
@@ -240,7 +361,15 @@ func (s *Store) ListDeployments(ctx context.Context, opts config.ListOptions) ([
 		deployments = append(deployments, deployment)
 	}
 
-	// Apply pagination
+	// Sort deployments by deployment time then ID for consistent ordering
+	sort.Slice(deployments, func(i, j int) bool {
+		if deployments[i].DeployedAt.Equal(deployments[j].DeployedAt) {
+			return deployments[i].ID < deployments[j].ID
+		}
+		return deployments[i].DeployedAt.Before(deployments[j].DeployedAt)
+	})
+
+	// Apply pagination after filtering and sorting
 	if opts.Offset >= len(deployments) {
 		return []*config.Deployment{}, nil
 	}
