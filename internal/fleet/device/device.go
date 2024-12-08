@@ -1,8 +1,9 @@
 package device
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,30 +109,32 @@ func New(tenantID, name string) *Device {
 
 // Validate checks if the device data is valid
 func (d *Device) Validate() error {
+	const op = "Device.Validate"
+
 	if d.ID == "" {
-		return fmt.Errorf("device id cannot be empty")
+		return E(op, ErrCodeInvalidDevice, "device id cannot be empty", nil)
 	}
 	if d.TenantID == "" {
-		return fmt.Errorf("tenant id cannot be empty")
+		return E(op, ErrCodeInvalidDevice, "tenant id cannot be empty", nil)
 	}
 	if d.Name == "" {
-		return fmt.Errorf("device name cannot be empty")
+		return E(op, ErrCodeInvalidDevice, "device name cannot be empty", nil)
 	}
 
 	// Validate NetworkInfo if present
 	if d.NetworkInfo != nil {
 		if d.NetworkInfo.Port < 0 || d.NetworkInfo.Port > 65535 {
-			return fmt.Errorf("invalid port number")
+			return E(op, ErrCodeInvalidDevice, "invalid port number", nil)
 		}
 	}
 
 	// Validate OfflineCapabilities if present
 	if d.OfflineCapabilities != nil {
 		if d.OfflineCapabilities.SyncInterval < 0 {
-			return fmt.Errorf("sync interval cannot be negative")
+			return E(op, ErrCodeInvalidDevice, "sync interval cannot be negative", nil)
 		}
 		if d.OfflineCapabilities.LocalBufferSize < 0 {
-			return fmt.Errorf("local buffer size cannot be negative")
+			return E(op, ErrCodeInvalidDevice, "local buffer size cannot be negative", nil)
 		}
 	}
 
@@ -145,13 +148,18 @@ func (d *Device) SetStatus(status Status) {
 }
 
 // SetConfig updates the device configuration with versioning
-func (d *Device) SetConfig(config json.RawMessage, appliedBy string) {
+func (d *Device) SetConfig(config json.RawMessage, appliedBy string) error {
+	const op = "Device.SetConfig"
+
+	if len(config) == 0 {
+		return E(op, ErrCodeInvalidOperation, "config cannot be empty", nil)
+	}
+
 	now := time.Now().UTC()
+	hash := calculateConfigHash(config)
 
 	// Create new config version
 	version := len(d.ConfigHistory) + 1
-	hash := calculateConfigHash(config) // Implementation needed
-
 	configVersion := ConfigVersion{
 		Version:   version,
 		Config:    config,
@@ -165,57 +173,110 @@ func (d *Device) SetConfig(config json.RawMessage, appliedBy string) {
 	d.Config = config
 	d.LastConfigHash = hash
 	d.UpdatedAt = now
+
+	return nil
 }
 
 // ValidateConfig marks the current config as validated
-func (d *Device) ValidateConfig() {
-	if len(d.ConfigHistory) > 0 {
-		now := time.Now().UTC()
-		latest := &d.ConfigHistory[len(d.ConfigHistory)-1]
-		latest.ValidatedAt = &now
+func (d *Device) ValidateConfig() error {
+	const op = "Device.ValidateConfig"
+
+	if len(d.ConfigHistory) == 0 {
+		return E(op, ErrCodeInvalidOperation, "no configuration history exists", nil)
 	}
+
+	now := time.Now().UTC()
+	latest := &d.ConfigHistory[len(d.ConfigHistory)-1]
+	latest.ValidatedAt = &now
+	return nil
 }
 
 // UpdateDiscoveryInfo updates the device's discovery-related information
-func (d *Device) UpdateDiscoveryInfo(method DiscoveryMethod, networkInfo *NetworkInfo) {
+func (d *Device) UpdateDiscoveryInfo(method DiscoveryMethod, networkInfo *NetworkInfo) error {
+	const op = "Device.UpdateDiscoveryInfo"
+
+	if networkInfo != nil {
+		if networkInfo.Port < 0 || networkInfo.Port > 65535 {
+			return E(op, ErrCodeInvalidDevice, "invalid port number", nil)
+		}
+	}
+
 	now := time.Now().UTC()
 	d.LastDiscovered = now
 	d.DiscoveryMethod = method
 	d.NetworkInfo = networkInfo
 	d.UpdatedAt = now
+
+	return nil
 }
 
 // AddTag adds or updates a tag value
-func (d *Device) AddTag(key, value string) {
+func (d *Device) AddTag(key, value string) error {
+	const op = "Device.AddTag"
+
+	if key == "" {
+		return E(op, ErrCodeInvalidOperation, "tag key cannot be empty", nil)
+	}
+
 	if d.Tags == nil {
 		d.Tags = make(map[string]string)
 	}
 	d.Tags[key] = value
 	d.UpdatedAt = time.Now().UTC()
+
+	return nil
 }
 
 // RemoveTag removes a tag if it exists
-func (d *Device) RemoveTag(key string) {
+func (d *Device) RemoveTag(key string) error {
+	const op = "Device.RemoveTag"
+
+	if key == "" {
+		return E(op, ErrCodeInvalidOperation, "tag key cannot be empty", nil)
+	}
+
 	if d.Tags != nil {
 		delete(d.Tags, key)
 		d.UpdatedAt = time.Now().UTC()
 	}
+	return nil
 }
 
 // UpdateComplianceStatus updates the device's compliance information
-func (d *Device) UpdateComplianceStatus(status *ComplianceStatus) {
+func (d *Device) UpdateComplianceStatus(status *ComplianceStatus) error {
+	const op = "Device.UpdateComplianceStatus"
+
+	if status == nil {
+		return E(op, ErrCodeInvalidOperation, "compliance status cannot be nil", nil)
+	}
+
 	d.ComplianceStatus = status
 	d.UpdatedAt = time.Now().UTC()
+	return nil
 }
 
 // UpdateOfflineCapabilities updates the device's airgap support information
-func (d *Device) UpdateOfflineCapabilities(capabilities *OfflineCapabilities) {
+func (d *Device) UpdateOfflineCapabilities(capabilities *OfflineCapabilities) error {
+	const op = "Device.UpdateOfflineCapabilities"
+
+	if capabilities == nil {
+		return E(op, ErrCodeInvalidOperation, "offline capabilities cannot be nil", nil)
+	}
+
+	if capabilities.SyncInterval < 0 {
+		return E(op, ErrCodeInvalidDevice, "sync interval cannot be negative", nil)
+	}
+	if capabilities.LocalBufferSize < 0 {
+		return E(op, ErrCodeInvalidDevice, "local buffer size cannot be negative", nil)
+	}
+
 	d.OfflineCapabilities = capabilities
 	d.UpdatedAt = time.Now().UTC()
+	return nil
 }
 
 // calculateConfigHash generates a hash of the configuration
-// Implementation needed - placeholder for now
 func calculateConfigHash(config json.RawMessage) string {
-	return "hash-placeholder" // TODO: Implement proper hashing
+	hash := sha256.Sum256(config)
+	return hex.EncodeToString(hash[:])
 }
