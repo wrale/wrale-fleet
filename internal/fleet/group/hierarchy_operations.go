@@ -37,18 +37,41 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, newParentID string) error {
 	const op = "HierarchyManager.UpdateHierarchy"
 
+	// Pre-validate the hierarchy change
+	if err := h.ValidateHierarchyChange(ctx, group, newParentID); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	// Perform the update operation
+	if err := h.updateHierarchyInternal(ctx, group, newParentID); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	// After all updates are complete, validate the entire hierarchy
+	if err := h.ValidateHierarchyIntegrity(ctx, group.TenantID); err != nil {
+		// If validation fails, attempt to roll back to previous state
+		if rbErr := h.updateHierarchyInternal(ctx, group, group.ParentID); rbErr != nil {
+			return E(op, ErrCodeStoreOperation,
+				fmt.Sprintf("hierarchy validation failed and rollback failed: %v (rollback error: %v)",
+					err, rbErr), err)
+		}
+		return E(op, ErrCodeInvalidGroup, "hierarchy integrity validation failed", err)
+	}
+
+	return nil
+}
+
+// updateHierarchyInternal performs the actual hierarchy update without validation
+func (h *HierarchyManager) updateHierarchyInternal(ctx context.Context, group *Group, newParentID string) error {
+	const op = "updateHierarchyInternal"
+
 	// Get a fresh copy of the group to ensure we have the latest state
 	currentGroup, err := h.store.Get(ctx, group.TenantID, group.ID)
 	if err != nil {
 		return E(op, ErrCodeStoreOperation, "failed to get current group state", err)
 	}
 
-	// Validate the hierarchy change
-	if err := h.ValidateHierarchyChange(ctx, currentGroup, newParentID); err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-
-	// Clear existing parent relationship if any
+	// If there's an existing parent, remove this group from its children
 	if currentGroup.ParentID != "" {
 		oldParent, err := h.store.Get(ctx, currentGroup.TenantID, currentGroup.ParentID)
 		if err != nil {
@@ -60,11 +83,16 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 		if err := h.store.Update(ctx, oldParent); err != nil {
 			return E(op, ErrCodeStoreOperation, "failed to update old parent group", err)
 		}
+	}
 
-		// Clear the current group's parent reference
-		if err := currentGroup.SetParent("", nil); err != nil {
-			return fmt.Errorf("%s: %w", op, err)
-		}
+	// First clear the current group's parent (making it a root group temporarily)
+	if err := currentGroup.SetParent("", nil); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	// Persist the intermediate state
+	if err := h.store.Update(ctx, currentGroup); err != nil {
+		return E(op, ErrCodeStoreOperation, "failed to update group intermediate state", err)
 	}
 
 	// Establish new parent relationship if specified
@@ -87,18 +115,13 @@ func (h *HierarchyManager) UpdateHierarchy(ctx context.Context, group *Group, ne
 		}
 	}
 
-	// Persist the updated group state
+	// Persist the final group state
 	if err := h.store.Update(ctx, currentGroup); err != nil {
 		return E(op, ErrCodeStoreOperation, "failed to update group", err)
 	}
 
 	// Update the input group to reflect the changes
 	*group = *currentGroup
-
-	// Verify the hierarchy integrity after the update
-	if err := h.ValidateHierarchyIntegrity(ctx, group.TenantID); err != nil {
-		return E(op, ErrCodeInvalidGroup, "hierarchy integrity validation failed after update", err)
-	}
 
 	return nil
 }
