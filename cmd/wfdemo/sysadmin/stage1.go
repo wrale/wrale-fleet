@@ -3,8 +3,6 @@ package sysadmin
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"time"
 
 	"go.uber.org/zap"
@@ -14,16 +12,21 @@ import (
 
 // DeviceRegistrationScenario demonstrates basic device registration workflow
 type DeviceRegistrationScenario struct {
-	base          *scenario.BaseScenario
-	wfcentralPath string
+	base     *scenario.BaseScenario
+	executor *commandExecutor
 }
 
 // NewDeviceRegistrationScenario creates a new device registration demo
-func NewDeviceRegistrationScenario(logger *zap.Logger, wfcentralPath string) *DeviceRegistrationScenario {
-	return &DeviceRegistrationScenario{
-		base:          scenario.NewBaseScenario("device-registration", "Demonstrates registering a new device with wfcentral", logger),
-		wfcentralPath: wfcentralPath,
+func NewDeviceRegistrationScenario(logger *zap.Logger, wfcentralPath string) (*DeviceRegistrationScenario, error) {
+	executor, err := newCommandExecutor(wfcentralPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create command executor: %w", err)
 	}
+
+	return &DeviceRegistrationScenario{
+		base:     scenario.NewBaseScenario("device-registration", "Demonstrates registering a new device with wfcentral", logger),
+		executor: executor,
+	}, nil
 }
 
 func (s *DeviceRegistrationScenario) Name() string                      { return s.base.Name() }
@@ -33,30 +36,23 @@ func (s *DeviceRegistrationScenario) Cleanup(ctx context.Context) error { return
 
 func (s *DeviceRegistrationScenario) Run(ctx context.Context) error {
 	steps := []struct {
-		name    string
-		command string
-		args    []string
+		name string
+		args []string
 	}{
 		{
-			name:    "Register Device",
-			command: s.wfcentralPath,
-			args:    []string{"device", "register", "--name", "demo-device-1"},
+			name: "Register Device",
+			args: []string{"device", "register", "--name", "demo-device-1"},
 		},
 		{
-			name:    "Verify Registration",
-			command: s.wfcentralPath,
-			args:    []string{"device", "get", "demo-device-1"},
+			name: "Verify Registration",
+			args: []string{"device", "get", "demo-device-1"},
 		},
 	}
 
 	for _, step := range steps {
 		s.base.Logger().Info("executing step", zap.String("step", step.name))
 
-		cmd := exec.CommandContext(ctx, step.command, step.args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
+		if err := s.executor.executeCommand(ctx, step.args); err != nil {
 			return fmt.Errorf("step %s failed: %w", step.name, err)
 		}
 
@@ -68,16 +64,21 @@ func (s *DeviceRegistrationScenario) Run(ctx context.Context) error {
 
 // StatusMonitoringScenario demonstrates device status monitoring
 type StatusMonitoringScenario struct {
-	base          *scenario.BaseScenario
-	wfcentralPath string
+	base     *scenario.BaseScenario
+	executor *commandExecutor
 }
 
 // NewStatusMonitoringScenario creates a new status monitoring demo
-func NewStatusMonitoringScenario(logger *zap.Logger, wfcentralPath string) *StatusMonitoringScenario {
-	return &StatusMonitoringScenario{
-		base:          scenario.NewBaseScenario("status-monitoring", "Demonstrates monitoring device status and health", logger),
-		wfcentralPath: wfcentralPath,
+func NewStatusMonitoringScenario(logger *zap.Logger, wfcentralPath string) (*StatusMonitoringScenario, error) {
+	executor, err := newCommandExecutor(wfcentralPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create command executor: %w", err)
 	}
+
+	return &StatusMonitoringScenario{
+		base:     scenario.NewBaseScenario("status-monitoring", "Demonstrates monitoring device status and health", logger),
+		executor: executor,
+	}, nil
 }
 
 func (s *StatusMonitoringScenario) Name() string                      { return s.base.Name() }
@@ -87,35 +88,27 @@ func (s *StatusMonitoringScenario) Cleanup(ctx context.Context) error { return s
 
 func (s *StatusMonitoringScenario) Run(ctx context.Context) error {
 	steps := []struct {
-		name    string
-		command string
-		args    []string
+		name string
+		args []string
 	}{
 		{
-			name:    "View Device Status",
-			command: s.wfcentralPath,
-			args:    []string{"device", "status", "demo-device-1"},
+			name: "View Device Status",
+			args: []string{"device", "status", "demo-device-1"},
 		},
 		{
-			name:    "Monitor Health Metrics",
-			command: s.wfcentralPath,
-			args:    []string{"device", "health", "demo-device-1"},
+			name: "Monitor Health Metrics",
+			args: []string{"device", "health", "demo-device-1"},
 		},
 		{
-			name:    "Check Alert History",
-			command: s.wfcentralPath,
-			args:    []string{"device", "alerts", "demo-device-1"},
+			name: "Check Alert History",
+			args: []string{"device", "alerts", "demo-device-1"},
 		},
 	}
 
 	for _, step := range steps {
 		s.base.Logger().Info("executing step", zap.String("step", step.name))
 
-		cmd := exec.CommandContext(ctx, step.command, step.args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
+		if err := s.executor.executeCommand(ctx, step.args); err != nil {
 			return fmt.Errorf("step %s failed: %w", step.name, err)
 		}
 
@@ -127,16 +120,21 @@ func (s *StatusMonitoringScenario) Run(ctx context.Context) error {
 
 // ConfigurationScenario demonstrates device configuration management
 type ConfigurationScenario struct {
-	base          *scenario.BaseScenario
-	wfcentralPath string
+	base     *scenario.BaseScenario
+	executor *commandExecutor
 }
 
 // NewConfigurationScenario creates a new configuration management demo
-func NewConfigurationScenario(logger *zap.Logger, wfcentralPath string) *ConfigurationScenario {
-	return &ConfigurationScenario{
-		base:          scenario.NewBaseScenario("configuration-management", "Demonstrates device configuration workflows", logger),
-		wfcentralPath: wfcentralPath,
+func NewConfigurationScenario(logger *zap.Logger, wfcentralPath string) (*ConfigurationScenario, error) {
+	executor, err := newCommandExecutor(wfcentralPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create command executor: %w", err)
 	}
+
+	return &ConfigurationScenario{
+		base:     scenario.NewBaseScenario("configuration-management", "Demonstrates device configuration workflows", logger),
+		executor: executor,
+	}, nil
 }
 
 func (s *ConfigurationScenario) Name() string                      { return s.base.Name() }
@@ -146,40 +144,31 @@ func (s *ConfigurationScenario) Cleanup(ctx context.Context) error { return s.ba
 
 func (s *ConfigurationScenario) Run(ctx context.Context) error {
 	steps := []struct {
-		name    string
-		command string
-		args    []string
+		name string
+		args []string
 	}{
 		{
-			name:    "View Current Config",
-			command: s.wfcentralPath,
-			args:    []string{"device", "config", "get", "demo-device-1"},
+			name: "View Current Config",
+			args: []string{"device", "config", "get", "demo-device-1"},
 		},
 		{
-			name:    "Update Config",
-			command: s.wfcentralPath,
-			args:    []string{"device", "config", "set", "demo-device-1", "--file", "demo-config.json"},
+			name: "Update Config",
+			args: []string{"device", "config", "set", "demo-device-1", "--file", "demo-config.json"},
 		},
 		{
-			name:    "Verify Config Update",
-			command: s.wfcentralPath,
-			args:    []string{"device", "config", "get", "demo-device-1"},
+			name: "Verify Config Update",
+			args: []string{"device", "config", "get", "demo-device-1"},
 		},
 		{
-			name:    "View Config History",
-			command: s.wfcentralPath,
-			args:    []string{"device", "config", "history", "demo-device-1"},
+			name: "View Config History",
+			args: []string{"device", "config", "history", "demo-device-1"},
 		},
 	}
 
 	for _, step := range steps {
 		s.base.Logger().Info("executing step", zap.String("step", step.name))
 
-		cmd := exec.CommandContext(ctx, step.command, step.args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
+		if err := s.executor.executeCommand(ctx, step.args); err != nil {
 			return fmt.Errorf("step %s failed: %w", step.name, err)
 		}
 
@@ -190,10 +179,28 @@ func (s *ConfigurationScenario) Run(ctx context.Context) error {
 }
 
 // Stage1Scenarios returns all Stage 1 scenarios for the SysAdmin persona
+// It may return a partial list of scenarios if some fail to initialize
 func Stage1Scenarios(logger *zap.Logger, wfcentralPath string) []scenario.Scenario {
-	return []scenario.Scenario{
-		NewDeviceRegistrationScenario(logger, wfcentralPath),
-		NewStatusMonitoringScenario(logger, wfcentralPath),
-		NewConfigurationScenario(logger, wfcentralPath),
+	var scenarios []scenario.Scenario
+
+	// Try to create each scenario, logging errors but continuing
+	if reg, err := NewDeviceRegistrationScenario(logger, wfcentralPath); err != nil {
+		logger.Error("failed to create device registration scenario", zap.Error(err))
+	} else {
+		scenarios = append(scenarios, reg)
 	}
+
+	if mon, err := NewStatusMonitoringScenario(logger, wfcentralPath); err != nil {
+		logger.Error("failed to create status monitoring scenario", zap.Error(err))
+	} else {
+		scenarios = append(scenarios, mon)
+	}
+
+	if conf, err := NewConfigurationScenario(logger, wfcentralPath); err != nil {
+		logger.Error("failed to create configuration scenario", zap.Error(err))
+	} else {
+		scenarios = append(scenarios, conf)
+	}
+
+	return scenarios
 }
