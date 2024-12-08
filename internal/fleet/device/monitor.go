@@ -2,6 +2,8 @@ package device
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -12,6 +14,7 @@ type SecurityEventType string
 
 const (
 	EventAuthentication  SecurityEventType = "authentication"
+	EventAccess          SecurityEventType = "access"
 	EventConfigChange    SecurityEventType = "config_change"
 	EventStatusChange    SecurityEventType = "status_change"
 	EventNetworkChange   SecurityEventType = "network_change"
@@ -32,12 +35,15 @@ type SecurityEvent struct {
 // SecurityMonitor tracks and logs security-relevant events
 type SecurityMonitor struct {
 	logger *zap.Logger
+	mu     sync.RWMutex
+	events map[string][]SecurityEvent // DeviceID -> Events
 }
 
 // NewSecurityMonitor creates a new security monitoring service
 func NewSecurityMonitor(logger *zap.Logger) *SecurityMonitor {
 	return &SecurityMonitor{
 		logger: logger.With(zap.String("component", "security_monitor")),
+		events: make(map[string][]SecurityEvent),
 	}
 }
 
@@ -60,6 +66,51 @@ func (m *SecurityMonitor) RecordEvent(ctx context.Context, event SecurityEvent) 
 	}
 
 	m.logger.Info("security event", fields...)
+
+	// Store event for potential updates
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.events[event.DeviceID]; !exists {
+		m.events[event.DeviceID] = make([]SecurityEvent, 0, 10)
+	}
+	m.events[event.DeviceID] = append(m.events[event.DeviceID], event)
+}
+
+// AddEventDetail adds additional details to the most recent event for a device
+func (m *SecurityMonitor) AddEventDetail(ctx context.Context, deviceID string, key string, value string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	deviceEvents, exists := m.events[deviceID]
+	if !exists || len(deviceEvents) == 0 {
+		return fmt.Errorf("no events found for device %s", deviceID)
+	}
+
+	// Get the most recent event
+	lastEvent := &deviceEvents[len(deviceEvents)-1]
+
+	// Convert details to map if necessary
+	details, ok := lastEvent.Details.(map[string]string)
+	if !ok {
+		details = make(map[string]string)
+		if lastEvent.Details != nil {
+			// If there were existing details of a different type, preserve them
+			details["_previous"] = fmt.Sprintf("%v", lastEvent.Details)
+		}
+	}
+
+	// Add new detail
+	details[key] = value
+	lastEvent.Details = details
+
+	// Log the addition
+	m.logger.Info("added event detail",
+		zap.String("device_id", deviceID),
+		zap.String("key", key),
+		zap.String("value", value))
+
+	return nil
 }
 
 // RecordAuthAttempt logs an authentication attempt
