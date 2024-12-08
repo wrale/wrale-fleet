@@ -48,30 +48,10 @@ func (s *Store) Create(ctx context.Context, g *group.Group) error {
 	// Validate parent reference if set
 	if g.ParentID != "" {
 		parentKey := s.key(g.TenantID, g.ParentID)
-		parent, exists := s.groups[parentKey]
+		_, exists := s.groups[parentKey]
 		if !exists {
 			return group.E("Store.Create", group.ErrCodeInvalidGroup,
 				fmt.Sprintf("parent group %s does not exist", g.ParentID), nil)
-		}
-
-		// Ensure bidirectional relationship
-		parent.AddChild(g.ID)
-		s.groups[parentKey] = parent
-	}
-
-	// Validate child references
-	for _, childID := range g.Ancestry.Children {
-		childKey := s.key(g.TenantID, childID)
-		child, exists := s.groups[childKey]
-		if !exists {
-			return group.E("Store.Create", group.ErrCodeInvalidGroup,
-				fmt.Sprintf("child group %s does not exist", childID), nil)
-		}
-
-		// Verify child's parent reference
-		if child.ParentID != g.ID {
-			return group.E("Store.Create", group.ErrCodeInvalidGroup,
-				fmt.Sprintf("child group %s does not reference this group as parent", childID), nil)
 		}
 	}
 
@@ -110,29 +90,20 @@ func (s *Store) Update(ctx context.Context, g *group.Group) error {
 		return group.ErrGroupNotFound
 	}
 
-	// Validate parent reference if set
+	// Validate existence of referenced groups only
 	if g.ParentID != "" {
 		parentKey := s.key(g.TenantID, g.ParentID)
-		_, exists := s.groups[parentKey]
-		if !exists {
+		if _, exists := s.groups[parentKey]; !exists {
 			return group.E("Store.Update", group.ErrCodeInvalidGroup,
 				fmt.Sprintf("parent group %s does not exist", g.ParentID), nil)
 		}
 	}
 
-	// Validate child references
 	for _, childID := range g.Ancestry.Children {
 		childKey := s.key(g.TenantID, childID)
-		child, exists := s.groups[childKey]
-		if !exists {
+		if _, exists := s.groups[childKey]; !exists {
 			return group.E("Store.Update", group.ErrCodeInvalidGroup,
 				fmt.Sprintf("child group %s does not exist", childID), nil)
-		}
-
-		// Verify child's parent reference
-		if child.ParentID != g.ID {
-			return group.E("Store.Update", group.ErrCodeInvalidGroup,
-				fmt.Sprintf("child group %s does not reference this group as parent", childID), nil)
 		}
 	}
 
