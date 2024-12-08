@@ -63,21 +63,13 @@ func mainWithInit(initDone chan<- struct{}) {
 		close(initDone)
 	}
 
-	// Create root context that will be canceled on interrupt
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// Set up signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigChan
-		log.Info("received shutdown signal", zap.String("signal", sig.String()))
-		// Create context with timeout for graceful shutdown
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer shutdownCancel()
-		cancel()
-	}()
+
+	// Create context that will be canceled on interrupt
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Start server
 	log.Info("starting wfcentral server",
@@ -85,6 +77,27 @@ func mainWithInit(initDone chan<- struct{}) {
 		zap.String("data_dir", cfg.DataDir),
 		zap.String("log_level", cfg.LogLevel),
 	)
+
+	// Handle shutdown signal in a separate goroutine
+	go func() {
+		sig := <-sigChan
+		log.Info("received shutdown signal", zap.String("signal", sig.String()))
+
+		// Create context with timeout for graceful shutdown
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer shutdownCancel()
+
+		// Trigger graceful shutdown
+		cancel()
+
+		// Wait for shutdown to complete or timeout
+		select {
+		case <-shutdownCtx.Done():
+			log.Warn("shutdown timed out", zap.Duration("timeout", shutdownTimeout))
+		case <-ctx.Done():
+			log.Info("shutdown completed")
+		}
+	}()
 
 	if err := srv.Run(ctx); err != nil {
 		log.Error("server error", zap.Error(err))

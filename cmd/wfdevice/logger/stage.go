@@ -34,9 +34,10 @@ func WithStage(logger *zap.Logger, stage int) *zap.Logger {
 func StageCheck(logger *zap.Logger, requiredStage int, operation string) bool {
 	currentStage := MinStage // Default to Stage 1 if not specified
 
-	// Extract current stage from logger context
+	// Extract current stage from logger fields
 	if ce := logger.Check(zapcore.InfoLevel, ""); ce != nil {
-		for _, f := range ce.Context {
+		fields := ce.Entry.Fields()
+		for _, f := range fields {
 			if f.Key == stageKey {
 				if stage, ok := f.Integer; ok {
 					currentStage = int(stage)
