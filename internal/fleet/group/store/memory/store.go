@@ -47,8 +47,7 @@ func (s *Store) Create(ctx context.Context, g *group.Group) error {
 
 	// Check for duplicate
 	if _, exists := s.groups[g.TenantID][g.ID]; exists {
-		return group.E("Store.Create", group.ErrCodeGroupExists,
-			"group already exists", nil)
+		return group.ErrGroupExists
 	}
 
 	// Store copy of group
@@ -68,14 +67,12 @@ func (s *Store) Get(ctx context.Context, tenantID, id string) (*group.Group, err
 
 	tenantGroups, exists := s.groups[tenantID]
 	if !exists {
-		return nil, group.E("Store.Get", group.ErrCodeGroupNotFound,
-			"group not found", nil)
+		return nil, group.ErrGroupNotFound
 	}
 
 	g, exists := tenantGroups[id]
 	if !exists {
-		return nil, group.E("Store.Get", group.ErrCodeGroupNotFound,
-			"group not found", nil)
+		return nil, group.ErrGroupNotFound
 	}
 
 	return g.DeepCopy(), nil
@@ -92,13 +89,11 @@ func (s *Store) Update(ctx context.Context, g *group.Group) error {
 
 	tenantGroups, exists := s.groups[g.TenantID]
 	if !exists {
-		return group.E("Store.Update", group.ErrCodeGroupNotFound,
-			"group not found", nil)
+		return group.ErrGroupNotFound
 	}
 
 	if _, exists := tenantGroups[g.ID]; !exists {
-		return group.E("Store.Update", group.ErrCodeGroupNotFound,
-			"group not found", nil)
+		return group.ErrGroupNotFound
 	}
 
 	s.groups[g.TenantID][g.ID] = g.DeepCopy()
@@ -112,13 +107,11 @@ func (s *Store) Delete(ctx context.Context, tenantID, id string) error {
 
 	tenantGroups, exists := s.groups[tenantID]
 	if !exists {
-		return group.E("Store.Delete", group.ErrCodeGroupNotFound,
-			"group not found", nil)
+		return group.ErrGroupNotFound
 	}
 
 	if _, exists := tenantGroups[id]; !exists {
-		return group.E("Store.Delete", group.ErrCodeGroupNotFound,
-			"group not found", nil)
+		return group.ErrGroupNotFound
 	}
 
 	// Clean up memberships
