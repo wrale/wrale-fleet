@@ -169,6 +169,12 @@ func (g *Group) UpdateProperties(properties Properties) error {
 
 // AddChild adds a child group ID to this group's children list
 func (g *Group) AddChild(childID string) {
+	// Check if child already exists
+	for _, id := range g.Ancestry.Children {
+		if id == childID {
+			return
+		}
+	}
 	g.Ancestry.Children = append(g.Ancestry.Children, childID)
 	g.UpdatedAt = time.Now().UTC()
 }
@@ -187,7 +193,8 @@ func (g *Group) RemoveChild(childID string) {
 
 // IsAncestor checks if the given group ID is an ancestor of this group
 func (g *Group) IsAncestor(groupID string) bool {
-	for _, id := range g.Ancestry.PathParts {
+	// Check all path parts except the last one (which is the current group's ID)
+	for _, id := range g.Ancestry.PathParts[:len(g.Ancestry.PathParts)-1] {
 		if id == groupID {
 			return true
 		}
