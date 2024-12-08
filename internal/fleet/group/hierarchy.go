@@ -120,21 +120,58 @@ func (h *HierarchyManager) GetAncestors(ctx context.Context, group *Group) ([]*G
 func (h *HierarchyManager) GetDescendants(ctx context.Context, group *Group) ([]*Group, error) {
 	const op = "HierarchyManager.GetDescendants"
 
-	descendants := make([]*Group, 0)
-	for _, childID := range group.Ancestry.Children {
-		child, err := h.store.Get(ctx, group.TenantID, childID)
-		if err != nil {
-			return nil, E(op, ErrCodeStoreOperation, "failed to get child group", err)
-		}
-		descendants = append(descendants, child)
+	var descendants []*Group
 
-		// Recursively get descendants of this child
-		childDescendants, err := h.GetDescendants(ctx, child)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
-		}
-		descendants = append(descendants, childDescendants...)
+	// First, get all groups for the tenant for efficient processing
+	allGroups, err := h.store.List(ctx, ListOptions{TenantID: group.TenantID})
+	if err != nil {
+		return nil, E(op, ErrCodeStoreOperation, "failed to list groups", err)
 	}
+
+	// Build a map for efficient lookup
+	groupMap := make(map[string]*Group)
+	for _, g := range allGroups {
+		groupMap[g.ID] = g
+	}
+
+	// Helper function to recursively collect descendants
+	var collectDescendants func(parentID string) error
+	collectDescendants = func(parentID string) error {
+		parent, exists := groupMap[parentID]
+		if !exists {
+			return nil // Skip if group doesn't exist
+		}
+
+		for _, childID := range parent.Ancestry.Children {
+			child, exists := groupMap[childID]
+			if !exists {
+				continue // Skip invalid children
+			}
+
+			// Ensure we haven't already added this descendant
+			alreadyAdded := false
+			for _, d := range descendants {
+				if d.ID == child.ID {
+					alreadyAdded = true
+					break
+				}
+			}
+
+			if !alreadyAdded {
+				descendants = append(descendants, child)
+				if err := collectDescendants(childID); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+
+	// Start collection from the root group
+	if err := collectDescendants(group.ID); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
 	return descendants, nil
 }
 
@@ -156,7 +193,7 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 
 	// Validate each group's hierarchy information
 	for _, group := range groups {
-		// Validate parent relationship
+		// Validate parent relationship if it exists
 		if group.ParentID != "" {
 			parent, exists := groupMap[group.ParentID]
 			if !exists {
@@ -164,7 +201,8 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 					fmt.Sprintf("group %s references non-existent parent %s", group.ID, group.ParentID),
 					nil)
 			}
-			// Validate that this group is in the parent's children list
+
+			// Verify the parent-child relationship is bi-directional
 			found := false
 			for _, childID := range parent.Ancestry.Children {
 				if childID == group.ID {
@@ -179,26 +217,38 @@ func (h *HierarchyManager) ValidateHierarchyIntegrity(ctx context.Context, tenan
 			}
 		}
 
-		// Validate children relationships
-		for _, childID := range group.Ancestry.Children {
-			child, exists := groupMap[childID]
-			if !exists {
-				return E(op, ErrCodeInvalidGroup,
-					fmt.Sprintf("group %s references non-existent child %s", group.ID, childID),
-					nil)
-			}
-			if child.ParentID != group.ID {
-				return E(op, ErrCodeInvalidGroup,
-					fmt.Sprintf("child group %s does not reference parent %s", child.ID, group.ID),
-					nil)
-			}
-		}
-
-		// Validate ancestry path
+		// Validate ancestry path structure
 		if len(group.Ancestry.PathParts) == 0 || group.Ancestry.PathParts[len(group.Ancestry.PathParts)-1] != group.ID {
 			return E(op, ErrCodeInvalidGroup,
 				fmt.Sprintf("group %s has invalid ancestry path", group.ID),
 				nil)
+		}
+
+		// Verify each ancestor in the path exists and maintains proper relationships
+		for i := 0; i < len(group.Ancestry.PathParts)-1; i++ {
+			ancestorID := group.Ancestry.PathParts[i]
+			ancestor, exists := groupMap[ancestorID]
+			if !exists {
+				return E(op, ErrCodeInvalidGroup,
+					fmt.Sprintf("group %s references non-existent ancestor %s in path", group.ID, ancestorID),
+					nil)
+			}
+
+			// If this is the immediate parent, verify the parent-child relationship
+			if i == len(group.Ancestry.PathParts)-2 {
+				found := false
+				for _, childID := range ancestor.Ancestry.Children {
+					if childID == group.ID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return E(op, ErrCodeInvalidGroup,
+						fmt.Sprintf("group %s not found in ancestor %s children list", group.ID, ancestor.ID),
+						nil)
+				}
+			}
 		}
 	}
 
