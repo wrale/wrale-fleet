@@ -50,7 +50,11 @@ func (s *Server) checkDeviceServiceHealth(ctx context.Context) error {
 		return fmt.Errorf("device service not initialized")
 	}
 
-	// TODO: Implement more comprehensive health checks
+	// Verify store access
+	if _, err := s.device.List(ctx, device.ListOptions{}); err != nil {
+		return fmt.Errorf("device store access check failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -64,19 +68,27 @@ func (s *Server) registerStage1Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/devices/", s.handleDeviceByID())
 }
 
-// handleHealth implements the health check endpoint.
+// handleHealth implements the health check endpoint with detailed component status.
 func (s *Server) handleHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		status, err := s.Status(ctx)
+		status, components, err := s.Status(ctx)
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
+		// Generate JSON response with component details
+		response, err := s.handleHealthResponse(status, components)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("error generating health response: %v", err),
+				http.StatusInternalServerError)
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"%s"}`, status)
+		w.Write(response)
 	}
 }
 

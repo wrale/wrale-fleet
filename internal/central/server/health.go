@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -13,8 +14,14 @@ type HealthStatus struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// componentHealth checks individual component health
-func (s *Server) componentHealth(ctx context.Context) map[string]*HealthStatus {
+// HealthResponse represents the complete health check response
+type HealthResponse struct {
+	Status     string                   `json:"status"`
+	Components map[string]*HealthStatus `json:"components,omitempty"`
+}
+
+// getComponentHealth checks individual component health
+func (s *Server) getComponentHealth(ctx context.Context) map[string]*HealthStatus {
 	health := make(map[string]*HealthStatus)
 
 	// Check device service health
@@ -35,4 +42,14 @@ func (s *Server) componentHealth(ctx context.Context) map[string]*HealthStatus {
 	// as more components are introduced in later stages
 
 	return health
+}
+
+// handleHealthResponse writes a JSON health response
+func (s *Server) handleHealthResponse(status string, components map[string]*HealthStatus) ([]byte, error) {
+	response := HealthResponse{
+		Status:     status,
+		Components: components,
+	}
+
+	return json.Marshal(response)
 }

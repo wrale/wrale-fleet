@@ -146,17 +146,24 @@ func (s *Server) Stop() error {
 	return err
 }
 
-// Status returns the current server health status.
-func (s *Server) Status(ctx context.Context) (string, error) {
+// Status returns the current server health status and component details.
+func (s *Server) Status(ctx context.Context) (string, map[string]*HealthStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
 	defer cancel()
 
-	// Perform health checks
-	if err := s.checkHealth(ctx); err != nil {
-		return "unhealthy", err
+	// Get component health status
+	components := s.getComponentHealth(ctx)
+
+	// Determine overall status
+	status := "healthy"
+	for _, health := range components {
+		if health.Status != "healthy" {
+			status = "unhealthy"
+			break
+		}
 	}
 
-	return "healthy", nil
+	return status, components, nil
 }
 
 // routes sets up the HTTP routes based on current stage capabilities.
@@ -176,9 +183,12 @@ func (s *Server) checkHealth(ctx context.Context) error {
 		return fmt.Errorf("http server not initialized")
 	}
 
-	// Device service health check
-	if err := s.checkDeviceServiceHealth(ctx); err != nil {
-		return fmt.Errorf("device service health check failed: %w", err)
+	// Check component health
+	components := s.getComponentHealth(ctx)
+	for name, health := range components {
+		if health.Status != "healthy" {
+			return fmt.Errorf("component %s is unhealthy: %s", name, health.Message)
+		}
 	}
 
 	return nil
