@@ -104,17 +104,10 @@ func main() {
 		// Wait for demo goroutine to finish
 		wg.Wait()
 
-		// Close store (assuming store implements io.Closer)
+		// Close store if it implements io.Closer
 		if closer, ok := store.(interface{ Close() error }); ok {
 			if err := closer.Close(); err != nil {
 				logger.Error("failed to close store", zap.Error(err))
-			}
-		}
-
-		// Cleanup service resources
-		if cleaner, ok := service.(interface{ Cleanup(context.Context) error }); ok {
-			if err := cleaner.Cleanup(cleanupCtx); err != nil {
-				logger.Error("failed to cleanup service", zap.Error(err))
 			}
 		}
 
