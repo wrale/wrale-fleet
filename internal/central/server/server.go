@@ -41,6 +41,9 @@ const (
 	defaultLogLevel    = "info"
 	shutdownTimeout    = 5 * time.Second
 	healthCheckTimeout = 5 * time.Second
+	// readHeaderTimeout defines the amount of time allowed to read
+	// request headers. This helps prevent Slowloris DoS attacks.
+	readHeaderTimeout = 10 * time.Second
 )
 
 // New creates a new central control plane server instance.
@@ -91,16 +94,20 @@ func (s *Server) initialize() error {
 
 // Start begins serving requests and blocks until stopped.
 func (s *Server) Start(ctx context.Context) error {
-	// Initialize HTTP server
+	// Initialize HTTP server with security timeouts
 	s.httpSrv = &http.Server{
-		Addr:    ":" + s.cfg.Port,
-		Handler: s.routes(),
+		Addr:              ":" + s.cfg.Port,
+		Handler:           s.routes(),
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
 	// Start HTTP server
 	errChan := make(chan error, 1)
 	go func() {
-		s.logger.Info("starting HTTP server", zap.String("addr", s.httpSrv.Addr))
+		s.logger.Info("starting HTTP server",
+			zap.String("addr", s.httpSrv.Addr),
+			zap.Duration("header_timeout", readHeaderTimeout),
+		)
 		if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- fmt.Errorf("http server error: %w", err)
 		}

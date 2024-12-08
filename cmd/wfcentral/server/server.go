@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/wrale/wrale-fleet/internal/fleet/device"
 	"github.com/wrale/wrale-fleet/internal/fleet/device/store/memory"
@@ -18,6 +19,12 @@ const (
 	// Stage1 provides basic device management capabilities
 	Stage1 Stage = 1
 	// Future stages will be added here
+)
+
+const (
+	// readHeaderTimeout defines the amount of time allowed to read
+	// request headers. This helps prevent Slowloris DoS attacks.
+	readHeaderTimeout = 10 * time.Second
 )
 
 // Server represents the wfcentral server instance
@@ -84,15 +91,20 @@ func (s *Server) Run(ctx context.Context) error {
 		zap.Uint8("stage", uint8(s.stage)),
 	)
 
-	// Initialize HTTP server
+	// Initialize HTTP server with security timeouts
 	s.httpSrv = &http.Server{
-		Addr:    ":" + s.cfg.Port,
-		Handler: s.routes(),
+		Addr:              ":" + s.cfg.Port,
+		Handler:           s.routes(),
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
 	// Start HTTP server
 	errChan := make(chan error, 1)
 	go func() {
+		s.logger.Info("starting HTTP server",
+			zap.String("addr", s.httpSrv.Addr),
+			zap.Duration("header_timeout", readHeaderTimeout),
+		)
 		if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- fmt.Errorf("http server error: %w", err)
 		}
