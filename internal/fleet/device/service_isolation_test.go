@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wrale/fleet/internal/fleet/device/store/memory"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -15,7 +16,7 @@ func TestTenantIsolation(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	
 	// Initialize service with memory store
-	store := newTestStore(t)
+	store := memory.New()
 	service := NewService(store, logger)
 
 	// Create test tenants
@@ -28,6 +29,10 @@ func TestTenantIsolation(t *testing.T) {
 		device, err := service.Register(ctx, tenantID, "Test Device")
 		require.NoError(t, err)
 		devices[tenantID] = device
+		
+		// Verify device was created with correct tenant
+		assert.Equal(t, tenantID, device.TenantID)
+		assert.NotEmpty(t, device.ID)
 	}
 
 	// Test cases focusing on cross-tenant access attempts
@@ -84,6 +89,26 @@ func TestTenantIsolation(t *testing.T) {
 			expectError:   true,
 			errorContains: "unauthorized",
 		},
+		{
+			// This test specifically targets the scenario seen in make run
+			name:          "staging to production status update blocked",
+			sourceCtx:     ContextWithTenant(context.Background(), "tenant-staging"),
+			targetTenant:  "tenant-production",
+			targetDevice:  devices["tenant-production"],
+			operation:     "status_update",
+			expectError:   true,
+			errorContains: "unauthorized",
+		},
+		{
+			// Additional test for the reverse direction
+			name:          "production to staging status update blocked",
+			sourceCtx:     ContextWithTenant(context.Background(), "tenant-production"),
+			targetTenant:  "tenant-staging",
+			targetDevice:  devices["tenant-staging"],
+			operation:     "status_update",
+			expectError:   true,
+			errorContains: "unauthorized",
+		},
 	}
 
 	for _, tt := range tests {
@@ -99,15 +124,27 @@ func TestTenantIsolation(t *testing.T) {
 			case "delete":
 				err = service.Delete(tt.sourceCtx, tt.targetTenant, tt.targetDevice.ID)
 			case "update":
-				tt.targetDevice.UpdatedAt = time.Now()
-				err = service.Update(tt.sourceCtx, tt.targetDevice)
+				deviceCopy := *tt.targetDevice // Create copy to avoid modifying original
+				deviceCopy.UpdatedAt = time.Now()
+				err = service.Update(tt.sourceCtx, &deviceCopy)
 			}
 
 			// Verify expected outcome
 			if tt.expectError {
-				assert.Error(t, err)
+				require.Error(t, err)
 				if tt.errorContains != "" {
 					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+				
+				// Additional verification that device state didn't change
+				if tt.operation == "status_update" {
+					device, getErr := service.Get(
+						ContextWithTenant(context.Background(), tt.targetTenant),
+						tt.targetTenant,
+						tt.targetDevice.ID,
+					)
+					require.NoError(t, getErr)
+					assert.Equal(t, tt.targetDevice.Status, device.Status)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -118,7 +155,7 @@ func TestTenantIsolation(t *testing.T) {
 
 func TestTenantListIsolation(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := newTestStore(t)
+	store := memory.New()
 	service := NewService(store, logger)
 
 	// Create devices for multiple tenants
@@ -151,13 +188,18 @@ func TestTenantListIsolation(t *testing.T) {
 		for _, device := range devices {
 			assert.Equal(t, tenantID, device.TenantID)
 		}
-	}
-}
 
-// Helper to create a test store
-func newTestStore(t *testing.T) Store {
-	// You could return a memory store implementation here
-	// For now we'll return nil to make the test fail and remind us to implement it
-	t.Helper()
-	return nil
+		// Verify we can't see other tenant's devices
+		otherTenants := make([]string, 0)
+		for _, t := range tenants {
+			if t != tenantID {
+				otherTenants = append(otherTenants, t)
+			}
+		}
+		for _, otherTenant := range otherTenants {
+			devices, err = service.List(ctx, ListOptions{TenantID: otherTenant})
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "unauthorized")
+		}
+	}
 }
