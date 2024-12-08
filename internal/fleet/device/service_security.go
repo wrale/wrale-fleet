@@ -12,7 +12,7 @@ import (
 // This provides centralized access logging for audit and compliance purposes.
 func (s *Service) recordDeviceAccess(ctx context.Context, device *Device, op string, success bool, details map[string]string) {
 	ctxTenant, _ := TenantFromContext(ctx)
-	
+
 	s.monitor.RecordEvent(ctx, SecurityEvent{
 		Type:      EventAccess,
 		DeviceID:  device.ID,
@@ -55,8 +55,8 @@ func (s *Service) validateTenantOperation(ctx context.Context, op string, tenant
 // to maintain an audit trail of device modifications.
 func (s *Service) recordConfigChange(ctx context.Context, device *Device, oldHash, newHash string) {
 	s.monitor.RecordConfigChange(ctx, device.ID, device.TenantID, "system", map[string]interface{}{
-		"old_hash": oldHash,
-		"new_hash": newHash,
+		"old_hash":  oldHash,
+		"new_hash":  newHash,
 		"timestamp": time.Now().UTC(),
 	})
 }
@@ -70,7 +70,7 @@ func (s *Service) validateSecurityContext(ctx context.Context) error {
 
 	// Validate tenant presence and format
 	if err := EnsureTenant(ctx); err != nil {
-		s.logError("validateSecurityContext", 
+		s.logError("validateSecurityContext",
 			fmt.Errorf("security context validation failed: %w", err))
 		return err
 	}
