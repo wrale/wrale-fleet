@@ -36,8 +36,6 @@ func (h *HierarchyManager) ValidateHierarchyChange(ctx context.Context, group *G
 // stagedUpdate represents a pending hierarchy update
 type stagedUpdate struct {
 	group      *Group
-	oldParent  *Group
-	newParent  *Group
 	needUpdate bool
 }
 
