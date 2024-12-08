@@ -8,7 +8,7 @@ GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOVET=$(GOCMD) vet
-BINARY_NAME=fleetd
+BINARY_NAME=wfcentral
 BINARY_OUTPUT_DIR=bin
 BINARY_PATH=$(BINARY_OUTPUT_DIR)/$(BINARY_NAME)
 
@@ -69,7 +69,7 @@ coverage: ## Generate test coverage report
 
 build: $(BINARY_OUTPUT_DIR) ## Build the binary
 	@echo "==> Building $(BINARY_NAME)"
-	$(GOBUILD) $(LDFLAGS) -o $(BINARY_PATH) ./cmd/fleetd
+	$(GOBUILD) $(LDFLAGS) -o $(BINARY_PATH) ./cmd/wfcentral
 
 system-test: $(TEST_OUTPUT_DIR) build ## Run system integration tests
 	@echo "==> Running system integration tests"
