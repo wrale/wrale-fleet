@@ -7,12 +7,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wrale/fleet/internal/fleet/device"
+	devmem "github.com/wrale/fleet/internal/fleet/device/store/memory"
 	"github.com/wrale/fleet/internal/fleet/group"
 )
 
 func TestStore(t *testing.T) {
-	// Create a new store with a mock device store
-	deviceStore := device.NewMemoryStore()
+	// Create a new store with a device store
+	deviceStore := devmem.New()
 	store := New(deviceStore)
 
 	// Test context with tenant ID
@@ -71,7 +72,7 @@ func TestStore(t *testing.T) {
 }
 
 func TestHierarchy(t *testing.T) {
-	deviceStore := device.NewMemoryStore()
+	deviceStore := devmem.New()
 	store := New(deviceStore)
 	ctx := context.Background()
 	tenantID := "test-tenant"
