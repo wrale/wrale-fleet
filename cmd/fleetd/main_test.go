@@ -60,8 +60,11 @@ func TestDemoManager(t *testing.T) {
 	// Let the demo run for a while to verify continuous operation
 	time.Sleep(testRunTime)
 
+	// Create context with proper tenant scope
+	ctx := device.ContextWithTenant(context.Background(), "tenant-production")
+
 	// Verify that the demo devices exist and are being maintained
-	devices, err := service.List(context.Background(), device.ListOptions{
+	devices, err := service.List(ctx, device.ListOptions{
 		TenantID: "tenant-production",
 	})
 	require.NoError(t, err, "Should be able to list devices")
