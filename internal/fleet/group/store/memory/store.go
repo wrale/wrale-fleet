@@ -198,12 +198,3 @@ func (s *Store) List(ctx context.Context, opts group.ListOptions) ([]*group.Grou
 
 	return result, nil
 }
-
-// matchesFilter checks if a group matches the list options filters
-func (s *Store) matchesFilter(g *group.Group, opts group.ListOptions) bool {
-	if opts.TenantID != "" && g.TenantID != opts.TenantID {
-		return false
-	}
-
-	return true
-}
