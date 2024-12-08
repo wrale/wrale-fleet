@@ -19,8 +19,8 @@ func createTestTemplate(id, tenantID string) *config.Template {
 // createTestVersion creates a new version for testing purposes
 // with a specified version number for deterministic testing
 func createTestVersion(templateID string, number int) *config.Version {
-	config := json.RawMessage(`{"key": "value"}`)
-	version := config.NewVersion(config, templateID, "test-user")
+	configData := json.RawMessage(`{"key": "value"}`)
+	version := config.NewVersion(configData, templateID, "test-user")
 	version.Number = number // Set for testing
 	return version
 }
