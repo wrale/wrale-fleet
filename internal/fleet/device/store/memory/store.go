@@ -23,6 +23,10 @@ func New() device.Store {
 
 // Create stores a new device
 func (s *Store) Create(ctx context.Context, d *device.Device) error {
+	if err := d.Validate(); err != nil {
+		return device.E("Store.Create", device.ErrCodeInvalidDevice, "invalid device", err)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -82,7 +86,21 @@ func (s *Store) List(ctx context.Context, opts device.ListOptions) ([]*device.De
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []*device.Device
+	// Estimate initial capacity to avoid resizing
+	capacity := len(s.devices)
+	if opts.TenantID != "" {
+		// If filtering by tenant, estimate lower capacity
+		capacity = capacity / 2
+	}
+	if len(opts.Tags) > 0 {
+		// If filtering by tags, estimate even lower
+		capacity = capacity / 4
+	}
+	if capacity < 10 {
+		capacity = 10
+	}
+
+	result := make([]*device.Device, 0, capacity)
 
 	for _, d := range s.devices {
 		if opts.TenantID != "" && d.TenantID != opts.TenantID {
@@ -111,11 +129,11 @@ func (s *Store) List(ctx context.Context, opts device.ListOptions) ([]*device.De
 
 	// Apply pagination
 	if opts.Offset >= len(result) {
-		return []*device.Device{}, nil
+		return make([]*device.Device, 0), nil
 	}
 
 	end := opts.Offset + opts.Limit
-	if end > len(result) {
+	if opts.Limit <= 0 || end > len(result) {
 		end = len(result)
 	}
 
