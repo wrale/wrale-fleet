@@ -11,7 +11,7 @@ import (
 func (s *Store) validateInput(op string, fields map[string]string) error {
 	for field, value := range fields {
 		if value == "" {
-			return config.NewError(op, config.ErrInvalidInput, fmt.Sprintf("%s is required", field))
+			return config.NewError(op, config.ErrValidationFailed, fmt.Sprintf("%s is required", field))
 		}
 	}
 	return nil
