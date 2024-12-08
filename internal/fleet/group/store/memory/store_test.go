@@ -22,7 +22,7 @@ func TestStore(t *testing.T) {
 	// Test group creation
 	t.Run("Create", func(t *testing.T) {
 		g := group.New(tenantID, "Test Group", group.TypeStatic)
-		
+
 		err := store.Create(ctx, g)
 		require.NoError(t, err)
 
