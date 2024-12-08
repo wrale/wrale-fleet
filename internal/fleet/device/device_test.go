@@ -13,9 +13,9 @@ func TestNew(t *testing.T) {
 	// Test creating a new device
 	tenantID := "test-tenant"
 	name := "test-device"
-	
+
 	device := New(tenantID, name)
-	
+
 	assert.NotEmpty(t, device.ID, "device ID should be generated")
 	assert.Equal(t, tenantID, device.TenantID, "tenant ID should match")
 	assert.Equal(t, name, device.Name, "device name should match")
@@ -81,12 +81,12 @@ func TestDevice_Validate(t *testing.T) {
 func TestDevice_SetStatus(t *testing.T) {
 	device := New("test-tenant", "test-device")
 	originalUpdate := device.UpdatedAt
-	
+
 	// Wait briefly to ensure timestamp changes
 	time.Sleep(time.Millisecond)
-	
+
 	device.SetStatus(StatusOnline)
-	
+
 	assert.Equal(t, StatusOnline, device.Status, "status should be updated")
 	assert.True(t, device.UpdatedAt.After(originalUpdate), "updated timestamp should be newer")
 }
@@ -94,25 +94,25 @@ func TestDevice_SetStatus(t *testing.T) {
 func TestDevice_SetConfig(t *testing.T) {
 	device := New("test-tenant", "test-device")
 	originalUpdate := device.UpdatedAt
-	
+
 	config := json.RawMessage(`{"key": "value"}`)
 	device.SetConfig(config)
-	
+
 	assert.Equal(t, config, device.Config, "config should be updated")
 	assert.True(t, device.UpdatedAt.After(originalUpdate), "updated timestamp should be newer")
 }
 
 func TestDevice_Tags(t *testing.T) {
 	device := New("test-tenant", "test-device")
-	
+
 	// Test adding tags
 	device.AddTag("env", "prod")
 	assert.Equal(t, "prod", device.Tags["env"], "tag should be added")
-	
+
 	// Test updating existing tag
 	device.AddTag("env", "dev")
 	assert.Equal(t, "dev", device.Tags["env"], "tag should be updated")
-	
+
 	// Test removing tag
 	device.RemoveTag("env")
 	_, exists := device.Tags["env"]
