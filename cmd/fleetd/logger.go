@@ -56,6 +56,63 @@ func getLoggingConfig() LoggingConfig {
 	return config
 }
 
+// createSamplingCore wraps a zapcore.Core with appropriate sampling configuration
+// based on the log level. This ensures we maintain important logs while reducing
+// volume for less critical entries.
+func createSamplingCore(core zapcore.Core, cfg LoggingConfig) zapcore.Core {
+	if !cfg.Sampling {
+		return core
+	}
+
+	// Create a tee of cores with different sampling configs for different levels
+	var cores []zapcore.Core
+
+	// Never sample error or above
+	errorCore := core.With([]zapcore.Field{
+		zap.String("sampling", "none"),
+	})
+	errorCore = zapcore.NewIncrementLogLevelCore(errorCore, zapcore.ErrorLevel)
+	cores = append(cores, errorCore)
+
+	// Sample warning logs: keep first 100, then sample 1/10
+	warnCore := zapcore.NewSampler(
+		zapcore.NewIncrementLogLevelCore(core, zapcore.WarnLevel),
+		time.Second,
+		100,
+		10,
+	)
+	warnCore = warnCore.With([]zapcore.Field{
+		zap.String("sampling", "warn"),
+	})
+	cores = append(cores, warnCore)
+
+	// Sample info logs: keep first 100, then sample 1/100
+	infoCore := zapcore.NewSampler(
+		zapcore.NewIncrementLogLevelCore(core, zapcore.InfoLevel),
+		time.Second,
+		100,
+		100,
+	)
+	infoCore = infoCore.With([]zapcore.Field{
+		zap.String("sampling", "info"),
+	})
+	cores = append(cores, infoCore)
+
+	// Heavily sample debug logs: keep first 50, then sample 1/1000
+	debugCore := zapcore.NewSampler(
+		zapcore.NewIncrementLogLevelCore(core, zapcore.DebugLevel),
+		time.Second,
+		50,
+		1000,
+	)
+	debugCore = debugCore.With([]zapcore.Field{
+		zap.String("sampling", "debug"),
+	})
+	cores = append(cores, debugCore)
+
+	return zapcore.NewTee(cores...)
+}
+
 // setupLogger configures the application logger based on environment variables.
 // It returns a configured zap.Logger with appropriate log levels and encoding.
 func setupLogger() (*zap.Logger, error) {
@@ -87,39 +144,13 @@ func setupLogger() (*zap.Logger, error) {
 		ErrorOutputPaths: []string{"stderr"},
 	}
 
-	// Configure sampling if enabled
-	if cfg.Sampling {
-		zapConfig.Sampling = &zap.SamplingConfig{
-			Initial:    100, // Log first 100 entries at full rate
-			Thereafter: 100, // Sample every 100th entry after that
-			// Set different hook intervals for different levels
-			Hook: func(entry zapcore.Entry, seen uint64) zapcore.SamplingDecision {
-				// Never sample error or above
-				if entry.Level >= zapcore.ErrorLevel {
-					return zapcore.LogDecision
-				}
-				// Sample info and debug differently
-				if entry.Level == zapcore.InfoLevel {
-					if seen%100 == 0 { // Log every 100th info entry
-						return zapcore.LogDecision
-					}
-				} else if entry.Level == zapcore.DebugLevel {
-					if seen%1000 == 0 { // Log every 1000th debug entry
-						return zapcore.LogDecision
-					}
-				}
-				return zapcore.DropDecision
-			},
-		}
-	}
-
 	// Configure stack traces
 	if !cfg.StackTrace {
 		zapConfig.DisableStacktrace = true
 	}
 
-	// Create the logger
-	logger, err := zapConfig.Build(
+	// Create the base logger
+	baseLogger, err := zapConfig.Build(
 		zap.AddCaller(),
 		zap.AddCallerSkip(1),
 		zap.AddStacktrace(zapcore.ErrorLevel),
@@ -128,8 +159,15 @@ func setupLogger() (*zap.Logger, error) {
 		return nil, err
 	}
 
+	// If sampling is enabled, wrap the core with our sampling configuration
+	if cfg.Sampling {
+		core := baseLogger.Core()
+		sampledCore := createSamplingCore(core, cfg)
+		baseLogger = zap.New(sampledCore)
+	}
+
 	// Add global fields
-	logger = logger.With(
+	logger := baseLogger.With(
 		zap.String("environment", cfg.Environment),
 		zap.String("app", "fleetd"),
 		zap.Time("boot_time", time.Now().UTC()),
