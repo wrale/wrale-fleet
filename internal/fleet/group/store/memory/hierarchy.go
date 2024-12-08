@@ -12,16 +12,19 @@ func (s *Store) GetAncestors(ctx context.Context, tenantID, groupID string) ([]*
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	key := s.key(tenantID, groupID)
-	g, exists := s.groups[key]
+	tenantGroups, exists := s.groups[tenantID]
+	if !exists {
+		return nil, group.ErrGroupNotFound
+	}
+
+	g, exists := tenantGroups[groupID]
 	if !exists {
 		return nil, group.ErrGroupNotFound
 	}
 
 	ancestors := make([]*group.Group, 0, g.Ancestry.Depth)
 	for _, ancestorID := range g.Ancestry.PathParts[:len(g.Ancestry.PathParts)-1] {
-		ancestorKey := s.key(tenantID, ancestorID)
-		ancestor, exists := s.groups[ancestorKey]
+		ancestor, exists := tenantGroups[ancestorID]
 		if !exists {
 			return nil, group.E("Store.GetAncestors", group.ErrCodeStoreOperation,
 				fmt.Sprintf("ancestor %s not found", ancestorID), nil)
@@ -37,16 +40,19 @@ func (s *Store) GetChildren(ctx context.Context, tenantID, groupID string) ([]*g
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	key := s.key(tenantID, groupID)
-	g, exists := s.groups[key]
+	tenantGroups, exists := s.groups[tenantID]
+	if !exists {
+		return nil, group.ErrGroupNotFound
+	}
+
+	g, exists := tenantGroups[groupID]
 	if !exists {
 		return nil, group.ErrGroupNotFound
 	}
 
 	children := make([]*group.Group, 0, len(g.Ancestry.Children))
 	for _, childID := range g.Ancestry.Children {
-		childKey := s.key(tenantID, childID)
-		child, exists := s.groups[childKey]
+		child, exists := tenantGroups[childID]
 		if !exists {
 			return nil, group.E("Store.GetChildren", group.ErrCodeStoreOperation,
 				fmt.Sprintf("child %s not found", childID), nil)
@@ -62,16 +68,19 @@ func (s *Store) GetDescendants(ctx context.Context, tenantID, groupID string) ([
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	key := s.key(tenantID, groupID)
-	g, exists := s.groups[key]
+	tenantGroups, exists := s.groups[tenantID]
+	if !exists {
+		return nil, group.ErrGroupNotFound
+	}
+
+	g, exists := tenantGroups[groupID]
 	if !exists {
 		return nil, group.ErrGroupNotFound
 	}
 
 	descendants := make([]*group.Group, 0)
 	for _, childID := range g.Ancestry.Children {
-		childKey := s.key(tenantID, childID)
-		child, exists := s.groups[childKey]
+		child, exists := tenantGroups[childID]
 		if !exists {
 			return nil, group.E("Store.GetDescendants", group.ErrCodeStoreOperation,
 				fmt.Sprintf("child %s not found", childID), nil)
@@ -94,21 +103,14 @@ func (s *Store) ValidateHierarchy(ctx context.Context, tenantID string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var tenantGroups []*group.Group
-	for _, g := range s.groups {
-		if g.TenantID == tenantID {
-			tenantGroups = append(tenantGroups, g.DeepCopy())
-		}
-	}
-
-	groupMap := make(map[string]*group.Group)
-	for _, g := range tenantGroups {
-		groupMap[g.ID] = g
+	tenantGroups, exists := s.groups[tenantID]
+	if !exists {
+		return nil // No groups for tenant is valid
 	}
 
 	for _, g := range tenantGroups {
 		if g.ParentID != "" {
-			parent, exists := groupMap[g.ParentID]
+			parent, exists := tenantGroups[g.ParentID]
 			if !exists {
 				return group.E("Store.ValidateHierarchy", group.ErrCodeInvalidGroup,
 					fmt.Sprintf("group %s references non-existent parent %s", g.ID, g.ParentID), nil)
@@ -128,7 +130,7 @@ func (s *Store) ValidateHierarchy(ctx context.Context, tenantID string) error {
 		}
 
 		for _, childID := range g.Ancestry.Children {
-			child, exists := groupMap[childID]
+			child, exists := tenantGroups[childID]
 			if !exists {
 				return group.E("Store.ValidateHierarchy", group.ErrCodeInvalidGroup,
 					fmt.Sprintf("group %s references non-existent child %s", g.ID, childID), nil)
