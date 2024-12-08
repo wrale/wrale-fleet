@@ -36,7 +36,7 @@ type Properties struct {
 // Group represents a collection of devices with shared management properties
 type Group struct {
 	ID          string           `json:"id"`
-	TenantID    string          `json:"tenant_id"`
+	TenantID    string           `json:"tenant_id"`
 	Name        string           `json:"name"`
 	Description string           `json:"description,omitempty"`
 	Type        Type             `json:"type"`
@@ -44,9 +44,9 @@ type Group struct {
 	Path        string           `json:"path"`                // Full path in group hierarchy
 	Query       *MembershipQuery `json:"query,omitempty"`     // Criteria for dynamic membership
 	Properties  Properties       `json:"properties"`          // Group configuration and policies
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
-	DeviceCount int             `json:"device_count"` // Count of member devices
+	CreatedAt   time.Time        `json:"created_at"`
+	UpdatedAt   time.Time        `json:"updated_at"`
+	DeviceCount int              `json:"device_count"` // Count of member devices
 }
 
 // New creates a new Group with generated ID and timestamps
@@ -136,6 +136,6 @@ func (g *Group) IsAncestor(groupID string) bool {
 	if g.ParentID == "" {
 		return false
 	}
-	
+
 	return g.ParentID == groupID
 }

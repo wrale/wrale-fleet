@@ -185,7 +185,7 @@ func (s *Service) RemoveDevice(ctx context.Context, tenantID, groupID, deviceID 
 // ListDevices lists all devices in a group
 func (s *Service) ListDevices(ctx context.Context, tenantID, groupID string) ([]*device.Device, error) {
 	const op = "group.Service.ListDevices"
-	
+
 	devices, err := s.store.ListDevices(ctx, tenantID, groupID)
 	if err != nil {
 		return nil, E(op, ErrCodeStoreOperation, "failed to list devices in group", err)

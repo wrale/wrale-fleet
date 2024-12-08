@@ -9,6 +9,8 @@ const (
 	ErrCodeGroupNotFound    = "GROUP_NOT_FOUND"
 	ErrCodeInvalidOperation = "INVALID_OPERATION"
 	ErrCodeCyclicDependency = "CYCLIC_DEPENDENCY"
+	ErrCodeInvalidInput     = "INVALID_INPUT"
+	ErrCodeStoreOperation   = "STORE_OPERATION"
 )
 
 // Error represents a group management error
