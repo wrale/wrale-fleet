@@ -7,16 +7,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
 
-	loggingtest "github.com/wrale/wrale-fleet/internal/fleet/logging/testing"
+	"github.com/wrale/wrale-fleet/internal/fleet/logging/store/memory"
 )
 
 func TestService_Log(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := loggingtest.NewStore()
+	store := memory.NewTestStore()
 	service, err := NewService(store, logger)
 	require.NoError(t, err)
 
@@ -116,7 +114,7 @@ func TestService_Log(t *testing.T) {
 
 func TestService_BatchLog(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := loggingtest.NewStore()
+	store := memory.NewTestStore()
 	service, err := NewService(store, logger)
 	require.NoError(t, err)
 
@@ -151,7 +149,7 @@ func TestService_BatchLog(t *testing.T) {
 
 func TestService_RetentionPolicy(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := loggingtest.NewStore()
+	store := memory.NewTestStore()
 
 	// Create service with short retention for testing
 	service, err := NewService(store, logger,
@@ -185,7 +183,7 @@ func TestService_RetentionPolicy(t *testing.T) {
 
 func TestService_QueryFilters(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := loggingtest.NewStore()
+	store := memory.NewTestStore()
 	service, err := NewService(store, logger)
 	require.NoError(t, err)
 
