@@ -11,7 +11,7 @@ import (
 )
 
 // New creates and configures the root command for wfcentral.
-func New() *cobra.Command {
+func New() (*cobra.Command, error) {
 	cfg := options.New()
 
 	cmd := &cobra.Command{
@@ -29,20 +29,28 @@ func New() *cobra.Command {
 		"log file path (defaults to stdout)")
 
 	// Add staged command groups
-	stage1.AddCommands(cmd, cfg)
+	if err := stage1.AddCommands(cmd, cfg); err != nil {
+		return nil, fmt.Errorf("adding stage1 commands: %w", err)
+	}
 
 	// Custom error handling to maintain consistent error reporting
 	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
 		return fmt.Errorf("invalid flag: %w", err)
 	})
 
-	return cmd
+	return cmd, nil
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once.
 func Execute() {
-	if err := New().Execute(); err != nil {
+	cmd, err := New()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
