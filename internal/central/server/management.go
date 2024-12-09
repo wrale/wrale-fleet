@@ -31,16 +31,21 @@ func (m *managementServer) start() error {
 	mux.HandleFunc("/healthz", m.handleHealthCheck())
 	mux.HandleFunc("/readyz", m.handleReadyCheck())
 
+	addr := ":" + m.server.cfg.ManagementConfig.Port
+
 	m.httpServer = &http.Server{
-		Addr:              ":" + m.server.cfg.ManagementConfig.Port,
+		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
 	go func() {
 		m.logger.Info("starting management server",
-			zap.String("addr", m.httpServer.Addr),
+			zap.String("addr", addr),
+			zap.String("port", m.server.cfg.ManagementConfig.Port),
 			zap.String("exposure_level", string(m.server.cfg.ManagementConfig.ExposureLevel)),
+			zap.String("healthz_endpoint", "http://localhost"+addr+"/healthz"),
+			zap.String("readyz_endpoint", "http://localhost"+addr+"/readyz"),
 		)
 		if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			m.logger.Error("management server error", zap.Error(err))
@@ -53,7 +58,9 @@ func (m *managementServer) start() error {
 // stop performs a graceful shutdown of the management server
 func (m *managementServer) stop(ctx context.Context) error {
 	if m.httpServer != nil {
-		m.logger.Info("stopping management server")
+		m.logger.Info("stopping management server",
+			zap.String("port", m.server.cfg.ManagementConfig.Port),
+		)
 		return m.httpServer.Shutdown(ctx)
 	}
 	return nil
@@ -140,16 +147,26 @@ func (m *managementServer) handleReadyCheck() http.HandlerFunc {
 			return
 		}
 
+		// Perform a health check to get current status
+		healthResponse, err := m.server.health.CheckHealth(ctx,
+			health.WithTimeout(5*time.Second),
+			health.WithTenant(tenantID),
+		)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		// Create response with filtered information
 		response := struct {
-			Ready    bool            `json:"ready"`
-			Version  *health.Version `json:"version,omitempty"`
-			Uptime   time.Duration   `json:"uptime,omitempty"`
-			TenantID string          `json:"tenant_id,omitempty"`
-			Status   ComponentStatus `json:"status"`
+			Ready    bool                   `json:"ready"`
+			Version  *health.Version        `json:"version,omitempty"`
+			Uptime   time.Duration          `json:"uptime,omitempty"`
+			TenantID string                 `json:"tenant_id,omitempty"`
+			Status   health.ComponentStatus `json:"status"`
 		}{
 			Ready:  ready,
-			Status: m.server.health.GetStatus(),
+			Status: healthResponse.Status, // Use the status from health check response
 		}
 
 		// Add additional information based on exposure level
