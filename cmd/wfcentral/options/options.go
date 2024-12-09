@@ -11,7 +11,7 @@ import (
 // Config holds the command-line options for wfcentral.
 // This separates command-line concerns from the core server configuration.
 type Config struct {
-	// Port is the main HTTP server port
+	// Port is the main HTTP server port for device management APIs
 	Port string
 
 	// DataDir is the path for persistent storage
@@ -21,7 +21,7 @@ type Config struct {
 	LogLevel string
 
 	// ManagementPort is the port for health and readiness endpoints
-	// If not specified, defaults to Port + 1
+	// This must be explicitly configured for proper security setup
 	ManagementPort string
 
 	// HealthExposure controls how much information is exposed in health endpoints
@@ -33,12 +33,11 @@ type Config struct {
 }
 
 // New creates a new Config with sensible default values that prioritize security
-// while maintaining backward compatibility. The defaults are chosen to align with
-// enterprise deployment patterns where health endpoints are typically accessed
-// through internal networks or orchestration systems.
+// while requiring explicit port configuration. Enterprise deployments require
+// deliberate port allocation for proper network security configuration.
 func New() *Config {
 	return &Config{
-		Port:           "8080",               // Default main server port
+		Port:           "8080",               // Default main API port
 		DataDir:        "/var/lib/wfcentral", // Default data directory
 		LogLevel:       "info",               // Default log level
 		HealthExposure: "standard",           // Default to standard health information exposure
@@ -50,6 +49,11 @@ func New() *Config {
 // of all necessary components including logging, monitoring, and the separate
 // management server for health endpoints.
 func NewServer(cfg *Config) (*server.Server, error) {
+	// Management port must be explicitly configured
+	if cfg.ManagementPort == "" {
+		return nil, fmt.Errorf("management-port must be specified")
+	}
+
 	// Initialize logger first to ensure proper diagnostics during startup
 	log, err := logger.New(logger.Config{
 		Level: cfg.LogLevel,
@@ -64,7 +68,7 @@ func NewServer(cfg *Config) (*server.Server, error) {
 		DataDir:  cfg.DataDir,
 		LogLevel: cfg.LogLevel,
 		ManagementConfig: &server.ManagementConfig{
-			Port:          cfg.ManagementPort, // Will be defaulted if empty
+			Port:          cfg.ManagementPort,
 			ExposureLevel: server.ExposureLevel(cfg.HealthExposure),
 		},
 	}
@@ -88,13 +92,4 @@ func ValidateHealthExposure(level string) bool {
 	default:
 		return false
 	}
-}
-
-// GetDefaultManagementPort returns the default management port for a given main port.
-// This is useful for CLI help text and documentation to show users the default value
-// that will be used if they don't specify a management port.
-func GetDefaultManagementPort(mainPort string) string {
-	// The actual defaulting logic is handled in server.Config.Validate()
-	// This is just for user information
-	return fmt.Sprintf("%s [Main port + 1]", mainPort)
 }

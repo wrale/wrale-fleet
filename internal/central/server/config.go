@@ -7,7 +7,7 @@ import (
 
 // Config holds the server configuration.
 type Config struct {
-	// Port is the server listening port
+	// Port is the server listening port for primary API endpoints
 	Port string
 
 	// DataDir is the path to the data directory
@@ -41,15 +41,12 @@ const (
 	ExposureStandard ExposureLevel = "standard"
 	// ExposureFull provides all available health information
 	ExposureFull ExposureLevel = "full"
-
-	// Default management port offset from main port
-	defaultManagementPortOffset = 1
 )
 
 // ManagementConfig holds configuration for the management API endpoints
 type ManagementConfig struct {
 	// Port for management API endpoints (health, readiness)
-	// If empty, defaults to main port + 1
+	// This must be explicitly configured for proper security setup
 	Port string
 
 	// ExposureLevel controls how much information is exposed in health endpoints
@@ -57,48 +54,41 @@ type ManagementConfig struct {
 }
 
 // Validate checks the configuration for errors and ensures all required values
-// are properly set with appropriate defaults.
+// have been properly configured. No default values are provided for security-
+// sensitive settings like ports to ensure explicit configuration in production.
 func (c *Config) Validate() error {
-	// Validate and default main port
+	// Require and validate main API port
 	if c.Port == "" {
-		c.Port = defaultPort
+		return fmt.Errorf("port must be specified")
 	}
-
-	// Validate port is numeric
-	mainPort, err := strconv.Atoi(c.Port)
-	if err != nil {
+	if _, err := strconv.Atoi(c.Port); err != nil {
 		return fmt.Errorf("invalid port number: %s", c.Port)
 	}
 
-	// Set other basic defaults
+	// Set basic defaults that don't impact security
 	if c.DataDir == "" {
 		c.DataDir = defaultDataDir
 	}
-
 	if c.LogLevel == "" {
 		c.LogLevel = defaultLogLevel
 	}
 
-	// Initialize and validate management config
+	// Require management configuration
 	if c.ManagementConfig == nil {
-		c.ManagementConfig = &ManagementConfig{
-			ExposureLevel: ExposureStandard,
-		}
+		return fmt.Errorf("management configuration must be provided")
 	}
 
-	// Always set default values for management config to ensure it's complete
-	if c.ManagementConfig.ExposureLevel == "" {
-		c.ManagementConfig.ExposureLevel = ExposureStandard
-	}
-
-	// Set default management port based on main port if not specified
+	// Require and validate management port
 	if c.ManagementConfig.Port == "" {
-		c.ManagementConfig.Port = strconv.Itoa(mainPort + defaultManagementPortOffset)
+		return fmt.Errorf("management port must be specified")
 	}
-
-	// Validate management port
 	if _, err := strconv.Atoi(c.ManagementConfig.Port); err != nil {
 		return fmt.Errorf("invalid management port number: %s", c.ManagementConfig.Port)
+	}
+
+	// Set default exposure level if not specified
+	if c.ManagementConfig.ExposureLevel == "" {
+		c.ManagementConfig.ExposureLevel = ExposureStandard
 	}
 
 	// Validate exposure level
