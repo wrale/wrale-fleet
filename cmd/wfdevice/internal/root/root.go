@@ -15,8 +15,8 @@ func New() (*cobra.Command, error) {
 	cfg := options.New()
 
 	cmd := &cobra.Command{
-		Use:           "wfdevice",
-		Short:         "Local device management for the Wrale Fleet Management Platform",
+		Use:   "wfdevice",
+		Short: "Local device management for the Wrale Fleet Management Platform",
 		Long: `wfdevice provides local device management capabilities including status reporting,
 configuration management, health monitoring, and secure communication with the
 control plane.
