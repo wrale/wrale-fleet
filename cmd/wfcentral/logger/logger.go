@@ -3,8 +3,10 @@ package logger
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"syscall"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -12,32 +14,72 @@ import (
 
 // Config defines logging configuration.
 type Config struct {
-	Level string
+	Level    string // Log level: debug, info, warn, error
+	FilePath string // Optional file path for log output (empty for stdout)
 }
 
 // New creates a new logger with the given configuration.
+// It supports both file and stdout output with proper error handling
+// for airgapped environments.
 func New(cfg Config) (*zap.Logger, error) {
 	var level zapcore.Level
 	if err := level.UnmarshalText([]byte(cfg.Level)); err != nil {
 		return nil, fmt.Errorf("invalid log level %q: %w", cfg.Level, err)
 	}
 
-	zapCfg := zap.Config{
-		Level:            zap.NewAtomicLevelAt(level),
-		Development:      false,
-		Encoding:         "json",
-		EncoderConfig:    zap.NewProductionEncoderConfig(),
-		OutputPaths:      []string{"stdout"},
-		ErrorOutputPaths: []string{"stderr"},
+	// Create encoder config with standardized settings
+	encConfig := zapcore.EncoderConfig{
+		TimeKey:        "ts",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		FunctionKey:    zapcore.OmitKey,
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.CapitalLevelEncoder,
+		EncodeTime:     zapcore.RFC3339NanoTimeEncoder,
+		EncodeDuration: zapcore.StringDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
-	logger, err := zapCfg.Build(
+	// Create the core with appropriate output
+	var output zapcore.WriteSyncer
+	if cfg.FilePath != "" {
+		// Ensure parent directory exists
+		if err := os.MkdirAll(strings.TrimSuffix(cfg.FilePath, "/"), 0755); err != nil {
+			return nil, fmt.Errorf("creating log directory: %w", err)
+		}
+
+		// Open log file with appropriate permissions
+		f, err := os.OpenFile(cfg.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("opening log file: %w", err)
+		}
+		output = zapcore.AddSync(f)
+	} else {
+		output = zapcore.AddSync(os.Stdout)
+	}
+
+	// Create the core with JSON encoding for structured logging
+	core := zapcore.NewCore(
+		zapcore.NewJSONEncoder(encConfig),
+		output,
+		level,
+	)
+
+	// Build the logger with appropriate options
+	logger := zap.New(
+		core,
 		zap.AddCaller(),
 		zap.AddStacktrace(zapcore.ErrorLevel),
 	)
-	if err != nil {
-		return nil, fmt.Errorf("building logger: %w", err)
-	}
+
+	// Add global fields for log aggregation and filtering
+	logger = logger.With(
+		zap.String("component", "wfcentral"),
+		zap.Time("boot_time", time.Now().UTC()),
+	)
 
 	return logger, nil
 }
@@ -74,4 +116,11 @@ func Sync(logger *zap.Logger) error {
 
 	// Return unexpected sync errors for handling
 	return err
+}
+
+// NewNop creates a no-op logger useful for testing.
+// All operations on the returned logger will succeed but will not
+// produce any output.
+func NewNop() *zap.Logger {
+	return zap.NewNop()
 }

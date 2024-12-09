@@ -123,7 +123,7 @@ prompts but still performs validation.`,
 		"validate and simulate configuration application without making changes")
 	cmd.Flags().BoolVar(&force, "force", false,
 		"bypass confirmation prompts")
-	
+
 	cmd.MarkFlagRequired("config")
 
 	return cmd
