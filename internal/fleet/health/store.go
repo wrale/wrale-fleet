@@ -29,16 +29,17 @@ type Store interface {
 }
 
 // StoreOption defines functional options for configuring stores
-type StoreOption func(*storeOptions) error
+type StoreOption func(*StoreOptions) error
 
-type storeOptions struct {
-	retentionPeriod string
+// StoreOptions contains configuration options for health stores
+type StoreOptions struct {
+	RetentionPeriod string
 }
 
 // WithRetentionPeriod sets how long to retain historical health data
 func WithRetentionPeriod(period string) StoreOption {
-	return func(o *storeOptions) error {
-		o.retentionPeriod = period
+	return func(o *StoreOptions) error {
+		o.RetentionPeriod = period
 		return nil
 	}
 }
