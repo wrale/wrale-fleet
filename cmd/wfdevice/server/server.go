@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wrale/wrale-fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/health"
 	"go.uber.org/zap"
 )
 
@@ -20,26 +21,54 @@ const (
 	// Future stages will be added here
 )
 
+// ExposureLevel defines how much information is exposed in health endpoints
+type ExposureLevel string
+
 const (
-	// readHeaderTimeout defines the amount of time allowed to read
-	// request headers. This helps prevent Slowloris DoS attacks.
+	// ExposureMinimal provides only basic health status
+	ExposureMinimal ExposureLevel = "minimal"
+	// ExposureStandard includes version and uptime information
+	ExposureStandard ExposureLevel = "standard"
+	// ExposureFull exposes all available health information
+	ExposureFull ExposureLevel = "full"
+)
+
+const (
 	readHeaderTimeout = 10 * time.Second
-
-	// registrationTimeout is the maximum time allowed for initial registration
 	registrationTimeout = 30 * time.Second
-
-	// healthCheckInterval is the time between health report submissions
 	healthCheckInterval = 1 * time.Minute
 )
+
+// ManagementConfig holds configuration for the management server
+type ManagementConfig struct {
+	// Port is the port for health and readiness endpoints
+	Port string
+
+	// ExposureLevel controls how much information is exposed in health endpoints
+	ExposureLevel ExposureLevel
+}
 
 // DeviceStatus contains the full device status information
 type DeviceStatus struct {
 	Name            string            `json:"name"`
 	Status          device.Status     `json:"status"`
 	Tags            map[string]string `json:"tags,omitempty"`
-	ControlPlane    string            `json:"control_plane"`
-	Registered      bool              `json:"registered"`
-	LastHealthCheck time.Time         `json:"last_health_check,omitempty"`
+	ControlPlane    string           `json:"control_plane"`
+	Registered      bool             `json:"registered"`
+	LastHealthCheck time.Time        `json:"last_health_check,omitempty"`
+}
+
+// Config holds the server configuration
+type Config struct {
+	// Main server configuration
+	Port         string
+	DataDir      string
+	Name         string
+	ControlPlane string
+	Tags         map[string]string
+
+	// Management server configuration (for health endpoints)
+	ManagementConfig *ManagementConfig
 }
 
 // Server represents the wfdevice agent instance
@@ -49,20 +78,14 @@ type Server struct {
 	stage   Stage
 	device  *device.Device
 	httpSrv *http.Server
+	health  *health.Service
+	mgmtServer *managementServer
 
 	// State management
 	mu         sync.RWMutex
 	registered bool
 	stopHealth chan struct{}
-}
-
-// Config holds the server configuration
-type Config struct {
-	Port         string
-	DataDir      string
-	Name         string // Name is optional at startup, required for registration
-	ControlPlane string
-	Tags         map[string]string
+	startTime  time.Time
 }
 
 // Option defines a server option
@@ -75,6 +98,7 @@ func New(logger *zap.Logger, opts ...Option) (*Server, error) {
 		logger:     logger,
 		stage:      Stage1,
 		stopHealth: make(chan struct{}),
+		startTime:  time.Now().UTC(),
 	}
 
 	// Apply and validate each option
@@ -82,6 +106,32 @@ func New(logger *zap.Logger, opts ...Option) (*Server, error) {
 		if err := opt(s); err != nil {
 			return nil, fmt.Errorf("applying server option: %w", err)
 		}
+	}
+
+	// Initialize health service
+	healthSrv, err := health.NewService(health.Config{
+		Logger: logger.Named("health"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initializing health service: %w", err)
+	}
+	s.health = healthSrv
+
+	// Register base health checks
+	if err := s.registerHealthChecks(); err != nil {
+		return nil, fmt.Errorf("registering health checks: %w", err)
+	}
+
+	// Create management server for health endpoints
+	if s.cfg.ManagementConfig != nil {
+		s.mgmtServer = newManagementServer(s)
+	}
+
+	// Initialize device state with minimal configuration
+	// Full initialization happens during registration
+	s.device = &device.Device{
+		Status: device.StatusOffline,
+		Tags:   s.cfg.Tags,
 	}
 
 	// Log configuration for debugging
@@ -93,21 +143,20 @@ func New(logger *zap.Logger, opts ...Option) (*Server, error) {
 		zap.Any("tags", s.cfg.Tags),
 	)
 
-	// Initialize device state with minimal configuration
-	// Full initialization happens during registration
-	s.device = &device.Device{
-		Status: device.StatusOffline,
-		Tags:   s.cfg.Tags,
-	}
-
 	return s, nil
 }
+
+// GetStartTime returns the server's start time
+func (s *Server) GetStartTime() time.Time {
+	return s.startTime
+}
+
+// Server options
 
 // WithPort sets the server port
 func WithPort(port string) Option {
 	return func(s *Server) error {
 		s.cfg.Port = port
-		s.logger.Debug("setting server port", zap.String("port", port))
 		return nil
 	}
 }
@@ -116,7 +165,6 @@ func WithPort(port string) Option {
 func WithDataDir(dir string) Option {
 	return func(s *Server) error {
 		s.cfg.DataDir = dir
-		s.logger.Debug("setting data directory", zap.String("dir", dir))
 		return nil
 	}
 }
@@ -125,7 +173,6 @@ func WithDataDir(dir string) Option {
 func WithName(name string) Option {
 	return func(s *Server) error {
 		s.cfg.Name = name
-		s.logger.Debug("setting device name", zap.String("name", name))
 		return nil
 	}
 }
@@ -133,7 +180,6 @@ func WithName(name string) Option {
 // WithControlPlane sets the control plane address
 func WithControlPlane(addr string) Option {
 	return func(s *Server) error {
-		s.logger.Debug("setting control plane address", zap.String("addr", addr))
 		s.cfg.ControlPlane = addr
 		return nil
 	}
@@ -143,7 +189,32 @@ func WithControlPlane(addr string) Option {
 func WithTags(tags map[string]string) Option {
 	return func(s *Server) error {
 		s.cfg.Tags = tags
-		s.logger.Debug("setting device tags", zap.Any("tags", tags))
+		return nil
+	}
+}
+
+// WithManagementPort sets the management server port
+func WithManagementPort(port string) Option {
+	return func(s *Server) error {
+		if s.cfg.ManagementConfig == nil {
+			s.cfg.ManagementConfig = &ManagementConfig{
+				ExposureLevel: ExposureStandard, // Default to standard exposure
+			}
+		}
+		s.cfg.ManagementConfig.Port = port
+		return nil
+	}
+}
+
+// WithHealthExposure sets the health endpoint exposure level
+func WithHealthExposure(level string) Option {
+	return func(s *Server) error {
+		if s.cfg.ManagementConfig == nil {
+			s.cfg.ManagementConfig = &ManagementConfig{
+				ExposureLevel: ExposureStandard,
+			}
+		}
+		s.cfg.ManagementConfig.ExposureLevel = ExposureLevel(level)
 		return nil
 	}
 }

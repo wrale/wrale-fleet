@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wrale/wrale-fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/health"
 	"go.uber.org/zap"
 )
 
@@ -31,7 +32,14 @@ func (s *Server) Run(ctx context.Context) error {
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
-	// Start HTTP server
+	// Start management server first if configured
+	if s.mgmtServer != nil {
+		if err := s.mgmtServer.start(); err != nil {
+			return fmt.Errorf("starting management server: %w", err)
+		}
+	}
+
+	// Start main HTTP server
 	errChan := make(chan error, 1)
 	go func() {
 		s.logger.Info("starting HTTP server",
@@ -80,12 +88,21 @@ func (s *Server) Status(ctx context.Context) (*DeviceStatus, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// Include last health check time if available
+	lastCheck := time.Time{}
+	if resp, err := s.health.CheckHealth(ctx); err == nil {
+		if resp.LastCheck != nil {
+			lastCheck = *resp.LastCheck
+		}
+	}
+
 	return &DeviceStatus{
-		Name:         s.cfg.Name,
-		Status:       s.device.Status,
-		Tags:         s.device.Tags,
-		ControlPlane: s.cfg.ControlPlane,
-		Registered:   s.registered,
+		Name:            s.cfg.Name,
+		Status:          s.device.Status,
+		Tags:            s.device.Tags,
+		ControlPlane:    s.cfg.ControlPlane,
+		Registered:      s.registered,
+		LastHealthCheck: lastCheck,
 	}, nil
 }
 
@@ -109,6 +126,13 @@ func (s *Server) shutdown() error {
 		close(s.stopHealth)
 	}
 
+	// Stop management server first if running
+	if s.mgmtServer != nil {
+		if err := s.mgmtServer.stop(context.Background()); err != nil {
+			s.logger.Error("error stopping management server", zap.Error(err))
+		}
+	}
+
 	// Notify control plane of shutdown if registered
 	s.mu.RLock()
 	if s.registered {
@@ -116,7 +140,7 @@ func (s *Server) shutdown() error {
 	}
 	s.mu.RUnlock()
 
-	// Shutdown HTTP server
+	// Shutdown main HTTP server
 	if s.httpSrv != nil {
 		if err := s.httpSrv.Shutdown(context.Background()); err != nil {
 			return fmt.Errorf("http server shutdown: %w", err)
@@ -126,6 +150,35 @@ func (s *Server) shutdown() error {
 	// Remove PID file
 	s.removePIDFile()
 
+	return nil
+}
+
+// registerHealthChecks registers all components that need health monitoring
+func (s *Server) registerHealthChecks() error {
+	s.logger.Info("registering component health checks")
+
+	// Register base device agent health check
+	agentInfo := health.ComponentInfo{
+		Name:        "device_agent",
+		Description: "Device agent server",
+		Category:    "core",
+		Critical:    true,
+	}
+
+	if err := s.health.RegisterComponent(context.Background(), "device_agent", s, agentInfo); err != nil {
+		return fmt.Errorf("failed to register agent health check: %w", err)
+	}
+
+	return nil
+}
+
+// CheckHealth implements the health.HealthChecker interface
+func (s *Server) CheckHealth(ctx context.Context) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	// For now, basic check that server is running
+	// Future enhancements will add more sophisticated checks
 	return nil
 }
 
