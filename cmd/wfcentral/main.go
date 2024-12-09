@@ -29,14 +29,14 @@ func main() {
 // mainWithInit is the main program logic, optionally signaling initialization.
 // The initDone channel is used for testing to coordinate program startup.
 func mainWithInit(initDone chan<- struct{}) {
-	// Parse command-line flags
+	// Create default config and parse command-line flags
 	cfg := options.New()
-	flag.StringVar(&cfg.Port, "port", "8080", "Server port")
-	flag.StringVar(&cfg.DataDir, "data-dir", "/var/lib/wfcentral", "Data directory path")
-	flag.StringVar(&cfg.LogLevel, "log-level", "info", "Logging level (debug, info, warn, error)")
+	flag.StringVar(&cfg.Port, "port", cfg.Port, "Server port")
+	flag.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "Data directory path")
+	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Logging level (debug, info, warn, error)")
 	flag.Parse()
 
-	// Initialize logger
+	// Initialize logger for command-line operations
 	log, err := logger.New(logger.Config{Level: cfg.LogLevel})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
@@ -48,14 +48,10 @@ func mainWithInit(initDone chan<- struct{}) {
 		}
 	}()
 
-	// Initialize server with Stage 1 capabilities
-	srv, err := options.NewServer(
-		options.WithPort(cfg.Port),
-		options.WithDataDir(cfg.DataDir),
-	)
+	// Initialize server with configuration
+	srv, err := options.NewServer(cfg)
 	if err != nil {
 		log.Fatal("failed to initialize server", zap.Error(err))
-		os.Exit(1)
 	}
 
 	// Signal successful initialization if in test mode
@@ -63,7 +59,7 @@ func mainWithInit(initDone chan<- struct{}) {
 		close(initDone)
 	}
 
-	// Set up signal handling
+	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -99,7 +95,8 @@ func mainWithInit(initDone chan<- struct{}) {
 		}
 	}()
 
-	if err := srv.Run(ctx); err != nil {
+	// Run server until shutdown
+	if err := srv.Start(ctx); err != nil {
 		log.Error("server error", zap.Error(err))
 		os.Exit(1)
 	}
