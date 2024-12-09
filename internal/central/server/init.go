@@ -1,9 +1,12 @@
 package server
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
 	"github.com/wrale/wrale-fleet/internal/fleet/device/store/memory"
+	"github.com/wrale/wrale-fleet/internal/fleet/health"
 	healthmem "github.com/wrale/wrale-fleet/internal/fleet/health/store/memory"
 	"go.uber.org/zap"
 )

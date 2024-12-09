@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/wrale/wrale-fleet/internal/fleet/device"
 	"github.com/wrale/wrale-fleet/internal/fleet/health"
 	"go.uber.org/zap"
 )
