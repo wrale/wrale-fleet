@@ -8,7 +8,7 @@ set -euo pipefail
 
 # Default timeouts (can be overridden via environment variables)
 WFCENTRAL_START_TIMEOUT=${WFCENTRAL_START_TIMEOUT:-30}
-WFdevice_START_TIMEOUT=${WFdevice_START_TIMEOUT:-30}
+WFDEVICE_START_TIMEOUT=${WFDEVICE_START_TIMEOUT:-30}
 OPERATION_TIMEOUT=${OPERATION_TIMEOUT:-10}
 
 # Test instance identifier (for parallel test runs)
@@ -17,7 +17,7 @@ TEST_OUTPUT_DIR=${TEST_OUTPUT_DIR:-/tmp/wrale-test-${TEST_ID}}
 
 # Port allocation (0 means find available port)
 WFCENTRAL_PORT=${WFCENTRAL_PORT:-0}
-WFdevice_PORT=${WFdevice_PORT:-0}
+WFDEVICE_PORT=${WFDEVICE_PORT:-0}
 
 # Logging setup
 mkdir -p "${TEST_OUTPUT_DIR}/logs"
@@ -26,6 +26,37 @@ exec 2> >(tee "${TEST_OUTPUT_DIR}/logs/test.err")
 
 log() { echo "$(date -u '+%Y-%m-%dT%H:%M:%S.%3NZ') $*" >&2; }
 fail() { log "ERROR: $*"; exit 1; }
+
+# Cross-platform timeout implementation
+run_with_timeout() {
+    local timeout=$1
+    shift
+    
+    # Run the command in background
+    ("$@") & local pid=$!
+    
+    # Start a timer in background
+    (
+        sleep "$timeout"
+        # If process is still running after timeout
+        if kill -0 $pid 2>/dev/null; then
+            kill -TERM $pid 2>/dev/null || kill -9 $pid 2>/dev/null
+            fail "Command timed out after ${timeout} seconds: $*"
+        fi
+    ) & local timer_pid=$!
+    
+    # Wait for command to finish
+    if wait $pid 2>/dev/null; then
+        kill -TERM $timer_pid 2>/dev/null || kill -9 $timer_pid 2>/dev/null
+        wait $timer_pid 2>/dev/null || true
+        return 0
+    else
+        local ret=$?
+        kill -TERM $timer_pid 2>/dev/null || kill -9 $timer_pid 2>/dev/null
+        wait $timer_pid 2>/dev/null || true
+        return $ret
+    fi
+}
 
 # Find available port
 get_free_port() {
@@ -40,22 +71,22 @@ test_init() {
     if [ "${WFCENTRAL_PORT}" -eq 0 ]; then
         WFCENTRAL_PORT=$(get_free_port)
     fi
-    if [ "${WFdevice_PORT}" -eq 0 ]; then
-        WFdevice_PORT=$(get_free_port)
+    if [ "${WFDEVICE_PORT}" -eq 0 ]; then
+        WFDEVICE_PORT=$(get_free_port)
     fi
     
     mkdir -p "${TEST_OUTPUT_DIR}/central"
     mkdir -p "${TEST_OUTPUT_DIR}/device"
     
     # Export for subprocesses
-    export WFCENTRAL_PORT WFdevice_PORT TEST_OUTPUT_DIR
+    export WFCENTRAL_PORT WFDEVICE_PORT TEST_OUTPUT_DIR
 }
 
 # Test steps with timeouts and logging
 test_start_central() {
     log "Starting wfcentral on port ${WFCENTRAL_PORT}"
     
-    timeout "${WFCENTRAL_START_TIMEOUT}" \
+    run_with_timeout "${WFCENTRAL_START_TIMEOUT}" \
         wfcentral start \
             --port "${WFCENTRAL_PORT}" \
             --data-dir "${TEST_OUTPUT_DIR}/central" \
@@ -73,20 +104,20 @@ test_start_central() {
 }
 
 test_start_device() {
-    log "Starting wfdevice on port ${WFdevice_PORT}"
+    log "Starting wfdevice on port ${WFDEVICE_PORT}"
     
-    timeout "${WFdevice_START_TIMEOUT}" \
+    run_with_timeout "${WFDEVICE_START_TIMEOUT}" \
         wfdevice start \
-            --port "${WFdevice_PORT}" \
+            --port "${WFDEVICE_PORT}" \
             --data-dir "${TEST_OUTPUT_DIR}/device" \
             --log-file "${TEST_OUTPUT_DIR}/logs/device.log" &
     echo $! > "${TEST_OUTPUT_DIR}/device.pid"
     
     # Wait for agent to be ready
-    local deadline=$((SECONDS + WFdevice_START_TIMEOUT))
-    while ! wfdevice status --port "${WFdevice_PORT}" | grep -q "ready"; do
+    local deadline=$((SECONDS + WFDEVICE_START_TIMEOUT))
+    while ! wfdevice status --port "${WFDEVICE_PORT}" | grep -q "ready"; do
         if [ "${SECONDS}" -ge "${deadline}" ]; then
-            fail "wfdevice failed to start within ${WFdevice_START_TIMEOUT} seconds"
+            fail "wfdevice failed to start within ${WFDEVICE_START_TIMEOUT} seconds"
         fi
         sleep 1
     done
@@ -95,14 +126,14 @@ test_start_device() {
 test_register_device() {
     log "Registering device with control plane"
     
-    timeout "${OPERATION_TIMEOUT}" \
+    run_with_timeout "${OPERATION_TIMEOUT}" \
         wfdevice register \
-            --port "${WFdevice_PORT}" \
+            --port "${WFDEVICE_PORT}" \
             --name "test-device-${TEST_ID}" \
             --control-plane "localhost:${WFCENTRAL_PORT}"
             
     # Verify registration
-    timeout "${OPERATION_TIMEOUT}" \
+    run_with_timeout "${OPERATION_TIMEOUT}" \
         wfcentral device list --port "${WFCENTRAL_PORT}" | \
         grep -q "test-device-${TEST_ID}" || \
         fail "Device registration verification failed"
@@ -111,14 +142,14 @@ test_register_device() {
 test_configure_monitoring() {
     log "Configuring device monitoring"
     
-    timeout "${OPERATION_TIMEOUT}" \
+    run_with_timeout "${OPERATION_TIMEOUT}" \
         wfcentral device monitor \
             --port "${WFCENTRAL_PORT}" \
             --device "test-device-${TEST_ID}" \
             --interval 30s
             
     # Verify monitoring
-    timeout "${OPERATION_TIMEOUT}" \
+    run_with_timeout "${OPERATION_TIMEOUT}" \
         wfcentral device health \
             --port "${WFCENTRAL_PORT}" \
             --device "test-device-${TEST_ID}" | \
@@ -131,14 +162,14 @@ test_shutdown() {
     
     # Stop device
     if [ -f "${TEST_OUTPUT_DIR}/device.pid" ]; then
-        timeout "${OPERATION_TIMEOUT}" \
-            wfdevice stop --port "${WFdevice_PORT}" || \
+        run_with_timeout "${OPERATION_TIMEOUT}" \
+            wfdevice stop --port "${WFDEVICE_PORT}" || \
             kill -9 "$(cat "${TEST_OUTPUT_DIR}/device.pid")" 2>/dev/null
     fi
     
     # Stop control plane
     if [ -f "${TEST_OUTPUT_DIR}/central.pid" ]; then
-        timeout "${OPERATION_TIMEOUT}" \
+        run_with_timeout "${OPERATION_TIMEOUT}" \
             wfcentral stop --port "${WFCENTRAL_PORT}" || \
             kill -9 "$(cat "${TEST_OUTPUT_DIR}/central.pid")" 2>/dev/null
     fi
@@ -165,7 +196,7 @@ run_tests() {
 <testsuites>
   <testsuite name="stage1" tests="4" failures="0" time="${duration}">
     <testcase name="start_central" time="${WFCENTRAL_START_TIMEOUT}" />
-    <testcase name="start_device" time="${WFdevice_START_TIMEOUT}" />
+    <testcase name="start_device" time="${WFDEVICE_START_TIMEOUT}" />
     <testcase name="register_device" time="${OPERATION_TIMEOUT}" />
     <testcase name="configure_monitoring" time="${OPERATION_TIMEOUT}" />
   </testsuite>
