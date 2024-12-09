@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -19,30 +20,89 @@ var (
 )
 
 // Config holds the command-line options for wfdevice.
+// This aligns with wfcentral's configuration structure while maintaining
+// device-specific features.
 type Config struct {
-	Port         string
-	DataDir      string
-	LogLevel     string
-	Name         string
-	ControlPlane string
-	Tags         map[string]string
+	// Port is the main HTTP server port for device operations
+	Port string
+
+	// DataDir is the path for persistent storage
+	DataDir string
+
+	// LogLevel controls logging verbosity
+	LogLevel string
+
+	// LogFile specifies the path for log output (empty for stdout)
+	LogFile string
+
+	// ManagementPort is the port for health and readiness endpoints
+	// This must be explicitly configured for proper security setup
+	ManagementPort string
+
+	// HealthExposure controls how much information is exposed in health endpoints
+	// Valid values are: "minimal", "standard", "full"
+	// - minimal: Only basic health status
+	// - standard: Includes version and uptime (default)
+	// - full: All available health information
+	HealthExposure string
+
+	// Device-specific configurations
+	Name         string            // Device identifier
+	ControlPlane string            // Control plane address
+	Tags         map[string]string // Device metadata tags
 }
 
 // New creates a new Config with default values.
 func New() *Config {
 	return &Config{
-		Tags: make(map[string]string),
+		Port:           "9090",              // Default main API port
+		DataDir:        "/var/lib/wfdevice", // Default data directory
+		LogLevel:       "info",              // Default log level
+		HealthExposure: "standard",          // Default to standard health information exposure
+		Tags:           make(map[string]string),
 	}
 }
 
-// Validate checks that all required configuration options are present
+// Validate performs comprehensive configuration validation
 func (c *Config) Validate() error {
+	// Validate required fields
 	if c.Port == "" {
 		return fmt.Errorf("port is required")
 	}
 	if c.DataDir == "" {
 		return fmt.Errorf("data directory is required")
 	}
+
+	// Validate port numbers
+	basePort, err := strconv.Atoi(c.Port)
+	if err != nil {
+		return fmt.Errorf("invalid port number: %s", c.Port)
+	}
+
+	// Management port must be explicitly configured
+	if c.ManagementPort == "" {
+		return fmt.Errorf("management-port must be specified (use --management-port flag)")
+	}
+
+	// Validate management port
+	mgmtPort, err := strconv.Atoi(c.ManagementPort)
+	if err != nil {
+		return fmt.Errorf("invalid management port number: %s", c.ManagementPort)
+	}
+
+	// Ensure ports are different
+	if basePort == mgmtPort {
+		return fmt.Errorf("management port must be different from main API port")
+	}
+
+	// Validate health exposure level
+	switch c.HealthExposure {
+	case "minimal", "standard", "full":
+		// Valid values
+	default:
+		return fmt.Errorf("invalid health exposure level: %s (must be minimal, standard, or full)", c.HealthExposure)
+	}
+
 	return nil
 }
 
@@ -78,9 +138,11 @@ func NewServer(cfg *Config) (*server.Server, error) {
 	opts = append(opts,
 		server.WithPort(cfg.Port),
 		server.WithDataDir(cfg.DataDir),
+		server.WithManagementPort(cfg.ManagementPort),
+		server.WithHealthExposure(cfg.HealthExposure),
 	)
 
-	// Add optional configurations
+	// Add optional device-specific configurations
 	if cfg.Name != "" {
 		opts = append(opts, server.WithName(cfg.Name))
 	}
@@ -158,6 +220,12 @@ func (c *RegistrationClient) Register(ctx context.Context, name string, tags map
 		ControlPlane: c.controlPlane,
 		Tags:         tags,
 	}
+
+	// Set required fields with defaults for registration
+	cfg.Port = "9090"
+	cfg.ManagementPort = "9091"
+	cfg.HealthExposure = "minimal" // Use minimal exposure during registration
+	cfg.DataDir = "/var/lib/wfdevice"
 
 	srv, err := NewServer(cfg)
 	if err != nil {
