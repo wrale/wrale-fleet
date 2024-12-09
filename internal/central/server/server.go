@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/wrale/wrale-fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/device/store/memory"
 	"github.com/wrale/wrale-fleet/internal/fleet/health"
+	healthmem "github.com/wrale/wrale-fleet/internal/fleet/health/store/memory"
 	"go.uber.org/zap"
 )
 
@@ -76,7 +78,7 @@ func New(cfg *Config, logger *zap.Logger) (*Server, error) {
 		startTime:  time.Now().UTC(), // Initialize start time in UTC
 	}
 
-	// Initialize server components
+	// Initialize server components in the correct order
 	if err := s.initialize(); err != nil {
 		cancel() // Clean up context if initialization fails
 		return nil, fmt.Errorf("server initialization failed: %w", err)
@@ -85,7 +87,12 @@ func New(cfg *Config, logger *zap.Logger) (*Server, error) {
 	return s, nil
 }
 
-// initialize sets up all server components.
+// initialize sets up all server components in the proper sequence.
+// The initialization order is critical for proper dependency management:
+// 1. Core services (device, etc.)
+// 2. Health monitoring system
+// 3. Stage-specific capabilities
+// 4. Health check registration
 func (s *Server) initialize() error {
 	s.logger.Info("initializing central control plane server",
 		zap.String("port", s.cfg.Port),
@@ -93,14 +100,77 @@ func (s *Server) initialize() error {
 		zap.Uint8("stage", uint8(s.stage)),
 	)
 
-	// Initialize health monitoring first to track component health during startup
-	if err := s.initHealthMonitoring(); err != nil {
-		return fmt.Errorf("health monitoring initialization failed: %w", err)
+	// First initialize core services
+	if err := s.initCoreServices(); err != nil {
+		return fmt.Errorf("core services initialization failed: %w", err)
 	}
 
-	// Stage1-specific initialization
+	// Next initialize health monitoring
+	if err := s.initHealthSystem(); err != nil {
+		return fmt.Errorf("health system initialization failed: %w", err)
+	}
+
+	// Initialize stage-specific capabilities
 	if err := s.initStage1(); err != nil {
 		return fmt.Errorf("stage 1 initialization failed: %w", err)
+	}
+
+	// Finally, register components for health monitoring
+	if err := s.registerHealthChecks(); err != nil {
+		return fmt.Errorf("health check registration failed: %w", err)
+	}
+
+	return nil
+}
+
+// initCoreServices initializes the fundamental services required by the system.
+func (s *Server) initCoreServices() error {
+	// Initialize device service
+	s.logger.Info("initializing core services")
+	store := memory.New()
+	s.device = device.NewService(store, s.logger)
+
+	return nil
+}
+
+// initHealthSystem initializes the health monitoring system.
+func (s *Server) initHealthSystem() error {
+	s.logger.Info("initializing health monitoring system")
+
+	// Create health service with memory store
+	healthStore := healthmem.New()
+	s.health = health.NewService(healthStore, s.logger)
+
+	return nil
+}
+
+// registerHealthChecks registers all components that need health monitoring.
+func (s *Server) registerHealthChecks() error {
+	s.logger.Info("registering component health checks")
+
+	// Register server itself
+	serverInfo := health.ComponentInfo{
+		Name:        "server",
+		Description: "Central control plane server",
+		Category:    "core",
+		Critical:    true,
+	}
+
+	serverHealth := newServerHealth(s)
+	if err := s.health.RegisterComponent(s.baseCtx, "server", serverHealth, serverInfo); err != nil {
+		return fmt.Errorf("failed to register server health monitoring: %w", err)
+	}
+
+	// Register device service
+	deviceInfo := health.ComponentInfo{
+		Name:        "device_service",
+		Description: "Device management service",
+		Category:    "core",
+		Critical:    true,
+	}
+
+	if err := s.health.RegisterComponent(s.baseCtx, "device_service", s.device, deviceInfo); err != nil {
+		return fmt.Errorf("failed to register device service for health monitoring: %w", err)
 	}
 
 	return nil
