@@ -1,13 +1,16 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
 	"github.com/wrale/wrale-fleet/internal/fleet/health"
 	"github.com/wrale/wrale-fleet/internal/fleet/health/store/memory"
+	"go.uber.org/zap"
 )
 
 // initHealthMonitoring sets up the health monitoring service with proper multi-tenant isolation
@@ -131,10 +134,20 @@ func getTenantFromContext(ctx context.Context) string {
 // This is called as part of component health checks and provides detailed
 // status information about the device service's operational state.
 func (s *Server) checkDeviceServiceHealth(ctx context.Context) error {
-	// Implement health check logic for device service
-	// For now, we'll assume it's healthy if it exists
+	// First verify the device service is initialized
 	if s.device == nil {
+		s.logger.Error("device service health check failed: service not initialized")
 		return fmt.Errorf("device service not initialized")
 	}
+
+	// Check if store is accessible by performing a no-op list operation
+	if _, err := s.device.List(ctx, device.ListOptions{}); err != nil {
+		s.logger.Error("device service health check failed: store access check failed",
+			zap.Error(err),
+		)
+		return fmt.Errorf("device store access check failed: %w", err)
+	}
+
+	// Additional health checks can be added here as requirements evolve
 	return nil
 }

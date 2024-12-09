@@ -51,23 +51,6 @@ func (s *Server) cleanupDeviceService(ctx context.Context) error {
 	return nil
 }
 
-// checkDeviceServiceHealth verifies device service health.
-func (s *Server) checkDeviceServiceHealth(ctx context.Context) error {
-	if s.device == nil {
-		return fmt.Errorf("device service not initialized")
-	}
-
-	// Check if store is accessible by performing a no-op list
-	if _, err := s.device.List(ctx, device.ListOptions{}); err != nil {
-		return fmt.Errorf("device store access check failed: %w", err)
-	}
-
-	// Additional health checks specific to Stage 1 can be added here
-	// as requirements evolve
-
-	return nil
-}
-
 // registerStage1Routes registers HTTP routes for Stage 1 capabilities.
 func (s *Server) registerStage1Routes(mux *http.ServeMux) {
 	// Device management endpoints
