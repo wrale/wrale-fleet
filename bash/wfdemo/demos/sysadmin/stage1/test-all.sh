@@ -139,15 +139,22 @@ test_start_central() {
 }
 
 test_start_device() {
-    log "Starting wfdevice on ports ${WFDEVICE_API_PORT}(API) and ${WFDEVICE_MGMT_PORT}(Management)"
+    local control_plane_addr="localhost:${WFCENTRAL_API_PORT}"
+    local device_name="test-device-${TEST_ID}"
     
-    # Start device directly without a subshell
+    log "Starting wfdevice on ports ${WFDEVICE_API_PORT}(API) and ${WFDEVICE_MGMT_PORT}(Management)"
+    log "Using device name: ${device_name}"
+    log "Connecting to control plane at ${control_plane_addr}"
+    
+    # Start device with control plane address and name
     wfdevice start \
         --port "${WFDEVICE_API_PORT}" \
         --management-port "${WFDEVICE_MGMT_PORT}" \
         --data-dir "${TEST_OUTPUT_DIR}/device" \
         --log-level info \
-        --log-file "${TEST_OUTPUT_DIR}/logs/device.log" &
+        --log-file "${TEST_OUTPUT_DIR}/logs/device.log" \
+        --name "${device_name}" \
+        --control-plane "${control_plane_addr}" &
     echo $! > "${TEST_OUTPUT_DIR}/device.pid"
     
     # Wait for agent to be ready by checking management endpoint
@@ -163,37 +170,34 @@ test_start_device() {
 }
 
 test_register_device() {
-    log "Registering device with control plane"
+    local device_name="test-device-${TEST_ID}"
+    log "Verifying device registration with control plane"
     
-    run_with_timeout "${OPERATION_TIMEOUT}" \
-        wfdevice register \
-            --port "${WFDEVICE_API_PORT}" \
-            --name "test-device-${TEST_ID}" \
-            --control-plane "localhost:${WFCENTRAL_API_PORT}"
-            
-    # Verify registration
+    # Just verify the device appears in the control plane's device list
+    # since registration happens at startup
     run_with_timeout "${OPERATION_TIMEOUT}" \
         wfcentral device list --port "${WFCENTRAL_API_PORT}" | \
-        grep -q "test-device-${TEST_ID}" || \
+        grep -q "${device_name}" || \
         fail "Device registration verification failed"
         
-    log "Device registered successfully"
+    log "Device registration verified successfully"
 }
 
 test_configure_monitoring() {
+    local device_name="test-device-${TEST_ID}"
     log "Configuring device monitoring"
     
     run_with_timeout "${OPERATION_TIMEOUT}" \
         wfcentral device monitor \
             --port "${WFCENTRAL_API_PORT}" \
-            --device "test-device-${TEST_ID}" \
+            --device "${device_name}" \
             --interval 30s
             
     # Verify monitoring by checking health endpoint
     run_with_timeout "${OPERATION_TIMEOUT}" \
         wfcentral device health \
             --port "${WFCENTRAL_API_PORT}" \
-            --device "test-device-${TEST_ID}" | \
+            --device "${device_name}" | \
         grep -q "monitoring_active: true" || \
         fail "Monitoring configuration verification failed"
         
