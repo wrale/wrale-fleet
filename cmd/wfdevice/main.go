@@ -56,8 +56,8 @@ func mainWithInit(initDone chan<- struct{}) {
 
 	// Initialize logger with stage 1 capabilities
 	log, err := logger.New(logger.Config{
-		LogLevel: cfg.LogLevel, // Use LogLevel instead of Level
-		Stage:    1,            // Initialize with Stage 1 capabilities
+		LogLevel: cfg.LogLevel,
+		Stage:    1,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
@@ -69,14 +69,17 @@ func mainWithInit(initDone chan<- struct{}) {
 		}
 	}()
 
-	// Initialize server with Stage 1 capabilities
-	srv, err := options.NewServer(
-		options.WithPort(cfg.Port),
-		options.WithDataDir(cfg.DataDir),
-		options.WithName(cfg.Name),
-		options.WithControlPlane(cfg.ControlPlane),
-		options.WithTags(cfg.Tags),
+	// Log the configuration we're starting with
+	log.Info("initializing with configuration",
+		zap.String("name", cfg.Name),
+		zap.String("port", cfg.Port),
+		zap.String("data_dir", cfg.DataDir),
+		zap.String("log_level", cfg.LogLevel),
+		zap.String("control_plane", cfg.ControlPlane),
 	)
+
+	// Initialize server with configuration
+	srv, err := options.NewServer(cfg)
 	if err != nil {
 		log.Fatal("failed to initialize server", zap.Error(err))
 		os.Exit(1)
@@ -94,15 +97,6 @@ func mainWithInit(initDone chan<- struct{}) {
 	// Create context that will be canceled on interrupt
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	// Start server
-	log.Info("starting wfdevice agent",
-		zap.String("name", cfg.Name),
-		zap.String("port", cfg.Port),
-		zap.String("data_dir", cfg.DataDir),
-		zap.String("log_level", cfg.LogLevel),
-		zap.String("control_plane", cfg.ControlPlane),
-	)
 
 	// Handle shutdown signal in a separate goroutine
 	go func() {
