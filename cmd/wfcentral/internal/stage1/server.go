@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/wrale/wrale-fleet/cmd/wfcentral/logger"
 	"github.com/wrale/wrale-fleet/cmd/wfcentral/options"
+	"github.com/wrale/wrale-fleet/internal/fleet/logging"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -102,15 +103,59 @@ on the server's configured health exposure level.`,
 // startServer implements the start command functionality
 func startServer(ctx context.Context, cfg *options.Config) error {
 	// Initialize logger for command-line operations
-	log, err := logger.New(logger.Config{
-		Level:    cfg.LogLevel,
-		FilePath: cfg.LogFile,
-	})
-	if err != nil {
-		return fmt.Errorf("initializing logger: %w", err)
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	// Configure output
+	var output zapcore.WriteSyncer
+	if cfg.LogFile != "" {
+		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			return fmt.Errorf("opening log file: %w", err)
+		}
+		output = zapcore.AddSync(f)
+	} else {
+		output = zapcore.AddSync(os.Stdout)
 	}
+
+	// Create encoder based on format preference
+	var encoder zapcore.Encoder
+	if cfg.LogJSON {
+		encoder = zapcore.NewJSONEncoder(encoderConfig)
+	} else {
+		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+	}
+
+	// Convert log level
+	var level zapcore.Level
+	switch cfg.LogLevel {
+	case "debug":
+		level = zapcore.DebugLevel
+	case "info":
+		level = zapcore.InfoLevel
+	case "warn":
+		level = zapcore.WarnLevel
+	case "error":
+		level = zapcore.ErrorLevel
+	default:
+		level = zapcore.InfoLevel
+	}
+
+	// Create the logger
+	core := zapcore.NewCore(encoder, output, level)
+	log := zap.New(core,
+		zap.AddCaller(),
+		zap.Fields(
+			zap.Int("stage", cfg.LogStage),
+			zap.String("component", "wfcentral"),
+		),
+	)
+
+	// Add stage awareness
+	log = logging.WithStage(log, cfg.LogStage)
+
 	defer func() {
-		if err := logger.Sync(log); err != nil {
+		if err := logging.Sync(log); err != nil {
 			fmt.Fprintf(os.Stderr, "logger sync warning: %v\n", err)
 		}
 	}()
