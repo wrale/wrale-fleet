@@ -43,7 +43,7 @@ func main() {
 }
 ```
 
-## Internal Application Code 
+## Internal Application Code
 
 The internal code maintains strict boundaries between domain logic and server infrastructure:
 
@@ -54,12 +54,16 @@ internal/
 │   │   ├── device.go    # Core device type
 │   │   ├── service.go   # Device operations
 │   │   └── store.go     # Storage interface
-│   ├── group/           # Group management domain  
+│   ├── group/           # Group management domain
 │   │   ├── group.go
 │   │   └── service.go
-│   └── config/          # Configuration domain
-│       ├── config.go    
-│       └── service.go
+│   ├── config/          # Configuration domain
+│   │   ├── config.go
+│   │   └── service.go
+│   └── logging/         # Enterprise logging domain
+│       ├── audit.go     # Audit trail tracking
+│       ├── event.go     # Event definitions
+│       └── service.go   # Logging operations
 │
 ├── server/              # Server infrastructure
 │   ├── central/         # Control plane servers
@@ -85,7 +89,7 @@ type Device struct {
     Config      json.RawMessage
     Status      DeviceStatus
     LastSeen    time.Time
-    
+
     // Stage 2: Multi-site capabilities
     Region     string         `json:"region,omitempty"`
     ClusterID  string         `json:"cluster_id,omitempty"`
@@ -147,7 +151,7 @@ func WithStore(s store.Store) Option {
 
 ### Context Usage with Capability Awareness
 ```go
-type ctxKey struct{} 
+type ctxKey struct{}
 
 func FromContext(ctx context.Context) (Tenant, bool) {
     t, ok := ctx.Value(ctxKey{}).(Tenant)
