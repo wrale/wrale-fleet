@@ -56,17 +56,21 @@ type ManagementConfig struct {
 	ExposureLevel ExposureLevel
 }
 
-// Validate checks the configuration for errors.
+// Validate checks the configuration for errors and ensures all required values
+// are properly set with appropriate defaults.
 func (c *Config) Validate() error {
+	// Validate and default main port
 	if c.Port == "" {
 		c.Port = defaultPort
 	}
 
 	// Validate port is numeric
-	if _, err := strconv.Atoi(c.Port); err != nil {
+	mainPort, err := strconv.Atoi(c.Port)
+	if err != nil {
 		return fmt.Errorf("invalid port number: %s", c.Port)
 	}
 
+	// Set other basic defaults
 	if c.DataDir == "" {
 		c.DataDir = defaultDataDir
 	}
@@ -75,17 +79,21 @@ func (c *Config) Validate() error {
 		c.LogLevel = defaultLogLevel
 	}
 
-	// Initialize management config if not set
+	// Initialize and validate management config
 	if c.ManagementConfig == nil {
 		c.ManagementConfig = &ManagementConfig{
 			ExposureLevel: ExposureStandard,
 		}
 	}
 
-	// Set default management port if not specified
+	// Always set default values for management config to ensure it's complete
+	if c.ManagementConfig.ExposureLevel == "" {
+		c.ManagementConfig.ExposureLevel = ExposureStandard
+	}
+
+	// Set default management port based on main port if not specified
 	if c.ManagementConfig.Port == "" {
-		basePort, _ := strconv.Atoi(c.Port)
-		c.ManagementConfig.Port = strconv.Itoa(basePort + defaultManagementPortOffset)
+		c.ManagementConfig.Port = strconv.Itoa(mainPort + defaultManagementPortOffset)
 	}
 
 	// Validate management port
@@ -97,8 +105,6 @@ func (c *Config) Validate() error {
 	switch c.ManagementConfig.ExposureLevel {
 	case ExposureMinimal, ExposureStandard, ExposureFull:
 		// Valid exposure levels
-	case "":
-		c.ManagementConfig.ExposureLevel = ExposureStandard
 	default:
 		return fmt.Errorf("invalid exposure level: %s", c.ManagementConfig.ExposureLevel)
 	}

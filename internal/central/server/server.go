@@ -64,6 +64,11 @@ func New(cfg *Config, logger *zap.Logger) (*Server, error) {
 		}
 	}
 
+	// Validate configuration - this ensures all required values are set
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	// Create base context for server lifetime
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -85,7 +90,7 @@ func New(cfg *Config, logger *zap.Logger) (*Server, error) {
 		return nil, fmt.Errorf("server initialization failed: %w", err)
 	}
 
-	// Create management server
+	// Create management server - now guaranteed to have valid config
 	s.mgmtServer = newManagementServer(s)
 
 	return s, nil
