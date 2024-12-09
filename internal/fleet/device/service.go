@@ -2,6 +2,8 @@
 package device
 
 import (
+	"context"
+	"fmt"
 	"go.uber.org/zap"
 )
 
@@ -30,6 +32,42 @@ func NewService(store Store, logger *zap.Logger) *Service {
 // while maintaining proper encapsulation.
 func (s *Service) Store() Store {
 	return s.store
+}
+
+// CheckHealth performs health validation of the device service and its dependencies.
+// It implements the health.HealthChecker interface to participate in system-wide
+// health monitoring. This enables both connected and airgapped operation modes to
+// verify service health.
+func (s *Service) CheckHealth(ctx context.Context) error {
+	const op = "Service.CheckHealth"
+
+	// Verify service initialization
+	if s.store == nil {
+		s.logError(op, fmt.Errorf("store not initialized"))
+		return fmt.Errorf("device service store not initialized")
+	}
+	if s.monitor == nil {
+		s.logError(op, fmt.Errorf("security monitor not initialized"))
+		return fmt.Errorf("device service security monitor not initialized")
+	}
+
+	// Check store accessibility with a no-op list operation
+	if _, err := s.store.List(ctx, ListOptions{}); err != nil {
+		s.logError(op, fmt.Errorf("store health check failed: %w", err))
+		return fmt.Errorf("device store health check failed: %w", err)
+	}
+
+	// Verify security monitor by recording a health check event
+	s.monitor.RecordEvent(ctx, SecurityEvent{
+		Type:     EventComplianceCheck,
+		DeviceID: "system",
+		TenantID: "system",
+		Success:  true,
+		Details:  "health check validation",
+	})
+
+	s.logInfo(op, zap.String("status", "healthy"))
+	return nil
 }
 
 // logError logs an error with contextual information

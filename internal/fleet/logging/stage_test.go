@@ -1,76 +1,14 @@
-package logger
+package logging
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest"
 	"go.uber.org/zap/zaptest/observer"
 )
-
-func TestLoggerCreation(t *testing.T) {
-	tests := []struct {
-		name        string
-		environment string
-		logLevel    string
-		wantLevel   zapcore.Level
-		wantJSON    bool
-	}{
-		{
-			name:        "development defaults",
-			environment: "development",
-			wantLevel:   zapcore.DebugLevel,
-			wantJSON:    false,
-		},
-		{
-			name:        "production defaults",
-			environment: "production",
-			wantLevel:   zapcore.InfoLevel,
-			wantJSON:    true,
-		},
-		{
-			name:        "custom level",
-			environment: "development",
-			logLevel:    "error",
-			wantLevel:   zapcore.ErrorLevel,
-			wantJSON:    false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Save environment
-			prevEnv := os.Getenv("ENVIRONMENT")
-			prevLevel := os.Getenv("LOG_LEVEL")
-			defer func() {
-				os.Setenv("ENVIRONMENT", prevEnv)
-				os.Setenv("LOG_LEVEL", prevLevel)
-			}()
-
-			// Set test environment
-			os.Setenv("ENVIRONMENT", tt.environment)
-			if tt.logLevel != "" {
-				os.Setenv("LOG_LEVEL", tt.logLevel)
-			} else {
-				os.Unsetenv("LOG_LEVEL")
-			}
-
-			// Create logger with empty config to test environment-based defaults
-			logger, err := New(Config{})
-			require.NoError(t, err)
-			defer func() {
-				assert.NoError(t, Sync(logger))
-			}()
-
-			// Verify configuration
-			assert.Equal(t, tt.wantLevel, getLoggerLevel(logger))
-		})
-	}
-}
 
 func TestStageCheck(t *testing.T) {
 	// Create an observed logger to capture log output
@@ -109,7 +47,7 @@ func TestStageCheck(t *testing.T) {
 			currentStage:  3,
 			requiredStage: 3,
 			operation:     "current_op",
-			want:          false, // With new implementation, Stage 2+ requires explicit stage setting
+			want:          false,
 			wantWarning:   true,
 			wantError:     false,
 		},
@@ -164,16 +102,6 @@ func TestStageCheck(t *testing.T) {
 	}
 }
 
-func TestLoggerSync(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-
-	// Test normal sync
-	assert.NoError(t, Sync(logger))
-
-	// Test sync with nil logger
-	assert.NoError(t, Sync(nil))
-}
-
 func TestWithStage(t *testing.T) {
 	// Create an observed logger to capture log output
 	core, logs := observer.New(zapcore.InfoLevel)
@@ -223,19 +151,38 @@ func TestWithStage(t *testing.T) {
 	}
 }
 
-// getLoggerLevel extracts the configured level from a zap.Logger
-func getLoggerLevel(logger *zap.Logger) zapcore.Level {
-	// Type assert to get the atomic level
-	if atomic, ok := logger.Core().(interface{ Level() zapcore.Level }); ok {
-		return atomic.Level()
+func TestGetStage(t *testing.T) {
+	logger := zap.NewExample()
+
+	tests := []struct {
+		name       string
+		inputStage int
+		want       int
+	}{
+		{
+			name:       "normal stage",
+			inputStage: 3,
+			want:       3,
+		},
+		{
+			name:       "no stage set",
+			inputStage: 0,
+			want:       MinStage,
+		},
+		{
+			name:       "maximum stage",
+			inputStage: MaxStage,
+			want:       MaxStage,
+		},
 	}
 
-	// Fallback to checking each level
-	for l := zapcore.DebugLevel; l <= zapcore.FatalLevel; l++ {
-		if logger.Core().Enabled(l) {
-			return l
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.inputStage > 0 {
+				logger = WithStage(logger, tt.inputStage)
+			}
+			got := GetStage(logger)
+			assert.Equal(t, tt.want, got)
+		})
 	}
-
-	return zapcore.InfoLevel // Default fallback
 }

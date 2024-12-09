@@ -26,13 +26,14 @@ for env_file in "${DEMO_TMP_DIR}/wfcentral.env" "${DEMO_TMP_DIR}/wfdevice.env"; 
 done
 
 step "Verifying device status"
-if ! wfcentral device status ${DEVICE_NAME}; then
+if ! wfcentral device status ${DEVICE_NAME} --port ${WFCENTRAL_API_PORT}; then
     error "Device not found or not responding"
     exit 1
 fi
 
 step "Enabling device monitoring"
 if ! wfcentral device monitor ${DEVICE_NAME} \
+        --port ${WFCENTRAL_API_PORT} \
         --interval 30s \
         --metrics cpu,memory,disk; then
     error "Failed to enable monitoring"
@@ -40,14 +41,21 @@ if ! wfcentral device monitor ${DEVICE_NAME} \
 fi
 
 step "Verifying monitoring is active"
-if wfcentral device health ${DEVICE_NAME} | grep -q "monitoring_active: true"; then
+if wfcentral device health ${DEVICE_NAME} \
+        --port ${WFCENTRAL_API_PORT} | grep -q "monitoring_active: true"; then
     success "Monitoring is properly configured"
 else
     error "Monitoring verification failed"
     exit 1
 fi
 
-success "Device monitoring enabled"
+# Verify health endpoints are responding
+step "Verifying health check endpoints"
+if ! curl -s "http://localhost:${WFDEVICE_MGMT_PORT}/healthz" | grep -q '"status":"healthy"'; then
+    error "Device health endpoint not responding"
+    exit 1
+fi
+success "Device health endpoints verified"
 
 # Export monitoring configuration
 cat > "${DEMO_TMP_DIR}/monitoring.env" << EOF

@@ -1,8 +1,10 @@
-// Package logger provides a stage-aware logging infrastructure for the wfdevice command.
-package logger
+package logging
 
 import (
+	"sync/atomic"
+
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -16,6 +18,24 @@ const (
 	stageKey = "stage"
 )
 
+// stageCoreWrapper wraps a zapcore.Core to extract field values
+type stageCoreWrapper struct {
+	zapcore.Core
+	stage *int32
+}
+
+func (w *stageCoreWrapper) With(fields []zapcore.Field) zapcore.Core {
+	// Check fields for stage information
+	for i := range fields {
+		if fields[i].Key == stageKey {
+			if stage, ok := fields[i].Interface.(int); ok {
+				atomic.StoreInt32(w.stage, int32(stage))
+			}
+		}
+	}
+	return &stageCoreWrapper{w.Core.With(fields), w.stage}
+}
+
 // WithStage adds stage information to a logger, enabling stage-aware logging
 // and proper capability gating. The stage value is constrained to be between
 // MinStage and MaxStage inclusive.
@@ -26,7 +46,20 @@ func WithStage(logger *zap.Logger, stage int) *zap.Logger {
 	if stage > MaxStage {
 		stage = MaxStage // Cap at maximum Stage 6
 	}
-	return logger.With(zap.Int(stageKey, stage))
+
+	// Store stage in atomic value for thread-safe access
+	stageVal := new(int32)
+	atomic.StoreInt32(stageVal, int32(stage))
+
+	// Create wrapped core
+	wrappedCore := &stageCoreWrapper{
+		Core:  logger.Core(),
+		stage: stageVal,
+	}
+
+	return logger.WithOptions(zap.WrapCore(func(c zapcore.Core) zapcore.Core {
+		return wrappedCore
+	}))
 }
 
 // StageCheck verifies if a requested operation is supported in the current stage.
@@ -36,8 +69,7 @@ func WithStage(logger *zap.Logger, stage int) *zap.Logger {
 // The current stage is determined by the stage field in the logger's context.
 // If no stage is explicitly set, MinStage (1) is assumed.
 func StageCheck(logger *zap.Logger, requiredStage int, operation string) bool {
-	// The stage should already be set in the logger's fields during creation
-	// or via WithStage(). We keep using the same logger to maintain the stage.
+	currentStage := GetStage(logger)
 
 	if requiredStage > MaxStage {
 		logger.Error("invalid required stage",
@@ -53,12 +85,17 @@ func StageCheck(logger *zap.Logger, requiredStage int, operation string) bool {
 		return true
 	}
 
-	// For operations requiring Stage 2+, warn if attempted at a lower stage
-	logger.Warn("operation requires higher stage capability",
-		zap.String("operation", operation),
-		zap.Int("required_stage", requiredStage),
-	)
-	return false
+	// For operations requiring Stage 2+, check if current stage is sufficient
+	if currentStage < requiredStage {
+		logger.Warn("operation requires higher stage capability",
+			zap.String("operation", operation),
+			zap.Int("required_stage", requiredStage),
+			zap.Int("current_stage", currentStage),
+		)
+		return false
+	}
+
+	return true
 }
 
 // StageField adds stage information as a structured field.
@@ -72,4 +109,16 @@ func StageField(stage int) zap.Field {
 		stage = MaxStage
 	}
 	return zap.Int(stageKey, stage)
+}
+
+// GetStage extracts the current stage from a logger's context.
+// Returns MinStage if no stage information is found.
+func GetStage(logger *zap.Logger) int {
+	// If the logger has our wrapper, get the stage directly
+	if cw, ok := logger.Core().(*stageCoreWrapper); ok {
+		return int(atomic.LoadInt32(cw.stage))
+	}
+
+	// No stage information found, return minimum stage
+	return MinStage
 }

@@ -10,31 +10,8 @@ import (
 	"time"
 
 	"github.com/wrale/wrale-fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/health"
 	"go.uber.org/zap"
-)
-
-// Server represents the central control plane server instance.
-// It manages Stage 1 capabilities including core device management,
-// monitoring, and configuration operations.
-type Server struct {
-	cfg       *Config
-	logger    *zap.Logger
-	stage     Stage
-	device    *device.Service
-	httpSrv   *http.Server
-	health    *healthTracker
-	stopOnce  sync.Once
-	stopped   chan struct{}
-	readyChan chan struct{}
-}
-
-// Stage represents the server's operational stage/capability level
-type Stage uint8
-
-const (
-	// Stage1 provides basic device management capabilities
-	Stage1 Stage = 1
-	// Future stages will be added here as described in CLI strategy
 )
 
 const (
@@ -48,6 +25,35 @@ const (
 	readHeaderTimeout = 10 * time.Second
 )
 
+// Stage represents the server's operational stage/capability level
+type Stage uint8
+
+const (
+	// Stage1 provides basic device management capabilities
+	Stage1 Stage = 1
+	// Future stages will be added here as described in CLI strategy
+)
+
+// Server represents the central control plane server instance.
+// It manages Stage 1 capabilities including core device management,
+// monitoring, and configuration operations.
+type Server struct {
+	cfg            *Config
+	logger         *zap.Logger
+	stage          Stage
+	device         *device.Service
+	httpSrv        *http.Server
+	health         *health.Service
+	mgmtServer     *managementServer
+	baseCtx        context.Context
+	baseCancel     context.CancelFunc
+	stopOnce       sync.Once
+	stopped        chan struct{}
+	readyChan      chan struct{}
+	startTime      time.Time // Track server start time for uptime reporting
+	shutdownSignal chan struct{}
+}
+
 // New creates a new central control plane server instance.
 func New(cfg *Config, logger *zap.Logger) (*Server, error) {
 	if cfg == nil {
@@ -58,42 +64,46 @@ func New(cfg *Config, logger *zap.Logger) (*Server, error) {
 		}
 	}
 
-	s := &Server{
-		cfg:       cfg,
-		logger:    logger,
-		stage:     Stage1,
-		health:    newHealthTracker(),
-		stopped:   make(chan struct{}),
-		readyChan: make(chan struct{}),
+	// Validate configuration - this ensures all required values are set
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Initialize server components
+	// Create base context for server lifetime
+	ctx, cancel := context.WithCancel(context.Background())
+
+	s := &Server{
+		cfg:            cfg,
+		logger:         logger,
+		stage:          Stage1,
+		baseCtx:        ctx,
+		baseCancel:     cancel,
+		stopped:        make(chan struct{}),
+		readyChan:      make(chan struct{}),
+		startTime:      time.Now().UTC(), // Initialize start time in UTC
+		shutdownSignal: make(chan struct{}),
+	}
+
+	// Initialize server components in the correct order
 	if err := s.initialize(); err != nil {
+		cancel() // Clean up context if initialization fails
 		return nil, fmt.Errorf("server initialization failed: %w", err)
 	}
+
+	// Create management server - now guaranteed to have valid config
+	s.mgmtServer = newManagementServer(s)
 
 	return s, nil
 }
 
-// initialize sets up all server components.
-func (s *Server) initialize() error {
-	s.logger.Info("initializing central control plane server",
-		zap.String("port", s.cfg.Port),
-		zap.String("data_dir", s.cfg.DataDir),
-		zap.Uint8("stage", uint8(s.stage)),
-	)
-
-	// Stage1-specific initialization
-	if err := s.initStage1(); err != nil {
-		return fmt.Errorf("stage 1 initialization failed: %w", err)
-	}
-
-	return nil
-}
-
 // Start begins serving requests and blocks until stopped.
 func (s *Server) Start(ctx context.Context) error {
-	// Initialize HTTP server with security timeouts
+	// Start management server first
+	if err := s.mgmtServer.start(); err != nil {
+		return fmt.Errorf("failed to start management server: %w", err)
+	}
+
+	// Initialize main HTTP server with security timeouts
 	s.httpSrv = &http.Server{
 		Addr:              ":" + s.cfg.Port,
 		Handler:           s.routes(),
@@ -114,23 +124,23 @@ func (s *Server) Start(ctx context.Context) error {
 		close(errChan)
 	}()
 
-	// Start health check monitoring
-	go s.runHealthChecks(ctx)
-
 	// Wait for initial health checks to complete
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-errChan:
-		if err != nil {
-			return fmt.Errorf("server startup failed: %w", err)
-		}
-	case <-time.After(healthCheckTimeout):
-		return fmt.Errorf("server failed to become healthy within timeout")
+	checkCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
+	defer cancel()
+
+	response, err := s.health.CheckHealth(checkCtx, health.WithTimeout(healthCheckTimeout))
+	if err != nil {
+		return fmt.Errorf("initial health check failed: %w", err)
 	}
 
-	// Mark server as ready after successful startup
-	s.health.setReady()
+	if response.Status != health.StatusHealthy {
+		return fmt.Errorf("server failed to become healthy: %s", response.Status)
+	}
+
+	// Mark server as ready
+	if err := s.health.SetReady(ctx, true); err != nil {
+		return fmt.Errorf("failed to set ready status: %w", err)
+	}
 	close(s.readyChan)
 
 	// Wait for shutdown signal or error
@@ -155,7 +165,19 @@ func (s *Server) Stop() error {
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 
-		// Shutdown HTTP server
+		// Mark server as not ready
+		if e := s.health.SetReady(ctx, false); e != nil {
+			s.logger.Error("failed to update ready status during shutdown", zap.Error(e))
+		}
+
+		// Stop management server first
+		if e := s.mgmtServer.stop(ctx); e != nil {
+			s.logger.Error("failed to stop management server", zap.Error(e))
+			err = fmt.Errorf("management server shutdown: %w", e)
+			return
+		}
+
+		// Shutdown main HTTP server
 		if s.httpSrv != nil {
 			if e := s.httpSrv.Shutdown(ctx); e != nil {
 				err = fmt.Errorf("http server shutdown: %w", e)
@@ -169,6 +191,8 @@ func (s *Server) Stop() error {
 			return
 		}
 
+		// Cancel base context and close channels
+		s.baseCancel()
 		close(s.stopped)
 		s.logger.Info("server stopped successfully")
 	})
@@ -182,85 +206,11 @@ func (s *Server) Ready() <-chan struct{} {
 }
 
 // Status returns the current health status of the server and its components.
-func (s *Server) Status(ctx context.Context) (*HealthResponse, error) {
-	// Perform health checks on all components
-	if err := s.checkComponentHealth(ctx); err != nil {
-		s.logger.Error("health check failed", zap.Error(err))
-	}
-
-	// Get current health status
-	return s.health.getStatus(), nil
+func (s *Server) Status(ctx context.Context) (*health.HealthResponse, error) {
+	return s.health.CheckHealth(ctx, health.WithTimeout(healthCheckTimeout))
 }
 
-// runHealthChecks performs periodic health checks on all components.
-func (s *Server) runHealthChecks(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := s.checkComponentHealth(ctx); err != nil {
-				s.logger.Error("health check failed", zap.Error(err))
-			}
-		}
-	}
-}
-
-// checkComponentHealth verifies the health of all server components.
-func (s *Server) checkComponentHealth(ctx context.Context) error {
-	// Check device service health
-	if err := s.checkDeviceServiceHealth(ctx); err != nil {
-		s.health.updateComponent("device_service", err)
-		return fmt.Errorf("device service health check failed: %w", err)
-	}
-	s.health.updateComponent("device_service", nil)
-
-	return nil
-}
-
-// routes sets up the HTTP routes based on current stage capabilities.
-func (s *Server) routes() http.Handler {
-	mux := http.NewServeMux()
-
-	// Health check endpoints
-	mux.HandleFunc("/healthz", s.handleHealthCheck())
-	mux.HandleFunc("/readyz", s.handleReadyCheck())
-
-	// Stage 1 routes
-	s.registerStage1Routes(mux)
-
-	return mux
-}
-
-// handleHealthCheck implements the health check endpoint.
-func (s *Server) handleHealthCheck() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		status, err := s.Status(ctx)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if err := s.handleHealthResponse(w, status); err != nil {
-			s.logger.Error("failed to write health check response",
-				zap.Error(err),
-			)
-		}
-	}
-}
-
-// handleReadyCheck implements the readiness check endpoint.
-func (s *Server) handleReadyCheck() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.health.isReady() {
-			http.Error(w, "server is not ready", http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}
+// GetStartTime returns the server's start time.
+func (s *Server) GetStartTime() time.Time {
+	return s.startTime
 }

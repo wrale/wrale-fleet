@@ -12,6 +12,9 @@ begin_story "System Administrator" "Stage 1" "Device Initialization"
 
 explain "As a system administrator, I need to start and register a device agent"
 explain "This connects our first device to the control plane"
+explain "We use dedicated port ranges to ensure consistent configuration:"
+explain "  - Main API: ${WFDEVICE_API_PORT} (Device operations)"
+explain "  - Management API: ${WFDEVICE_MGMT_PORT} (Health checks)"
 echo
 
 # Set up our demo environment
@@ -25,22 +28,36 @@ else
     exit 1
 fi
 
+# Validate control plane port is available
+if [[ -z "${WFCENTRAL_API_PORT}" ]]; then
+    error "Control plane API port not set in environment"
+    exit 1
+fi
+
+step "Constructing control plane address"
+CONTROL_PLANE_ADDR="localhost:${WFCENTRAL_API_PORT}"
+explain "Using control plane address: ${CONTROL_PLANE_ADDR}"
+
 step "Creating data directory for device agent"
 mkdir -p "${DEMO_TMP_DIR}/device"
 
 step "Starting device agent"
-# Note: Device name will be set during registration
+explain "Connecting to control plane at ${CONTROL_PLANE_ADDR}"
 wfdevice start \
-    --port 9090 \
+    --port ${WFDEVICE_API_PORT} \
+    --management-port ${WFDEVICE_MGMT_PORT} \
     --data-dir "${DEMO_TMP_DIR}/device" \
-    --log-level info &
+    --log-level info \
+    --control-plane "${CONTROL_PLANE_ADDR}" \
+    --name "first-device" &
 
 WFDEVICE_PID=$!
 echo "${WFDEVICE_PID}" > "${DEMO_TMP_DIR}/device.pid"
 
 step "Waiting for device agent to be ready"
+# Check readiness through management port
 for i in {1..30}; do
-    if wfdevice status | grep -q "ready"; then
+    if curl -s "http://localhost:${WFDEVICE_MGMT_PORT}/readyz" | grep -q '"ready":true'; then
         success "Device agent is ready"
         break
     fi
@@ -51,16 +68,8 @@ for i in {1..30}; do
     sleep 1
 done
 
-step "Registering device with control plane"
-if ! wfdevice register \
-    --name "first-device" \
-    --control-plane "localhost:${WFCENTRAL_PORT}"; then
-    error "Failed to register device"
-    exit 1
-fi
-
-step "Verifying registration"
-if wfcentral device list | grep -q "first-device"; then
+step "Verifying device status"
+if wfcentral device list --port "${WFCENTRAL_API_PORT}" | grep -q "first-device"; then
     success "Device appears in control plane"
 else
     error "Device not found in control plane"
@@ -71,7 +80,8 @@ success "Device initialization complete"
 
 # Export configuration for other scripts
 cat > "${DEMO_TMP_DIR}/wfdevice.env" << EOF
-export WFDEVICE_PORT=9090
+export WFDEVICE_API_PORT=${WFDEVICE_API_PORT}
+export WFDEVICE_MGMT_PORT=${WFDEVICE_MGMT_PORT}
 export WFDEVICE_PID=${WFDEVICE_PID}
 export WFDEVICE_PID_FILE="${DEMO_TMP_DIR}/device.pid"
 export DEVICE_NAME="first-device"

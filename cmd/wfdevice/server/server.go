@@ -1,282 +1,156 @@
-// Package server implements the core wfdevice agent functionality.
+// Package server implements the device agent server functionality
 package server
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/wrale/wrale-fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/health"
+	"github.com/wrale/wrale-fleet/internal/fleet/logging"
 	"go.uber.org/zap"
 )
 
-// Stage represents the agent's operational stage/capability level
-type Stage uint8
-
 const (
-	// Stage1 provides basic device management capabilities
-	Stage1 Stage = 1
-	// Future stages will be added here
-)
-
-const (
-	// readHeaderTimeout defines the amount of time allowed to read
-	// request headers. This helps prevent Slowloris DoS attacks.
-	readHeaderTimeout = 10 * time.Second
-
-	// registrationTimeout is the maximum time allowed for initial registration
+	// Default timeouts and intervals
 	registrationTimeout = 30 * time.Second
-
-	// healthCheckInterval is the time between health report submissions
-	healthCheckInterval = 1 * time.Minute
+	readHeaderTimeout   = 10 * time.Second
+	healthCheckInterval = 60 * time.Second
 )
 
-// Server represents the wfdevice agent instance
+// Server represents the device agent server instance
 type Server struct {
-	cfg     *Config
-	logger  *zap.Logger
-	stage   Stage
-	device  *device.Device
-	httpSrv *http.Server
+	// Core components
+	logger         *zap.Logger
+	loggingService *logging.Service
+	device         *device.Device
+	health         *health.Service
 
-	// State management
-	mu         sync.RWMutex
-	registered bool
-	stopHealth chan struct{}
+	// Synchronization
+	mu sync.RWMutex
+
+	// HTTP servers
+	httpSrv    *http.Server
+	mgmtServer *ManagementServer
+
+	// Configuration
+	cfg     *Config
+	stage   int
+	pidFile string
+
+	// State
+	startTime    time.Time
+	registered   bool
+	stopHealth   chan struct{}
+	shuttingDown bool
 }
 
-// Config holds the server configuration
+// Config holds server configuration options
 type Config struct {
+	Name         string
 	Port         string
 	DataDir      string
-	Name         string
+	LogLevel     string
 	ControlPlane string
-	Tags         map[string]string
+	Stage        int
 }
 
-// Option defines a server option
+// Option is a functional option for configuring the server
 type Option func(*Server) error
 
-// New creates a new server instance with the given options
-func New(logger *zap.Logger, opts ...Option) (*Server, error) {
-	s := &Server{
-		cfg:        &Config{},
-		logger:     logger,
-		stage:      Stage1,
-		stopHealth: make(chan struct{}),
+// WithLogging sets the logging service
+func WithLogging(svc *logging.Service) Option {
+	return func(s *Server) error {
+		s.loggingService = svc
+		return nil
+	}
+}
+
+// WithHealth sets the health service
+func WithHealth(svc *health.Service) Option {
+	return func(s *Server) error {
+		s.health = svc
+		return nil
+	}
+}
+
+// WithStage sets the capability stage
+func WithStage(stage int) Option {
+	return func(s *Server) error {
+		if stage < 1 || stage > 6 {
+			return fmt.Errorf("invalid stage: %d (must be 1-6)", stage)
+		}
+		s.stage = stage
+		return nil
+	}
+}
+
+// WithPIDFile sets the PID file path
+func WithPIDFile(path string) Option {
+	return func(s *Server) error {
+		s.pidFile = path
+		return nil
+	}
+}
+
+// New creates a new server instance with the provided configuration and options
+func New(cfg *Config, logger *zap.Logger, opts ...Option) (*Server, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
 	}
 
+	s := &Server{
+		logger:    logger,
+		cfg:       cfg,
+		stage:     1, // Default to Stage 1
+		startTime: time.Now().UTC(),
+		device:    device.New("", cfg.Name), // TenantID will be set during registration
+	}
+
+	// Apply options
 	for _, opt := range opts {
 		if err := opt(s); err != nil {
-			return nil, fmt.Errorf("applying server option: %w", err)
+			return nil, fmt.Errorf("applying option: %w", err)
 		}
 	}
 
-	// Validate required configuration
-	if s.cfg.Name == "" {
-		return nil, fmt.Errorf("device name is required")
+	// Validate required components
+	if s.loggingService == nil {
+		return nil, fmt.Errorf("logging service is required")
 	}
-	if s.cfg.ControlPlane == "" {
-		return nil, fmt.Errorf("control plane address is required")
-	}
-
-	// Initialize device state
-	s.device = &device.Device{
-		Name:   s.cfg.Name,
-		Tags:   s.cfg.Tags,
-		Status: device.StatusOffline,
+	if s.health == nil {
+		return nil, fmt.Errorf("health service is required")
 	}
 
 	return s, nil
 }
 
-// WithPort sets the server port
-func WithPort(port string) Option {
-	return func(s *Server) error {
-		s.cfg.Port = port
-		return nil
-	}
+// Config returns a copy of the current server configuration
+func (s *Server) Config() Config {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return *s.cfg
 }
 
-// WithDataDir sets the data directory
-func WithDataDir(dir string) Option {
-	return func(s *Server) error {
-		s.cfg.DataDir = dir
-		return nil
-	}
+// Stage returns the current capability stage
+func (s *Server) Stage() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.stage
 }
 
-// WithName sets the device name
-func WithName(name string) Option {
-	return func(s *Server) error {
-		s.cfg.Name = name
-		return nil
-	}
+// IsRegistered returns whether the device is registered with the control plane
+func (s *Server) IsRegistered() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.registered
 }
 
-// WithControlPlane sets the control plane address
-func WithControlPlane(addr string) Option {
-	return func(s *Server) error {
-		s.cfg.ControlPlane = addr
-		return nil
-	}
-}
-
-// WithTags sets the device tags
-func WithTags(tags map[string]string) Option {
-	return func(s *Server) error {
-		s.cfg.Tags = tags
-		return nil
-	}
-}
-
-// Run starts the server and blocks until the context is canceled
-func (s *Server) Run(ctx context.Context) error {
-	s.logger.Info("starting wfdevice agent",
-		zap.String("name", s.cfg.Name),
-		zap.String("control_plane", s.cfg.ControlPlane),
-		zap.Uint8("stage", uint8(s.stage)),
-	)
-
-	// Initialize HTTP server with security timeouts
-	s.httpSrv = &http.Server{
-		Addr:              ":" + s.cfg.Port,
-		Handler:           s.routes(),
-		ReadHeaderTimeout: readHeaderTimeout,
-	}
-
-	// Start HTTP server
-	errChan := make(chan error, 1)
-	go func() {
-		s.logger.Info("starting HTTP server",
-			zap.String("addr", s.httpSrv.Addr),
-			zap.Duration("header_timeout", readHeaderTimeout),
-		)
-		if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errChan <- fmt.Errorf("http server error: %w", err)
-		}
-	}()
-
-	// Register with control plane
-	regCtx, cancel := context.WithTimeout(ctx, registrationTimeout)
-	defer cancel()
-
-	if err := s.register(regCtx); err != nil {
-		return fmt.Errorf("device registration failed: %w", err)
-	}
-
-	// Start health reporting
-	s.startHealthReporting()
-
-	// Wait for shutdown signal or error
-	select {
-	case <-ctx.Done():
-		s.logger.Info("shutting down agent")
-		return s.shutdown()
-	case err := <-errChan:
-		return fmt.Errorf("agent error: %w", err)
-	}
-}
-
-// shutdown performs a graceful server shutdown
-func (s *Server) shutdown() error {
-	// Stop health reporting
-	if s.stopHealth != nil {
-		close(s.stopHealth)
-	}
-
-	// Notify control plane of shutdown
-	s.notifyShutdown()
-
-	// Shutdown HTTP server
-	if err := s.httpSrv.Shutdown(context.Background()); err != nil {
-		return fmt.Errorf("http server shutdown: %w", err)
-	}
-
-	return nil
-}
-
-// register handles device registration with the control plane
-func (s *Server) register(ctx context.Context) error {
-	s.logger.Info("registering device with control plane",
-		zap.String("name", s.cfg.Name),
-		zap.String("control_plane", s.cfg.ControlPlane),
-	)
-
-	// TODO: Implement actual registration logic
-	// For now, we'll simulate successful registration
-	time.Sleep(time.Second)
-
-	s.mu.Lock()
-	s.registered = true
-	s.device.Status = device.StatusOnline
-	s.mu.Unlock()
-
-	s.logger.Info("device registration successful")
-	return nil
-}
-
-// notifyShutdown informs the control plane of planned shutdown
-func (s *Server) notifyShutdown() {
-	s.logger.Info("notifying control plane of shutdown")
-	// TODO: Implement shutdown notification
-}
-
-// startHealthReporting begins periodic health check submissions
-func (s *Server) startHealthReporting() {
-	go func() {
-		ticker := time.NewTicker(healthCheckInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				if err := s.submitHealthReport(); err != nil {
-					s.logger.Error("failed to submit health report", zap.Error(err))
-				}
-			case <-s.stopHealth:
-				return
-			}
-		}
-	}()
-}
-
-// submitHealthReport sends a health report to the control plane
-func (s *Server) submitHealthReport() error {
-	s.logger.Debug("submitting health report")
-	// TODO: Implement health report submission
-	return nil
-}
-
-// routes sets up the HTTP routes
-func (s *Server) routes() http.Handler {
-	mux := http.NewServeMux()
-
-	// Stage 1 routes
-	mux.HandleFunc("/healthz", s.handleHealth())
-	mux.HandleFunc("/api/v1/status", s.handleStatus())
-
-	return mux
-}
-
-// Basic health check handler
-func (s *Server) handleHealth() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"healthy"}`)
-	}
-}
-
-// Status handler
-func (s *Server) handleStatus() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		s.mu.RLock()
-		status := s.device.Status
-		s.mu.RUnlock()
-
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"%s"}`, status)
-	}
+// IsShuttingDown returns whether the server is in the process of shutting down
+func (s *Server) IsShuttingDown() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.shuttingDown
 }

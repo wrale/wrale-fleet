@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+set -x
+
 # test-all.sh - CI Integration Test Script
 # This script verifies the complete Stage 1 functionality in a CI environment.
 # Unlike all.sh which is for demonstrations, this script focuses on validation
@@ -16,13 +18,11 @@ TEST_ID=${TEST_ID:-$(head -c6 /dev/urandom | base64)}
 TEST_OUTPUT_DIR=${TEST_OUTPUT_DIR:-/tmp/wrale-test-${TEST_ID}}
 
 # Port allocation (0 means find available port)
-WFCENTRAL_PORT=${WFCENTRAL_PORT:-0}
-WFDEVICE_PORT=${WFDEVICE_PORT:-0}
-
-# Logging setup
-mkdir -p "${TEST_OUTPUT_DIR}/logs"
-exec 1> >(tee "${TEST_OUTPUT_DIR}/logs/test.log")
-exec 2> >(tee "${TEST_OUTPUT_DIR}/logs/test.err")
+# Each service needs two ports - one for API and one for management
+WFCENTRAL_API_PORT=${WFCENTRAL_API_PORT:-0}
+WFCENTRAL_MGMT_PORT=${WFCENTRAL_MGMT_PORT:-0}
+WFDEVICE_API_PORT=${WFDEVICE_API_PORT:-0}
+WFDEVICE_MGMT_PORT=${WFDEVICE_MGMT_PORT:-0}
 
 log() { echo "$(date -u '+%Y-%m-%dT%H:%M:%S.%3NZ') $*" >&2; }
 fail() { log "ERROR: $*"; exit 1; }
@@ -33,7 +33,7 @@ run_with_timeout() {
     shift
     
     # Run the command in background
-    ("$@") & local pid=$!
+    "$@" & local pid=$!
     
     # Start a timer in background
     (
@@ -68,125 +68,206 @@ test_init() {
     log "Initializing test environment ${TEST_ID}"
     
     # Allocate ports if not specified
-    if [ "${WFCENTRAL_PORT}" -eq 0 ]; then
-        WFCENTRAL_PORT=$(get_free_port)
+    if [ "${WFCENTRAL_API_PORT}" -eq 0 ]; then
+        WFCENTRAL_API_PORT=$(get_free_port)
     fi
-    if [ "${WFDEVICE_PORT}" -eq 0 ]; then
-        WFDEVICE_PORT=$(get_free_port)
+    if [ "${WFCENTRAL_MGMT_PORT}" -eq 0 ]; then
+        WFCENTRAL_MGMT_PORT=$(get_free_port)
+    fi
+    if [ "${WFDEVICE_API_PORT}" -eq 0 ]; then
+        WFDEVICE_API_PORT=$(get_free_port)
+    fi
+    if [ "${WFDEVICE_MGMT_PORT}" -eq 0 ]; then
+        WFDEVICE_MGMT_PORT=$(get_free_port)
     fi
     
+    # Create necessary directories with proper permissions
     mkdir -p "${TEST_OUTPUT_DIR}/central"
     mkdir -p "${TEST_OUTPUT_DIR}/device"
     
+    # Set up logging directory structure
+    # First remove any existing log directories/files to prevent conflicts
+    rm -rf "${TEST_OUTPUT_DIR}/logs"
+    mkdir -p "${TEST_OUTPUT_DIR}/logs"
+    
+    # Create log files with proper permissions
+    touch "${TEST_OUTPUT_DIR}/logs/central.log"
+    touch "${TEST_OUTPUT_DIR}/logs/device.log"
+    touch "${TEST_OUTPUT_DIR}/logs/test.log"
+    touch "${TEST_OUTPUT_DIR}/logs/test.err"
+    chmod 600 "${TEST_OUTPUT_DIR}/logs"/*.log
+    
+    # Set up output redirection after log files are created
+    exec 1> >(tee "${TEST_OUTPUT_DIR}/logs/test.log")
+    exec 2> >(tee "${TEST_OUTPUT_DIR}/logs/test.err")
+    
     # Export for subprocesses
-    export WFCENTRAL_PORT WFDEVICE_PORT TEST_OUTPUT_DIR
+    export WFCENTRAL_API_PORT WFCENTRAL_MGMT_PORT 
+    export WFDEVICE_API_PORT WFDEVICE_MGMT_PORT 
+    export TEST_OUTPUT_DIR
+    
+    log "Port allocation:"
+    log "  wfcentral API port: ${WFCENTRAL_API_PORT}"
+    log "  wfcentral Management port: ${WFCENTRAL_MGMT_PORT}"
+    log "  wfdevice API port: ${WFDEVICE_API_PORT}"
+    log "  wfdevice Management port: ${WFDEVICE_MGMT_PORT}"
 }
 
 # Test steps with timeouts and logging
 test_start_central() {
-    log "Starting wfcentral on port ${WFCENTRAL_PORT}"
+    log "Starting wfcentral on ports ${WFCENTRAL_API_PORT}(API) and ${WFCENTRAL_MGMT_PORT}(Management)"
     
-    run_with_timeout "${WFCENTRAL_START_TIMEOUT}" \
-        wfcentral start \
-            --port "${WFCENTRAL_PORT}" \
-            --data-dir "${TEST_OUTPUT_DIR}/central" \
-            --log-file "${TEST_OUTPUT_DIR}/logs/central.log" &
+    # Start server directly without a subshell
+    wfcentral start \
+        --port "${WFCENTRAL_API_PORT}" \
+        --management-port "${WFCENTRAL_MGMT_PORT}" \
+        --data-dir "${TEST_OUTPUT_DIR}/central" \
+        --log-level info \
+        --log-file "${TEST_OUTPUT_DIR}/logs/central.log" &
     echo $! > "${TEST_OUTPUT_DIR}/central.pid"
     
-    # Wait for server to be ready
+    # Wait for server to be ready by checking management endpoint
     local deadline=$((SECONDS + WFCENTRAL_START_TIMEOUT))
-    while ! wfcentral status --port "${WFCENTRAL_PORT}" | grep -q "healthy"; do
+    while ! curl -s "http://localhost:${WFCENTRAL_MGMT_PORT}/readyz" | grep -q '"ready":true'; do
         if [ "${SECONDS}" -ge "${deadline}" ]; then
             fail "wfcentral failed to start within ${WFCENTRAL_START_TIMEOUT} seconds"
         fi
         sleep 1
     done
+    
+    log "Central server started successfully"
 }
 
 test_start_device() {
-    log "Starting wfdevice on port ${WFDEVICE_PORT}"
+    local control_plane_addr="localhost:${WFCENTRAL_API_PORT}"
+    local device_name="test-device-${TEST_ID}"
     
-    run_with_timeout "${WFDEVICE_START_TIMEOUT}" \
-        wfdevice start \
-            --port "${WFDEVICE_PORT}" \
-            --data-dir "${TEST_OUTPUT_DIR}/device" \
-            --log-file "${TEST_OUTPUT_DIR}/logs/device.log" &
+    log "Starting wfdevice on ports ${WFDEVICE_API_PORT}(API) and ${WFDEVICE_MGMT_PORT}(Management)"
+    log "Using device name: ${device_name}"
+    log "Connecting to control plane at ${control_plane_addr}"
+    
+    # Start device with control plane address and name
+    wfdevice start \
+        --port "${WFDEVICE_API_PORT}" \
+        --management-port "${WFDEVICE_MGMT_PORT}" \
+        --data-dir "${TEST_OUTPUT_DIR}/device" \
+        --log-level info \
+        --log-file "${TEST_OUTPUT_DIR}/logs/device.log" \
+        --name "${device_name}" \
+        --control-plane "${control_plane_addr}" &
     echo $! > "${TEST_OUTPUT_DIR}/device.pid"
     
-    # Wait for agent to be ready
+    # Wait for agent to be ready by checking management endpoint
     local deadline=$((SECONDS + WFDEVICE_START_TIMEOUT))
-    while ! wfdevice status --port "${WFDEVICE_PORT}" | grep -q "ready"; do
+    while ! curl -s "http://localhost:${WFDEVICE_MGMT_PORT}/readyz" | grep -q '"ready":true'; do
         if [ "${SECONDS}" -ge "${deadline}" ]; then
             fail "wfdevice failed to start within ${WFDEVICE_START_TIMEOUT} seconds"
         fi
         sleep 1
     done
+    
+    log "Device agent started successfully"
 }
 
 test_register_device() {
-    log "Registering device with control plane"
+    local device_name="test-device-${TEST_ID}"
+    log "Verifying device registration with control plane"
     
+    # Just verify the device appears in the control plane's device list
+    # since registration happens at startup
     run_with_timeout "${OPERATION_TIMEOUT}" \
-        wfdevice register \
-            --port "${WFDEVICE_PORT}" \
-            --name "test-device-${TEST_ID}" \
-            --control-plane "localhost:${WFCENTRAL_PORT}"
-            
-    # Verify registration
-    run_with_timeout "${OPERATION_TIMEOUT}" \
-        wfcentral device list --port "${WFCENTRAL_PORT}" | \
-        grep -q "test-device-${TEST_ID}" || \
+        wfcentral device list --port "${WFCENTRAL_API_PORT}" | \
+        grep -q "${device_name}" || \
         fail "Device registration verification failed"
+        
+    log "Device registration verified successfully"
 }
 
 test_configure_monitoring() {
+    local device_name="test-device-${TEST_ID}"
     log "Configuring device monitoring"
     
     run_with_timeout "${OPERATION_TIMEOUT}" \
         wfcentral device monitor \
-            --port "${WFCENTRAL_PORT}" \
-            --device "test-device-${TEST_ID}" \
+            --port "${WFCENTRAL_API_PORT}" \
+            --device "${device_name}" \
             --interval 30s
             
-    # Verify monitoring
+    # Verify monitoring by checking health endpoint
     run_with_timeout "${OPERATION_TIMEOUT}" \
         wfcentral device health \
-            --port "${WFCENTRAL_PORT}" \
-            --device "test-device-${TEST_ID}" | \
+            --port "${WFCENTRAL_API_PORT}" \
+            --device "${device_name}" | \
         grep -q "monitoring_active: true" || \
         fail "Monitoring configuration verification failed"
+        
+    log "Monitoring configured successfully"
+}
+
+test_verify_health_endpoints() {
+    log "Verifying health endpoints are properly secured"
+    
+    # Check central health endpoint
+    if ! curl -s "http://localhost:${WFCENTRAL_MGMT_PORT}/healthz" | grep -q '"status":"healthy"'; then
+        fail "Central health endpoint not responding correctly"
+    fi
+    
+    # Check device health endpoint
+    if ! curl -s "http://localhost:${WFDEVICE_MGMT_PORT}/healthz" | grep -q '"status":"healthy"'; then
+        fail "Device health endpoint not responding correctly"
+    fi
+    
+    log "Health endpoints verified successfully"
 }
 
 test_shutdown() {
     log "Initiating shutdown sequence"
     
-    # Stop device
+    # Stop device first
     if [ -f "${TEST_OUTPUT_DIR}/device.pid" ]; then
-        run_with_timeout "${OPERATION_TIMEOUT}" \
-            wfdevice stop --port "${WFDEVICE_PORT}" || \
-            kill -9 "$(cat "${TEST_OUTPUT_DIR}/device.pid")" 2>/dev/null
+        local device_pid
+        device_pid=$(cat "${TEST_OUTPUT_DIR}/device.pid")
+        
+        log "Stopping device agent (PID: ${device_pid})"
+        if ! kill -TERM "${device_pid}" 2>/dev/null; then
+            log "Warning: Failed to stop device gracefully, attempting force shutdown"
+            kill -9 "${device_pid}" 2>/dev/null || true
+        fi
+        rm -f "${TEST_OUTPUT_DIR}/device.pid"
     fi
     
-    # Stop control plane
+    # Then stop control plane
     if [ -f "${TEST_OUTPUT_DIR}/central.pid" ]; then
-        run_with_timeout "${OPERATION_TIMEOUT}" \
-            wfcentral stop --port "${WFCENTRAL_PORT}" || \
-            kill -9 "$(cat "${TEST_OUTPUT_DIR}/central.pid")" 2>/dev/null
+        local central_pid
+        central_pid=$(cat "${TEST_OUTPUT_DIR}/central.pid")
+        
+        log "Stopping central server (PID: ${central_pid})"
+        if ! kill -TERM "${central_pid}" 2>/dev/null; then
+            log "Warning: Failed to stop central server gracefully, attempting force shutdown"
+            kill -9 "${central_pid}" 2>/dev/null || true
+        fi
+        rm -f "${TEST_OUTPUT_DIR}/central.pid"
     fi
+    
+    log "Shutdown sequence completed"
 }
 
 # Run all tests
 run_tests() {
     local start_time=${SECONDS}
     
+    # Ensure proper cleanup on exit
     trap test_shutdown EXIT
     
+    # Run test sequence
     test_init
     test_start_central
     test_start_device
     test_register_device
     test_configure_monitoring
+    test_verify_health_endpoints
     
+    # Calculate test duration
     local duration=$((SECONDS - start_time))
     log "All tests passed in ${duration} seconds"
     
@@ -194,11 +275,12 @@ run_tests() {
     cat > "${TEST_OUTPUT_DIR}/junit.xml" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuites>
-  <testsuite name="stage1" tests="4" failures="0" time="${duration}">
+  <testsuite name="stage1" tests="5" failures="0" time="${duration}">
     <testcase name="start_central" time="${WFCENTRAL_START_TIMEOUT}" />
     <testcase name="start_device" time="${WFDEVICE_START_TIMEOUT}" />
     <testcase name="register_device" time="${OPERATION_TIMEOUT}" />
     <testcase name="configure_monitoring" time="${OPERATION_TIMEOUT}" />
+    <testcase name="verify_health_endpoints" time="${OPERATION_TIMEOUT}" />
   </testsuite>
 </testsuites>
 EOF
