@@ -35,8 +35,8 @@ wfdevice start \
     --data-dir "${DEMO_TMP_DIR}/device" \
     --log-level info &
 
-WFdevice_PID=$!
-echo "${WFdevice_PID}" > "${DEMO_TMP_DIR}/device.pid"
+WFDEVICE_PID=$!
+echo "${WFDEVICE_PID}" > "${DEMO_TMP_DIR}/device.pid"
 
 step "Waiting for device agent to be ready"
 for i in {1..30}; do
@@ -71,8 +71,8 @@ success "Device initialization complete"
 
 # Export configuration for other scripts
 cat > "${DEMO_TMP_DIR}/wfdevice.env" << EOF
-export WFdevice_PORT=9090
-export WFdevice_PID=${WFdevice_PID}
-export WFdevice_PID_FILE="${DEMO_TMP_DIR}/device.pid"
+export WFDEVICE_PORT=9090
+export WFDEVICE_PID=${WFDEVICE_PID}
+export WFDEVICE_PID_FILE="${DEMO_TMP_DIR}/device.pid"
 export DEVICE_NAME="first-device"
 EOF

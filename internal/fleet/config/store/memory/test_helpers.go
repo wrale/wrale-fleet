@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/wrale/fleet/internal/fleet/config"
+	"github.com/wrale/wrale-fleet/internal/fleet/config"
 )
 
 // createTestTemplate creates a new template for testing purposes

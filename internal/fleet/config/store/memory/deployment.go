@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/wrale/fleet/internal/fleet/config"
+	"github.com/wrale/wrale-fleet/internal/fleet/config"
 )
 
 // validateDeployment ensures the deployment is valid before storage operations.

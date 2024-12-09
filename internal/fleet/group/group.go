@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/wrale/fleet/internal/fleet/device"
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
 )
 
 // Type represents the type of device group

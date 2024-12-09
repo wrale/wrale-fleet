@@ -3,7 +3,7 @@ package memory
 import (
 	"context"
 
-	"github.com/wrale/fleet/internal/fleet/config"
+	"github.com/wrale/wrale-fleet/internal/fleet/config"
 )
 
 // CreateVersion stores a new configuration version

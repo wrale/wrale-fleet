@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/wrale/fleet/internal/fleet/config"
+	"github.com/wrale/wrale-fleet/internal/fleet/config"
 )
 
 func TestDeployment_Operations(t *testing.T) {

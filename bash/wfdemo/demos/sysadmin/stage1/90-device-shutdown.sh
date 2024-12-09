@@ -36,11 +36,11 @@ if wfdevice stop; then
 else
     error "Failed to stop device agent gracefully"
     
-    if [[ -f "${WFdevice_PID_FILE}" ]]; then
+    if [[ -f "${WFDEVICE_PID_FILE}" ]]; then
         warn "Attempting forced shutdown"
-        WFdevice_PID=$(cat "${WFdevice_PID_FILE}")
-        kill -9 "${WFdevice_PID}" 2>/dev/null
-        rm -f "${WFdevice_PID_FILE}"
+        WFDEVICE_PID=$(cat "${WFDEVICE_PID_FILE}")
+        kill -9 "${WFDEVICE_PID}" 2>/dev/null
+        rm -f "${WFDEVICE_PID_FILE}"
     fi
 fi
 
