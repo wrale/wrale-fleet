@@ -26,31 +26,77 @@ func main() {
 	mainWithInit(nil)
 }
 
+// Command represents a subcommand with its own flags
+type Command struct {
+	fs *flag.FlagSet
+	fn func(ctx context.Context, cfg *options.Config) error
+}
+
 // mainWithInit is the main program logic, optionally signaling initialization.
 // The initDone channel is used for testing to coordinate program startup.
 func mainWithInit(initDone chan<- struct{}) {
-	// Create default config and parse command-line flags
+	// Create default config for command-line operations
 	cfg := options.New()
 
-	// API and management interface configuration
-	flag.StringVar(&cfg.Port, "port", cfg.Port, "Main API port for device management")
-	flag.StringVar(&cfg.ManagementPort, "management-port", cfg.ManagementPort, "Management API port for health and readiness endpoints")
+	// Define commands
+	commands := map[string]Command{
+		"start": {
+			fs: flag.NewFlagSet("start", flag.ExitOnError),
+			fn: startServer,
+		},
+	}
 
-	// Common configuration
-	flag.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "Data directory path")
-	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Logging level (debug, info, warn, error)")
-
-	// Health exposure configuration
-	flag.StringVar(&cfg.HealthExposure, "health-exposure", cfg.HealthExposure,
+	// Register flags for start command
+	startCmd := commands["start"]
+	startCmd.fs.StringVar(&cfg.Port, "port", cfg.Port, "Main API port for device management")
+	startCmd.fs.StringVar(&cfg.ManagementPort, "management-port", cfg.ManagementPort, "Management API port for health and readiness endpoints")
+	startCmd.fs.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "Data directory path")
+	startCmd.fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Logging level (debug, info, warn, error)")
+	startCmd.fs.StringVar(&cfg.HealthExposure, "health-exposure", cfg.HealthExposure,
 		"Level of information exposed in health endpoints (minimal, standard, full)")
+	startCmd.fs.StringVar(&cfg.LogFile, "log-file", "", "Log file path (defaults to stdout)")
 
-	flag.Parse()
-
-	// Initialize logger for command-line operations
-	log, err := logger.New(logger.Config{Level: cfg.LogLevel})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
+	// No arguments shows usage
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <command> [options]\n\nCommands:\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  start    Start the control plane server\n")
 		os.Exit(1)
+	}
+
+	// Get the command and verify it exists
+	cmdName := os.Args[1]
+	cmd, exists := commands[cmdName]
+	if !exists {
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmdName)
+		os.Exit(1)
+	}
+
+	// Parse command-specific flags
+	if err := cmd.fs.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create context for program lifetime
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run the command
+	if err := cmd.fn(ctx, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// startServer implements the start command functionality
+func startServer(ctx context.Context, cfg *options.Config) error {
+	// Initialize logger for command-line operations
+	log, err := logger.New(logger.Config{
+		Level:    cfg.LogLevel,
+		FilePath: cfg.LogFile,
+	})
+	if err != nil {
+		return fmt.Errorf("initializing logger: %w", err)
 	}
 	defer func() {
 		if err := logger.Sync(log); err != nil {
@@ -61,7 +107,7 @@ func mainWithInit(initDone chan<- struct{}) {
 	// Initialize server with configuration
 	srv, err := options.NewServer(cfg)
 	if err != nil {
-		log.Fatal("failed to initialize server", zap.Error(err))
+		return fmt.Errorf("initializing server: %w", err)
 	}
 
 	// Signal successful initialization if in test mode
@@ -72,10 +118,6 @@ func mainWithInit(initDone chan<- struct{}) {
 	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Create context that will be canceled on interrupt
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Start server
 	log.Info("starting wfcentral server",
@@ -95,9 +137,6 @@ func mainWithInit(initDone chan<- struct{}) {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer shutdownCancel()
 
-		// Trigger graceful shutdown
-		cancel()
-
 		// Wait for shutdown to complete or timeout
 		select {
 		case <-shutdownCtx.Done():
@@ -110,8 +149,9 @@ func mainWithInit(initDone chan<- struct{}) {
 	// Run server until shutdown
 	if err := srv.Start(ctx); err != nil {
 		log.Error("server error", zap.Error(err))
-		os.Exit(1)
+		return err
 	}
 
 	log.Info("shutdown completed successfully")
+	return nil
 }

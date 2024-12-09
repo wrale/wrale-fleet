@@ -21,6 +21,9 @@ type Config struct {
 	// LogLevel controls logging verbosity
 	LogLevel string
 
+	// LogFile specifies the path for log output (empty for stdout)
+	LogFile string
+
 	// ManagementPort is the port for health and readiness endpoints
 	// This must be explicitly configured for proper security setup
 	ManagementPort string
@@ -74,7 +77,8 @@ func NewServer(cfg *Config) (*server.Server, error) {
 
 	// Initialize logger first to ensure proper diagnostics during startup
 	log, err := logger.New(logger.Config{
-		Level: cfg.LogLevel,
+		Level:    cfg.LogLevel,
+		FilePath: cfg.LogFile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initializing logger: %w", err)

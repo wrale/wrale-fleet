@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Enable debug output for troubleshooting
+set -x
+
 # Stage 1 - Server Initialization
 # This script demonstrates starting the central control plane, which is the core
 # server component that manages our entire fleet of devices. The control plane
@@ -24,10 +27,10 @@ step "Creating data directory for the control plane"
 mkdir -p "${DEMO_TMP_DIR}/central"
 
 step "Starting the control plane server"
-# Note: Running in background for demo purposes
-wfcentral \
-    --port ${WFCENTRAL_API_PORT} \
-    --management-port ${WFCENTRAL_MGMT_PORT} \
+# The control plane is started in the background for the demo
+wfcentral start \
+    --port "${WFCENTRAL_API_PORT}" \
+    --management-port "${WFCENTRAL_MGMT_PORT}" \
     --data-dir "${DEMO_TMP_DIR}/central" \
     --log-level info &
 
