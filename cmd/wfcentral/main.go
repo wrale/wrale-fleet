@@ -31,9 +31,19 @@ func main() {
 func mainWithInit(initDone chan<- struct{}) {
 	// Create default config and parse command-line flags
 	cfg := options.New()
-	flag.StringVar(&cfg.Port, "port", cfg.Port, "Server port")
+
+	// API and management interface configuration
+	flag.StringVar(&cfg.Port, "port", cfg.Port, "Main API port for device management")
+	flag.StringVar(&cfg.ManagementPort, "management-port", cfg.ManagementPort, "Management API port for health and readiness endpoints")
+
+	// Common configuration
 	flag.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "Data directory path")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Logging level (debug, info, warn, error)")
+
+	// Health exposure configuration
+	flag.StringVar(&cfg.HealthExposure, "health-exposure", cfg.HealthExposure,
+		"Level of information exposed in health endpoints (minimal, standard, full)")
+
 	flag.Parse()
 
 	// Initialize logger for command-line operations
@@ -69,7 +79,9 @@ func mainWithInit(initDone chan<- struct{}) {
 
 	// Start server
 	log.Info("starting wfcentral server",
-		zap.String("port", cfg.Port),
+		zap.String("api_port", cfg.Port),
+		zap.String("management_port", cfg.ManagementPort),
+		zap.String("health_exposure", cfg.HealthExposure),
 		zap.String("data_dir", cfg.DataDir),
 		zap.String("log_level", cfg.LogLevel),
 	)

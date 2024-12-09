@@ -3,6 +3,7 @@ package options
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/wrale/wrale-fleet/cmd/wfcentral/logger"
 	"github.com/wrale/wrale-fleet/internal/central/server"
@@ -33,11 +34,11 @@ type Config struct {
 }
 
 // New creates a new Config with sensible default values that prioritize security
-// while requiring explicit port configuration. Enterprise deployments require
-// deliberate port allocation for proper network security configuration.
+// while requiring explicit port configuration. The management port must be
+// explicitly set at runtime, so we don't default it here.
 func New() *Config {
 	return &Config{
-		Port:           "8080",               // Default main API port
+		Port:           "8600",               // Default main API port
 		DataDir:        "/var/lib/wfcentral", // Default data directory
 		LogLevel:       "info",               // Default log level
 		HealthExposure: "standard",           // Default to standard health information exposure
@@ -49,9 +50,26 @@ func New() *Config {
 // of all necessary components including logging, monitoring, and the separate
 // management server for health endpoints.
 func NewServer(cfg *Config) (*server.Server, error) {
+	// Basic validation
+	basePort, err := strconv.Atoi(cfg.Port)
+	if err != nil {
+		return nil, fmt.Errorf("invalid port number: %s", cfg.Port)
+	}
+
 	// Management port must be explicitly configured
 	if cfg.ManagementPort == "" {
-		return nil, fmt.Errorf("management-port must be specified")
+		return nil, fmt.Errorf("management-port must be specified (use --management-port flag)")
+	}
+
+	// Validate management port
+	mgmtPort, err := strconv.Atoi(cfg.ManagementPort)
+	if err != nil {
+		return nil, fmt.Errorf("invalid management port number: %s", cfg.ManagementPort)
+	}
+
+	// Ensure ports are different
+	if basePort == mgmtPort {
+		return nil, fmt.Errorf("management port must be different from main API port")
 	}
 
 	// Initialize logger first to ensure proper diagnostics during startup

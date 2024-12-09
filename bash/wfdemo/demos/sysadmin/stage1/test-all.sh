@@ -36,7 +36,7 @@ run_with_timeout() {
     shift
     
     # Run the command in background
-    ("$@") & local pid=$!
+    "$@" & local pid=$!
     
     # Start a timer in background
     (
@@ -103,12 +103,13 @@ test_init() {
 test_start_central() {
     log "Starting wfcentral on ports ${WFCENTRAL_API_PORT}(API) and ${WFCENTRAL_MGMT_PORT}(Management)"
     
-    run_with_timeout "${WFCENTRAL_START_TIMEOUT}" \
-        wfcentral start \
-            --port "${WFCENTRAL_API_PORT}" \
-            --management-port "${WFCENTRAL_MGMT_PORT}" \
-            --data-dir "${TEST_OUTPUT_DIR}/central" \
-            --log-file "${TEST_OUTPUT_DIR}/logs/central.log" &
+    # Start server directly without a subshell
+    wfcentral start \
+        --port "${WFCENTRAL_API_PORT}" \
+        --management-port "${WFCENTRAL_MGMT_PORT}" \
+        --data-dir "${TEST_OUTPUT_DIR}/central" \
+        --log-level info \
+        --log-file "${TEST_OUTPUT_DIR}/logs/central.log" &
     echo $! > "${TEST_OUTPUT_DIR}/central.pid"
     
     # Wait for server to be ready by checking management endpoint
@@ -119,17 +120,20 @@ test_start_central() {
         fi
         sleep 1
     done
+    
+    log "Central server started successfully"
 }
 
 test_start_device() {
     log "Starting wfdevice on ports ${WFDEVICE_API_PORT}(API) and ${WFDEVICE_MGMT_PORT}(Management)"
     
-    run_with_timeout "${WFDEVICE_START_TIMEOUT}" \
-        wfdevice start \
-            --port "${WFDEVICE_API_PORT}" \
-            --management-port "${WFDEVICE_MGMT_PORT}" \
-            --data-dir "${TEST_OUTPUT_DIR}/device" \
-            --log-file "${TEST_OUTPUT_DIR}/logs/device.log" &
+    # Start device directly without a subshell
+    wfdevice start \
+        --port "${WFDEVICE_API_PORT}" \
+        --management-port "${WFDEVICE_MGMT_PORT}" \
+        --data-dir "${TEST_OUTPUT_DIR}/device" \
+        --log-level info \
+        --log-file "${TEST_OUTPUT_DIR}/logs/device.log" &
     echo $! > "${TEST_OUTPUT_DIR}/device.pid"
     
     # Wait for agent to be ready by checking management endpoint
@@ -140,6 +144,8 @@ test_start_device() {
         fi
         sleep 1
     done
+    
+    log "Device agent started successfully"
 }
 
 test_register_device() {
@@ -156,6 +162,8 @@ test_register_device() {
         wfcentral device list --port "${WFCENTRAL_API_PORT}" | \
         grep -q "test-device-${TEST_ID}" || \
         fail "Device registration verification failed"
+        
+    log "Device registered successfully"
 }
 
 test_configure_monitoring() {
@@ -174,6 +182,8 @@ test_configure_monitoring() {
             --device "test-device-${TEST_ID}" | \
         grep -q "monitoring_active: true" || \
         fail "Monitoring configuration verification failed"
+        
+    log "Monitoring configured successfully"
 }
 
 test_verify_health_endpoints() {
@@ -195,27 +205,43 @@ test_verify_health_endpoints() {
 test_shutdown() {
     log "Initiating shutdown sequence"
     
-    # Stop device
+    # Stop device first
     if [ -f "${TEST_OUTPUT_DIR}/device.pid" ]; then
-        run_with_timeout "${OPERATION_TIMEOUT}" \
-            wfdevice stop --port "${WFDEVICE_API_PORT}" || \
-            kill -9 "$(cat "${TEST_OUTPUT_DIR}/device.pid")" 2>/dev/null
+        local device_pid
+        device_pid=$(cat "${TEST_OUTPUT_DIR}/device.pid")
+        
+        log "Stopping device agent (PID: ${device_pid})"
+        if ! kill -TERM "${device_pid}" 2>/dev/null; then
+            log "Warning: Failed to stop device gracefully, attempting force shutdown"
+            kill -9 "${device_pid}" 2>/dev/null || true
+        fi
+        rm -f "${TEST_OUTPUT_DIR}/device.pid"
     fi
     
-    # Stop control plane
+    # Then stop control plane
     if [ -f "${TEST_OUTPUT_DIR}/central.pid" ]; then
-        run_with_timeout "${OPERATION_TIMEOUT}" \
-            wfcentral stop --port "${WFCENTRAL_API_PORT}" || \
-            kill -9 "$(cat "${TEST_OUTPUT_DIR}/central.pid")" 2>/dev/null
+        local central_pid
+        central_pid=$(cat "${TEST_OUTPUT_DIR}/central.pid")
+        
+        log "Stopping central server (PID: ${central_pid})"
+        if ! kill -TERM "${central_pid}" 2>/dev/null; then
+            log "Warning: Failed to stop central server gracefully, attempting force shutdown"
+            kill -9 "${central_pid}" 2>/dev/null || true
+        fi
+        rm -f "${TEST_OUTPUT_DIR}/central.pid"
     fi
+    
+    log "Shutdown sequence completed"
 }
 
 # Run all tests
 run_tests() {
     local start_time=${SECONDS}
     
+    # Ensure proper cleanup on exit
     trap test_shutdown EXIT
     
+    # Run test sequence
     test_init
     test_start_central
     test_start_device
@@ -223,6 +249,7 @@ run_tests() {
     test_configure_monitoring
     test_verify_health_endpoints
     
+    # Calculate test duration
     local duration=$((SECONDS - start_time))
     log "All tests passed in ${duration} seconds"
     
