@@ -57,6 +57,9 @@ internal/
 │   ├── group/           # Group management domain
 │   │   ├── group.go
 │   │   └── service.go
+│   ├── health/          # Health monitoring domain
+│   │   ├── health.go
+│   │   └── service.go
 │   ├── config/          # Configuration domain
 │   │   ├── config.go
 │   │   └── service.go
@@ -73,7 +76,6 @@ internal/
 │   │   └── stage2.go    # Stage 2 capability servers
 │   └── device/          # Device agent servers
 │       ├── server.go    # Base agent server
-│       ├── monitor.go   # Health monitoring
 │       └── proxy.go     # Device proxy handling
 │
 └── store/               # Storage implementations
