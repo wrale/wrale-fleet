@@ -1,4 +1,4 @@
-# Go Project Layout - IoT Fleet Management Platform
+# Go Project Layout - Wrale Fleet Management Platform
 
 ## Root Structure
 
@@ -18,7 +18,7 @@ The cmd directory contains our main applications, each with their own main packa
 
 ```go
 cmd/
-├── wfcentral/           # Enterprise control plane
+├── wfcentral/            # Enterprise control plane
 │   └── main.go          # Minimal main function using functional options
 └── wfdevice/            # Device agent
     └── main.go          # Minimal main function using functional options
@@ -26,8 +26,8 @@ cmd/
 // Example main.go showing staged capability loading
 func main() {
     // Parse command-line flags
-    port := flag.String("port", "8080", "Server port")
-    dataDir := flag.String("data-dir", "/var/lib/wfcentral", "Data directory")
+    port := flag.String(\"port\", \"8080\", \"Server port\")
+    dataDir := flag.String(\"data-dir\", \"/var/lib/wfcentral\", \"Data directory\")
     flag.Parse()
 
     // Initialize server with staged capabilities
@@ -50,7 +50,7 @@ The internal code maintains strict boundaries between domain logic and server in
 ```go
 internal/
 ├── fleet/               # Core domain packages
-│   ├── device/          # Device management domain
+│   ├── device/         # Device management domain
 │   │   ├── device.go    # Core device type
 │   │   ├── service.go   # Device operations
 │   │   └── store.go     # Storage interface
@@ -91,10 +91,11 @@ type Device struct {
     Config      json.RawMessage
     Status      DeviceStatus
     LastSeen    time.Time
+    TenantID    string         // Required for tenant isolation
 
     // Stage 2: Multi-site capabilities
-    Region     string         `json:"region,omitempty"`
-    ClusterID  string         `json:"cluster_id,omitempty"`
+    Region     string         `json:\"region,omitempty\"`
+    ClusterID  string         `json:\"cluster_id,omitempty\"`
 }
 
 // Example server.go showing infrastructure
@@ -123,6 +124,7 @@ func (s *Server) Run(ctx context.Context) error {
    - Remain infrastructure-agnostic
    - Focus on single domain concept
    - No cross-domain dependencies
+   - Enforce tenant isolation in all operations
 
 2. Server Packages (internal/server/*)
    - Implement network protocols
@@ -130,12 +132,15 @@ func (s *Server) Run(ctx context.Context) error {
    - Coordinate between domains
    - Manage infrastructure lifecycle
    - Implement staged capabilities
+   - Maintain tenant boundaries
 
 3. Storage Packages (internal/store/*)
    - Implement store interfaces
    - Handle persistence details
    - Manage transactions
    - Implement optimizations
+   - Ensure complete tenant isolation
+   - See stores/README.md for detailed patterns
 
 ## Key Design Patterns
 
@@ -170,7 +175,7 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
-    return fmt.Sprintf("%s: %s (stage %d+)", e.Code, e.Message, e.Stage)
+    return fmt.Sprintf(\"%s: %s (stage %d+)\", e.Code, e.Message, e.Stage)
 }
 ```
 
@@ -182,24 +187,29 @@ func (e *Error) Error() string {
    - Files named for primary type
    - Test files next to code
    - Stage-specific code marked clearly
+   - Testing utilities in testing/ subpackage
 
 2. Dependencies
    - Domain packages must not depend on each other
    - Server packages can depend on multiple domains
    - Dependencies flow inward
    - Infrastructure depends on domain, not vice versa
+   - Testing packages handle test dependencies
 
 3. Staged Evolution
    - Base capabilities in root package
    - Advanced features in stage-specific files
    - Clear stage requirements in errors
    - Graceful capability degradation
+   - Stage-aware testing support
 
 4. Testing
    - Tests next to the code they verify
-   - Shared test utilities in testing packages
+   - Shared test utilities in testing/ subpackage
    - Infrastructure tests use interfaces
    - Stage-aware test helpers
+   - Testing package approach for store testing
+   - See docs/design/go/stores/README.md for detailed testing patterns
 
 ## Success Criteria
 
@@ -207,6 +217,8 @@ A package organization is considered successful when:
 - Domain boundaries are clear and enforced
 - Infrastructure concerns are separated
 - Stage evolution is manageable
-- Testing is comprehensive
+- Testing is comprehensive and well-organized
 - Dependencies flow correctly
 - New features fit naturally
+- Tenant isolation is strictly maintained
+- Testing patterns are consistently applied
