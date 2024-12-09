@@ -15,8 +15,14 @@ import (
 func (s *Server) initStage1() error {
 	s.logger.Info("initializing Stage 1 capabilities")
 
+	// Initialize device service
 	if err := s.initDeviceService(); err != nil {
 		return fmt.Errorf("device service initialization failed: %w", err)
+	}
+
+	// Perform initial health check
+	if err := s.checkDeviceServiceHealth(context.Background()); err != nil {
+		return fmt.Errorf("initial health check failed: %w", err)
 	}
 
 	return nil
@@ -24,7 +30,6 @@ func (s *Server) initStage1() error {
 
 // initDeviceService initializes the device management service.
 func (s *Server) initDeviceService() error {
-	// For now, using memory store. Will be configurable in future.
 	store := memory.New()
 	s.device = device.NewService(store, s.logger)
 	return nil
@@ -46,57 +51,28 @@ func (s *Server) cleanupDeviceService(ctx context.Context) error {
 	return nil
 }
 
-// checkDeviceServiceHealth checks device service health.
+// checkDeviceServiceHealth verifies device service health.
 func (s *Server) checkDeviceServiceHealth(ctx context.Context) error {
 	if s.device == nil {
 		return fmt.Errorf("device service not initialized")
 	}
 
-	// Verify store access
+	// Check if store is accessible by performing a no-op list
 	if _, err := s.device.List(ctx, device.ListOptions{}); err != nil {
 		return fmt.Errorf("device store access check failed: %w", err)
 	}
+
+	// Additional health checks specific to Stage 1 can be added here
+	// as requirements evolve
 
 	return nil
 }
 
 // registerStage1Routes registers HTTP routes for Stage 1 capabilities.
 func (s *Server) registerStage1Routes(mux *http.ServeMux) {
-	// Health check endpoint
-	mux.HandleFunc("/healthz", s.handleHealth())
-
 	// Device management endpoints
 	mux.HandleFunc("/api/v1/devices", s.handleDevices())
 	mux.HandleFunc("/api/v1/devices/", s.handleDeviceByID())
-}
-
-// handleHealth implements the health check endpoint with detailed component status.
-func (s *Server) handleHealth() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		status, components, err := s.Status(ctx)
-
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Generate JSON response with component details
-		response, err := s.handleHealthResponse(status, components)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("error generating health response: %v", err),
-				http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write(response); err != nil {
-			s.logger.Error("failed to write health check response",
-				zap.Error(err),
-			)
-			// Note: Cannot write error to response here as headers are already sent
-		}
-	}
 }
 
 // handleDevices handles device list and creation requests.
