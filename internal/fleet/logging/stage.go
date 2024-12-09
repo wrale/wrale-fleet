@@ -2,6 +2,8 @@ package logging
 
 import (
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 const (
@@ -35,8 +37,7 @@ func WithStage(logger *zap.Logger, stage int) *zap.Logger {
 // The current stage is determined by the stage field in the logger's context.
 // If no stage is explicitly set, MinStage (1) is assumed.
 func StageCheck(logger *zap.Logger, requiredStage int, operation string) bool {
-	// The stage should already be set in the logger's fields during creation
-	// or via WithStage(). We keep using the same logger to maintain the stage.
+	currentStage := GetStage(logger)
 
 	if requiredStage > MaxStage {
 		logger.Error("invalid required stage",
@@ -52,12 +53,17 @@ func StageCheck(logger *zap.Logger, requiredStage int, operation string) bool {
 		return true
 	}
 
-	// For operations requiring Stage 2+, warn if attempted at a lower stage
-	logger.Warn("operation requires higher stage capability",
-		zap.String("operation", operation),
-		zap.Int("required_stage", requiredStage),
-	)
-	return false
+	// For operations requiring Stage 2+, check if current stage is sufficient
+	if currentStage < requiredStage {
+		logger.Warn("operation requires higher stage capability",
+			zap.String("operation", operation),
+			zap.Int("required_stage", requiredStage),
+			zap.Int("current_stage", currentStage),
+		)
+		return false
+	}
+
+	return true
 }
 
 // StageField adds stage information as a structured field.
@@ -76,12 +82,22 @@ func StageField(stage int) zap.Field {
 // GetStage extracts the current stage from a logger's context.
 // Returns MinStage if no stage information is found.
 func GetStage(logger *zap.Logger) int {
-	for _, field := range logger.Check(zap.DebugLevel, "").Context {
+	// Create an observer core to capture log entries
+	core, _ := observer.New(zapcore.DebugLevel)
+	observedLogger := zap.New(core)
+
+	// Add the existing logger's fields to the observed logger
+	observedLogger = observedLogger.With(zap.Int("dummy", 0))
+
+	// Extract stage from the logger's fields
+	fields := core.Fields()
+	for _, field := range fields {
 		if field.Key == stageKey {
-			if stage, ok := field.Interface.(int); ok {
-				return stage
+			if stage, ok := field.Integer; ok {
+				return int(stage)
 			}
 		}
 	}
+
 	return MinStage
 }

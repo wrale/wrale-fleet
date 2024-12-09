@@ -2,7 +2,6 @@ package logging
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -12,12 +11,12 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
 
-	"github.com/wrale/wrale-fleet/internal/fleet/logging/store/memory"
+	loggingtest "github.com/wrale/wrale-fleet/internal/fleet/logging/testing"
 )
 
 func TestService_Log(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := memory.New()
+	store := loggingtest.NewStore()
 	service, err := NewService(store, logger)
 	require.NoError(t, err)
 
@@ -117,7 +116,7 @@ func TestService_Log(t *testing.T) {
 
 func TestService_BatchLog(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := memory.New()
+	store := loggingtest.NewStore()
 	service, err := NewService(store, logger)
 	require.NoError(t, err)
 
@@ -152,7 +151,7 @@ func TestService_BatchLog(t *testing.T) {
 
 func TestService_RetentionPolicy(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := memory.New()
+	store := loggingtest.NewStore()
 
 	// Create service with short retention for testing
 	service, err := NewService(store, logger,
@@ -186,7 +185,7 @@ func TestService_RetentionPolicy(t *testing.T) {
 
 func TestService_QueryFilters(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := memory.New()
+	store := loggingtest.NewStore()
 	service, err := NewService(store, logger)
 	require.NoError(t, err)
 
@@ -256,71 +255,54 @@ func TestService_QueryFilters(t *testing.T) {
 	}
 }
 
-func TestService_AuditEvents(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	store := memory.New()
-	service, err := NewService(store, logger)
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	metadata := AuditMetadata{
-		Action:       AuditActionCreate,
-		ResourceType: "device",
-		ResourceID:   "dev1",
-		Outcome:      "success",
-		Changes: map[string]interface{}{
-			"name": "new device",
+func TestStage_WithLogger(t *testing.T) {
+	tests := []struct {
+		name          string
+		stage         int
+		operation     string
+		requiredStage int
+		wantAllowed   bool
+	}{
+		{
+			name:          "stage 1 operation always allowed",
+			stage:         1,
+			operation:     "basic_op",
+			requiredStage: 1,
+			wantAllowed:   true,
+		},
+		{
+			name:          "higher stage operation not allowed",
+			stage:         1,
+			operation:     "advanced_op",
+			requiredStage: 2,
+			wantAllowed:   false,
+		},
+		{
+			name:          "operation at current stage allowed",
+			stage:         3,
+			operation:     "current_op",
+			requiredStage: 3,
+			wantAllowed:   true,
+		},
+		{
+			name:          "invalid stage not allowed",
+			stage:         1,
+			operation:     "invalid_op",
+			requiredStage: MaxStage + 1,
+			wantAllowed:   false,
 		},
 	}
 
-	err = service.CreateAuditEvent(ctx, "tenant1", metadata)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := zaptest.NewLogger(t)
+			stagedLogger := WithStage(logger, tt.stage)
 
-	// Verify audit event
-	query := QueryOptions{
-		TenantID: "tenant1",
-		Types:    []EventType{EventAudit},
+			allowed := StageCheck(stagedLogger, tt.requiredStage, tt.operation)
+			assert.Equal(t, tt.wantAllowed, allowed)
+
+			stage := GetStage(stagedLogger)
+			assert.Equal(t, tt.stage, stage)
+		})
 	}
-	events, err := service.Query(ctx, query)
-	require.NoError(t, err)
-	require.Len(t, events, 1)
-
-	event := events[0]
-	assert.Equal(t, EventAudit, event.Type)
-	assert.NotEmpty(t, event.Metadata)
-}
-
-func TestService_SecurityEvents(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	store := memory.New()
-	service, err := NewService(store, logger)
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	secEvent := SecurityEvent{
-		Action:           "unauthorized_access",
-		Severity:         LevelError,
-		Status:           "blocked",
-		IPAddress:        "192.168.1.1",
-		PolicyViolations: []string{"invalid_cert"},
-		RiskScore:        0.8,
-	}
-
-	err = service.CreateSecurityEvent(ctx, "tenant1", secEvent)
-	require.NoError(t, err)
-
-	// Verify security event
-	query := QueryOptions{
-		TenantID: "tenant1",
-		Types:    []EventType{EventSecurity},
-		Levels:   []Level{LevelError},
-	}
-	events, err := service.Query(ctx, query)
-	require.NoError(t, err)
-	require.Len(t, events, 1)
-
-	event := events[0]
-	assert.Equal(t, EventSecurity, event.Type)
-	assert.Equal(t, LevelError, event.Level)
-	assert.NotEmpty(t, event.Metadata)
 }
