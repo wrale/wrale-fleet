@@ -37,9 +37,9 @@ type DeviceStatus struct {
 	Name            string            `json:"name"`
 	Status          device.Status     `json:"status"`
 	Tags            map[string]string `json:"tags,omitempty"`
-	ControlPlane    string           `json:"control_plane"`
-	Registered      bool             `json:"registered"`
-	LastHealthCheck time.Time        `json:"last_health_check,omitempty"`
+	ControlPlane    string            `json:"control_plane"`
+	Registered      bool              `json:"registered"`
+	LastHealthCheck time.Time         `json:"last_health_check,omitempty"`
 }
 
 // Server represents the wfdevice agent instance
