@@ -1,5 +1,4 @@
-// Package logger provides a stage-aware logging infrastructure for the wfdevice command.
-package logger
+package logging
 
 import (
 	"go.uber.org/zap"
@@ -72,4 +71,17 @@ func StageField(stage int) zap.Field {
 		stage = MaxStage
 	}
 	return zap.Int(stageKey, stage)
+}
+
+// GetStage extracts the current stage from a logger's context.
+// Returns MinStage if no stage information is found.
+func GetStage(logger *zap.Logger) int {
+	for _, field := range logger.Check(zap.DebugLevel, "").Context {
+		if field.Key == stageKey {
+			if stage, ok := field.Interface.(int); ok {
+				return stage
+			}
+		}
+	}
+	return MinStage
 }
