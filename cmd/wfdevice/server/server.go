@@ -3,9 +3,13 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/wrale/wrale-fleet/internal/fleet/device"
@@ -31,7 +35,20 @@ const (
 
 	// healthCheckInterval is the time between health report submissions
 	healthCheckInterval = 1 * time.Minute
+
+	// serverPIDFile is the name of the file storing the running server's PID
+	serverPIDFile = "wfdevice.pid"
 )
+
+// DeviceStatus contains the full device status information
+type DeviceStatus struct {
+	Name            string            `json:"name"`
+	Status          device.Status     `json:"status"`
+	Tags            map[string]string `json:"tags,omitempty"`
+	ControlPlane    string            `json:"control_plane"`
+	Registered      bool              `json:"registered"`
+	LastHealthCheck time.Time         `json:"last_health_check,omitempty"`
+}
 
 // Server represents the wfdevice agent instance
 type Server struct {
@@ -84,10 +101,9 @@ func New(logger *zap.Logger, opts ...Option) (*Server, error) {
 		zap.Any("tags", s.cfg.Tags),
 	)
 
-	// Validate required configuration
-	if s.cfg.ControlPlane == "" {
-		logger.Error("control plane address not set")
-		return nil, fmt.Errorf("control plane address is required")
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll(s.cfg.DataDir, 0755); err != nil {
+		return nil, fmt.Errorf("creating data directory: %w", err)
 	}
 
 	// Initialize device state with minimal configuration
@@ -153,6 +169,12 @@ func (s *Server) Run(ctx context.Context) error {
 		zap.Uint8("stage", uint8(s.stage)),
 	)
 
+	// Write PID file
+	if err := s.writePIDFile(); err != nil {
+		return fmt.Errorf("writing pid file: %w", err)
+	}
+	defer s.removePIDFile()
+
 	// Initialize HTTP server with security timeouts
 	s.httpSrv = &http.Server{
 		Addr:              ":" + s.cfg.Port,
@@ -198,6 +220,87 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
+// Stop initiates a graceful shutdown of the server
+func (s *Server) Stop(ctx context.Context) error {
+	s.logger.Info("stopping server")
+	return s.shutdown()
+}
+
+// Status returns the current device status
+func (s *Server) Status(ctx context.Context) (*DeviceStatus, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return &DeviceStatus{
+		Name:         s.cfg.Name,
+		Status:       s.device.Status,
+		Tags:         s.device.Tags,
+		ControlPlane: s.cfg.ControlPlane,
+		Registered:   s.registered,
+	}, nil
+}
+
+// NotifyShutdown informs the control plane of a planned shutdown
+func (s *Server) NotifyShutdown(ctx context.Context) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if !s.registered {
+		return fmt.Errorf("device not registered with control plane")
+	}
+
+	s.notifyShutdown()
+	return nil
+}
+
+// GetRunningPID returns the PID of the running server, if any
+func GetRunningPID(dataDir string) (int, error) {
+	pidFile := filepath.Join(dataDir, serverPIDFile)
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil {
+		return 0, fmt.Errorf("invalid pid file content: %w", err)
+	}
+
+	// Check if process exists
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return 0, nil
+	}
+
+	// Check if the process is actually running
+	if err := process.Signal(syscall.Signal(0)); err != nil {
+		return 0, nil
+	}
+
+	return pid, nil
+}
+
+// pidFilePath returns the path to the PID file
+func (s *Server) pidFilePath() string {
+	return filepath.Join(s.cfg.DataDir, serverPIDFile)
+}
+
+// writePIDFile writes the current process ID to the PID file
+func (s *Server) writePIDFile() error {
+	pid := os.Getpid()
+	return os.WriteFile(s.pidFilePath(), []byte(fmt.Sprintf("%d", pid)), 0644)
+}
+
+// removePIDFile removes the PID file
+func (s *Server) removePIDFile() {
+	if err := os.Remove(s.pidFilePath()); err != nil && !os.IsNotExist(err) {
+		s.logger.Warn("failed to remove pid file", zap.Error(err))
+	}
+}
+
 // shutdown performs a graceful server shutdown
 func (s *Server) shutdown() error {
 	// Stop health reporting
@@ -213,9 +316,14 @@ func (s *Server) shutdown() error {
 	s.mu.RUnlock()
 
 	// Shutdown HTTP server
-	if err := s.httpSrv.Shutdown(context.Background()); err != nil {
-		return fmt.Errorf("http server shutdown: %w", err)
+	if s.httpSrv != nil {
+		if err := s.httpSrv.Shutdown(context.Background()); err != nil {
+			return fmt.Errorf("http server shutdown: %w", err)
+		}
 	}
+
+	// Remove PID file
+	s.removePIDFile()
 
 	return nil
 }
@@ -238,8 +346,7 @@ func (s *Server) register(ctx context.Context) error {
 	// Update device identity now that we have the name
 	s.device.Name = s.cfg.Name
 
-	// TODO: Implement actual registration logic
-	// For now, we'll simulate successful registration
+	// TODO: Implement actual registration logic with control plane
 	time.Sleep(time.Second)
 
 	s.registered = true
@@ -252,7 +359,7 @@ func (s *Server) register(ctx context.Context) error {
 // notifyShutdown informs the control plane of planned shutdown
 func (s *Server) notifyShutdown() {
 	s.logger.Info("notifying control plane of shutdown")
-	// TODO: Implement shutdown notification
+	// TODO: Implement shutdown notification to control plane
 }
 
 // startHealthReporting begins periodic health check submissions
@@ -277,7 +384,7 @@ func (s *Server) startHealthReporting() {
 // submitHealthReport sends a health report to the control plane
 func (s *Server) submitHealthReport() error {
 	s.logger.Debug("submitting health report")
-	// TODO: Implement health report submission
+	// TODO: Implement health report submission to control plane
 	return nil
 }
 
@@ -292,22 +399,29 @@ func (s *Server) routes() http.Handler {
 	return mux
 }
 
-// Basic health check handler
+// handleHealth handles basic health check requests
 func (s *Server) handleHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"healthy"}`)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "healthy",
+		})
 	}
 }
 
-// Status handler
+// handleStatus handles status check requests
 func (s *Server) handleStatus() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s.mu.RLock()
-		status := s.device.Status
+		status, err := s.Status(r.Context())
 		s.mu.RUnlock()
 
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"%s"}`, status)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(status)
 	}
 }
