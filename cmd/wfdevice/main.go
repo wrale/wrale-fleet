@@ -54,8 +54,11 @@ func mainWithInit(initDone chan<- struct{}) {
 		}
 	}
 
-	// Initialize logger
-	log, err := logger.New(logger.Config{Level: cfg.LogLevel})
+	// Initialize logger with stage 1 capabilities
+	log, err := logger.New(logger.Config{
+		LogLevel: cfg.LogLevel, // Use LogLevel instead of Level
+		Stage:    1,            // Initialize with Stage 1 capabilities
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		os.Exit(1)
