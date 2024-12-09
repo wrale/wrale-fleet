@@ -3,6 +3,7 @@ package options
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/wrale/wrale-fleet/cmd/wfdevice/logger"
 	"github.com/wrale/wrale-fleet/cmd/wfdevice/server"
@@ -27,11 +28,13 @@ func New() *Config {
 
 // NewServer creates and configures the server based on the provided options.
 func NewServer(opts ...server.Option) (*server.Server, error) {
-	// Initialize logger first
-	log, err := logger.New(logger.Config{
-		Level: "info", // TODO: Make configurable
-		Stage: 1,      // Start with Stage 1 capabilities
-	})
+	// Set logging environment variables before initializing logger
+	if os.Getenv("LOG_LEVEL") == "" {
+		os.Setenv("LOG_LEVEL", "info") // Set default log level
+	}
+
+	// Initialize logger with environment-based configuration
+	log, err := logger.New()
 	if err != nil {
 		return nil, fmt.Errorf("initializing logger: %w", err)
 	}
