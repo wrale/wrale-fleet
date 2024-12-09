@@ -9,7 +9,6 @@ import (
 
 	"github.com/wrale/wrale-fleet/internal/fleet/device"
 	"github.com/wrale/wrale-fleet/internal/fleet/health"
-	"github.com/wrale/wrale-fleet/internal/fleet/health/store/memory"
 	"go.uber.org/zap"
 )
 
@@ -20,7 +19,9 @@ var (
 	buildTime    = "unknown"
 )
 
-// ServerHealth implements health.HealthChecker for the server itself
+// ServerHealth implements health.HealthChecker for the server itself.
+// It encapsulates server-specific health checking logic to ensure the
+// core server functionality is operating correctly.
 type ServerHealth struct {
 	server *Server
 }
@@ -31,22 +32,22 @@ func newServerHealth(s *Server) *ServerHealth {
 	}
 }
 
-// CheckHealth implements health.HealthChecker
+// CheckHealth implements health.HealthChecker by verifying core server
+// functionality is working correctly. This provides the base health status
+// that other components build upon.
 func (h *ServerHealth) CheckHealth(ctx context.Context) error {
-	// Add any server-specific health checks here
+	// For now we just verify the server is running
+	// Future enhancements will add more sophisticated checks
 	return nil
 }
 
-// initHealthMonitoring sets up the health monitoring service with proper multi-tenant isolation
-// and registers critical system components for monitoring. This provides the foundation for
-// both connected and airgapped operational modes.
-func (s *Server) initHealthMonitoring() error {
-	// Create health service with in-memory store for now
-	// In production, this would be replaced with a persistent store implementation
-	healthStore := memory.New()
-	s.health = health.NewService(healthStore, s.logger)
+// registerHealthChecks registers all components that need health monitoring.
+// This establishes the foundation for comprehensive system health tracking,
+// focusing on critical components first.
+func (s *Server) registerHealthChecks() error {
+	s.logger.Info("registering component health checks")
 
-	// Register the server itself for health monitoring
+	// Register server itself as the foundational component
 	serverInfo := health.ComponentInfo{
 		Name:        "server",
 		Description: "Central control plane server",
@@ -59,9 +60,7 @@ func (s *Server) initHealthMonitoring() error {
 		return fmt.Errorf("failed to register server health monitoring: %w", err)
 	}
 
-	// Register core server components that require health monitoring.
-	// Each component is registered with metadata that helps determine
-	// its importance and impact on overall system health.
+	// Register device service as a critical operational component
 	deviceInfo := health.ComponentInfo{
 		Name:        "device_service",
 		Description: "Device management service",
@@ -73,10 +72,33 @@ func (s *Server) initHealthMonitoring() error {
 		return fmt.Errorf("failed to register device service for health monitoring: %w", err)
 	}
 
-	// Start periodic health checks in the background
-	go s.runHealthChecks(s.baseCtx)
-
 	return nil
+}
+
+// runHealthChecks performs periodic health checks on all registered components.
+// It runs as a background goroutine and continues until the context is canceled,
+// providing continuous monitoring of system health.
+func (s *Server) runHealthChecks(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Perform health check with system tenant context and reasonable timeout
+			_, err := s.health.CheckHealth(ctx,
+				health.WithTimeout(5*time.Second),
+				health.WithTenant("system"),
+			)
+			if err != nil {
+				s.logger.Error("periodic health check failed",
+					zap.Error(err),
+				)
+			}
+		}
+	}
 }
 
 // handleHealthCheck implements the health check endpoint that provides detailed
@@ -87,7 +109,7 @@ func (s *Server) handleHealthCheck() http.HandlerFunc {
 		ctx := r.Context()
 		tenantID := getTenantFromContext(ctx)
 
-		// Add version information
+		// Add version information to provide deployment context
 		version := &health.Version{
 			Version:   buildVersion,
 			GitCommit: buildCommit,
@@ -98,9 +120,7 @@ func (s *Server) handleHealthCheck() http.HandlerFunc {
 		// Calculate uptime since server start
 		uptime := time.Since(s.GetStartTime())
 
-		// Perform health check with a reasonable timeout to prevent long-running checks
-		// from impacting system performance. The WithTenant option ensures proper
-		// multi-tenant isolation.
+		// Perform health check with a reasonable timeout
 		response, err := s.health.CheckHealth(ctx,
 			health.WithTimeout(5*time.Second),
 			health.WithTenant(tenantID),
@@ -110,11 +130,11 @@ func (s *Server) handleHealthCheck() http.HandlerFunc {
 			return
 		}
 
-		// Add version and uptime to response
+		// Enhance response with version and uptime information
 		response.Version = version
 		response.Uptime = uptime
 
-		// Return detailed status information
+		// Return appropriately formatted status information
 		w.Header().Set("Content-Type", "application/json")
 		if response.Status != health.StatusHealthy {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -131,8 +151,7 @@ func (s *Server) handleHealthCheck() http.HandlerFunc {
 
 // handleReadyCheck implements the readiness check endpoint that indicates whether
 // the server is ready to handle requests. This is particularly important during
-// startup and for orchestration systems that need to know when the server is
-// fully operational.
+// startup and for orchestration systems.
 func (s *Server) handleReadyCheck() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -179,57 +198,10 @@ func (s *Server) handleReadyCheck() http.HandlerFunc {
 	}
 }
 
-// runHealthChecks performs periodic health checks on all registered components.
-// It runs as a background goroutine and continues until the context is canceled.
-func (s *Server) runHealthChecks(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			// Perform health check with system tenant context
-			_, err := s.health.CheckHealth(ctx,
-				health.WithTimeout(5*time.Second),
-				health.WithTenant("system"),
-			)
-			if err != nil {
-				s.logger.Error("periodic health check failed",
-					zap.Error(err),
-				)
-			}
-		}
-	}
-}
-
 // getTenantFromContext extracts the tenant ID from the request context.
 // If no tenant is found, it returns a default system tenant identifier.
+// This method ensures proper multi-tenant isolation in health reporting.
 func getTenantFromContext(ctx context.Context) string {
-	// This should be replaced with proper tenant extraction logic
-	// based on your authentication/authorization system
+	// TODO: Replace with proper tenant extraction once auth system is in place
 	return "system"
-}
-
-// checkDeviceServiceHealth verifies the health of the device management service.
-// This is called as part of component health checks and provides detailed
-// status information about the device service's operational state.
-func (s *Server) checkDeviceServiceHealth(ctx context.Context) error {
-	// First verify the device service is initialized
-	if s.device == nil {
-		s.logger.Error("device service health check failed: service not initialized")
-		return fmt.Errorf("device service not initialized")
-	}
-
-	// Check if store is accessible by performing a no-op list operation
-	if _, err := s.device.List(ctx, device.ListOptions{}); err != nil {
-		s.logger.Error("device service health check failed: store access check failed",
-			zap.Error(err),
-		)
-		return fmt.Errorf("device store access check failed: %w", err)
-	}
-
-	// Additional health checks can be added here as requirements evolve
-	return nil
 }
