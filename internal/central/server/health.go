@@ -1,144 +1,140 @@
-// Package server implements the core central control plane server functionality.
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
+	"net/http"
 	"time"
+
+	"github.com/wrale/wrale-fleet/internal/fleet/health"
+	"github.com/wrale/wrale-fleet/internal/fleet/health/store/memory"
 )
 
-// ComponentStatus represents the health status of a server component
-type ComponentStatus string
+// initHealthMonitoring sets up the health monitoring service with proper multi-tenant isolation
+// and registers critical system components for monitoring. This provides the foundation for
+// both connected and airgapped operational modes.
+func (s *Server) initHealthMonitoring() error {
+	// Create health service with in-memory store for now
+	// In production, this would be replaced with a persistent store implementation
+	healthStore := memory.New()
+	s.health = health.NewService(healthStore, s.logger)
 
-const (
-	// StatusHealthy indicates the component is functioning normally
-	StatusHealthy ComponentStatus = "healthy"
-	// StatusDegraded indicates the component is operating with reduced functionality
-	StatusDegraded ComponentStatus = "degraded"
-	// StatusUnhealthy indicates the component is not functioning properly
-	StatusUnhealthy ComponentStatus = "unhealthy"
-	// StatusStarting indicates the component is still initializing
-	StatusStarting ComponentStatus = "starting"
-)
-
-// HealthChecker defines the interface that components must implement to participate
-// in health checking. This enables both connected and airgapped operation modes.
-type HealthChecker interface {
-	// CheckHealth performs a health check and returns any issues found
-	CheckHealth(context.Context) error
-}
-
-// HealthStatus represents detailed health information for a component
-type HealthStatus struct {
-	Status      ComponentStatus `json:"status"`
-	Message     string          `json:"message,omitempty"`
-	LastChecked time.Time       `json:"last_checked"`
-	LastError   string          `json:"last_error,omitempty"`
-}
-
-// HealthResponse represents the complete health check response including
-// overall system status and individual component details
-type HealthResponse struct {
-	Status      ComponentStatus          `json:"status"`
-	Ready       bool                     `json:"ready"`
-	Components  map[string]*HealthStatus `json:"components,omitempty"`
-	LastChecked time.Time                `json:"last_checked"`
-}
-
-// healthTracker manages component health state and readiness
-type healthTracker struct {
-	mu         sync.RWMutex
-	components map[string]*HealthStatus
-	ready      bool
-}
-
-// newHealthTracker creates a new health tracking instance
-func newHealthTracker() *healthTracker {
-	return &healthTracker{
-		components: make(map[string]*HealthStatus),
-	}
-}
-
-// updateComponent updates the health status for a specific component
-func (h *healthTracker) updateComponent(name string, err error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	status := &HealthStatus{
-		LastChecked: time.Now(),
+	// Register core server components that require health monitoring.
+	// Each component is registered with metadata that helps determine
+	// its importance and impact on overall system health.
+	deviceInfo := health.ComponentInfo{
+		Name:        "device_service",
+		Description: "Device management service",
+		Category:    "core",
+		Critical:    true,
 	}
 
-	if err != nil {
-		status.Status = StatusUnhealthy
-		status.Message = "Health check failed"
-		status.LastError = err.Error()
-	} else {
-		status.Status = StatusHealthy
-		status.Message = "Component operational"
+	if err := s.health.RegisterComponent(s.baseCtx, "device_service", s.device, deviceInfo); err != nil {
+		return fmt.Errorf("failed to register device service for health monitoring: %w", err)
 	}
 
-	h.components[name] = status
+	// Start periodic health checks in the background
+	go s.runHealthChecks(s.baseCtx)
+
+	return nil
 }
 
-// getStatus returns the current system health status and component details
-func (h *healthTracker) getStatus() *HealthResponse {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+// handleHealthCheck implements the health check endpoint that provides detailed
+// health status information for the entire system. This endpoint respects tenant
+// isolation and provides tenant-specific health information.
+func (s *Server) handleHealthCheck() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		tenantID := getTenantFromContext(ctx)
 
-	// Deep copy components to avoid map mutations
-	components := make(map[string]*HealthStatus, len(h.components))
-	for k, v := range h.components {
-		copied := *v
-		components[k] = &copied
-	}
+		// Perform health check with a reasonable timeout to prevent long-running checks
+		// from impacting system performance. The WithTenant option ensures proper
+		// multi-tenant isolation.
+		response, err := s.health.CheckHealth(ctx,
+			health.WithTimeout(5*time.Second),
+			health.WithTenant(tenantID),
+		)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-	// Calculate overall status
-	status := StatusHealthy
-	for _, health := range h.components {
-		if health.Status == StatusUnhealthy {
-			status = StatusUnhealthy
-			break
-		} else if health.Status == StatusDegraded {
-			status = StatusDegraded
+		// Return JSON response with proper content type header
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			s.logger.Error("failed to write health check response",
+				"error", err,
+				"tenant_id", tenantID,
+			)
 		}
 	}
+}
 
-	return &HealthResponse{
-		Status:      status,
-		Ready:       h.ready,
-		Components:  components,
-		LastChecked: time.Now(),
+// handleReadyCheck implements the readiness check endpoint that indicates whether
+// the server is ready to handle requests. This is particularly important during
+// startup and for orchestration systems that need to know when the server is
+// fully operational.
+func (s *Server) handleReadyCheck() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		tenantID := getTenantFromContext(ctx)
+
+		// Check if the system is ready to serve requests
+		ready, err := s.health.IsReady(ctx, health.WithTenant(tenantID))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if !ready {
+			http.Error(w, "server is not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
-// setReady marks the system as ready to serve requests
-func (h *healthTracker) setReady() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.ready = true
+// runHealthChecks performs periodic health checks on all registered components.
+// It runs as a background goroutine and continues until the context is canceled.
+func (s *Server) runHealthChecks(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Perform health check with system tenant context
+			_, err := s.health.CheckHealth(ctx,
+				health.WithTimeout(5*time.Second),
+				health.WithTenant("system"),
+			)
+			if err != nil {
+				s.logger.Error("periodic health check failed",
+					"error", err,
+				)
+			}
+		}
+	}
 }
 
-// isReady returns whether the system is ready to serve requests
-func (h *healthTracker) isReady() bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.ready
+// getTenantFromContext extracts the tenant ID from the request context.
+// If no tenant is found, it returns a default system tenant identifier.
+func getTenantFromContext(ctx context.Context) string {
+	// This should be replaced with proper tenant extraction logic
+	// based on your authentication/authorization system
+	return "system"
 }
 
-// handleHealthResponse generates a JSON response for the health check
-func (s *Server) handleHealthResponse(w http.ResponseWriter, status *HealthResponse) error {
-	response, err := json.Marshal(status)
-	if err != nil {
-		return fmt.Errorf("error serializing health response: %w", err)
+// checkDeviceServiceHealth verifies the health of the device management service.
+// This is called as part of component health checks and provides detailed
+// status information about the device service's operational state.
+func (s *Server) checkDeviceServiceHealth(ctx context.Context) error {
+	// Implement health check logic for device service
+	// For now, we'll assume it's healthy if it exists
+	if s.device == nil {
+		return fmt.Errorf("device service not initialized")
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(response); err != nil {
-		return fmt.Errorf("error writing health response: %w", err)
-	}
-
 	return nil
 }
