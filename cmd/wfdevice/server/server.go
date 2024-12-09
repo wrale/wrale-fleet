@@ -51,7 +51,7 @@ type Server struct {
 type Config struct {
 	Port         string
 	DataDir      string
-	Name         string
+	Name         string            // Name is optional at startup, required for registration
 	ControlPlane string
 	Tags         map[string]string
 }
@@ -75,18 +75,15 @@ func New(logger *zap.Logger, opts ...Option) (*Server, error) {
 	}
 
 	// Validate required configuration
-	if s.cfg.Name == "" {
-		return nil, fmt.Errorf("device name is required")
-	}
 	if s.cfg.ControlPlane == "" {
 		return nil, fmt.Errorf("control plane address is required")
 	}
 
-	// Initialize device state
+	// Initialize device state with minimal configuration
+	// Full initialization happens during registration
 	s.device = &device.Device{
-		Name:   s.cfg.Name,
-		Tags:   s.cfg.Tags,
 		Status: device.StatusOffline,
+		Tags:   s.cfg.Tags,
 	}
 
 	return s, nil
@@ -159,16 +156,21 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 
-	// Register with control plane
-	regCtx, cancel := context.WithTimeout(ctx, registrationTimeout)
-	defer cancel()
+	// Register with control plane if name is provided
+	if s.cfg.Name != "" {
+		regCtx, cancel := context.WithTimeout(ctx, registrationTimeout)
+		defer cancel()
 
-	if err := s.register(regCtx); err != nil {
-		return fmt.Errorf("device registration failed: %w", err)
+		if err := s.register(regCtx); err != nil {
+			return fmt.Errorf("device registration failed: %w", err)
+		}
+
+		// Start health reporting after successful registration
+		s.startHealthReporting()
+	} else {
+		s.logger.Info("device name not provided, skipping registration",
+			zap.String("status", string(s.device.Status)))
 	}
-
-	// Start health reporting
-	s.startHealthReporting()
 
 	// Wait for shutdown signal or error
 	select {
@@ -187,8 +189,12 @@ func (s *Server) shutdown() error {
 		close(s.stopHealth)
 	}
 
-	// Notify control plane of shutdown
-	s.notifyShutdown()
+	// Notify control plane of shutdown if registered
+	s.mu.RLock()
+	if s.registered {
+		s.notifyShutdown()
+	}
+	s.mu.RUnlock()
 
 	// Shutdown HTTP server
 	if err := s.httpSrv.Shutdown(context.Background()); err != nil {
@@ -200,19 +206,28 @@ func (s *Server) shutdown() error {
 
 // register handles device registration with the control plane
 func (s *Server) register(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Validate registration requirements
+	if s.cfg.Name == "" {
+		return fmt.Errorf("device name is required for registration")
+	}
+
 	s.logger.Info("registering device with control plane",
 		zap.String("name", s.cfg.Name),
 		zap.String("control_plane", s.cfg.ControlPlane),
 	)
 
+	// Update device identity now that we have the name
+	s.device.Name = s.cfg.Name
+
 	// TODO: Implement actual registration logic
 	// For now, we'll simulate successful registration
 	time.Sleep(time.Second)
 
-	s.mu.Lock()
 	s.registered = true
 	s.device.Status = device.StatusOnline
-	s.mu.Unlock()
 
 	s.logger.Info("device registration successful")
 	return nil
