@@ -33,7 +33,7 @@ Our demo-driven development tracks progress through user personas and their stor
 ### System Administrator
 | Story                    | Status |
 |--------------------------|--------|
-| Server Initialization    |        |
+| Server Initialization    | :white_check_mark: |
 | Device Registration      |        |
 | Device Monitoring        |        |
 | Configuration Management |        |
