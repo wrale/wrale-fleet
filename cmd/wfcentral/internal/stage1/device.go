@@ -9,8 +9,8 @@ import (
 )
 
 // newDeviceListCmd creates the device list command
-func newDeviceListCmd(cfg *options.Config) *cobra.Command {
-	return &cobra.Command{
+func newDeviceListCmd(cfg *options.Config) (*cobra.Command, error) {
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all registered devices",
 		Long: `Display a list of all devices registered with the control plane.
@@ -27,11 +27,13 @@ the status and health commands.`,
 			return listDevices(cmd.Context(), cfg)
 		},
 	}
+
+	return cmd, nil
 }
 
 // newDeviceStatusCmd creates the device status command
-func newDeviceStatusCmd(cfg *options.Config) *cobra.Command {
-	return &cobra.Command{
+func newDeviceStatusCmd(cfg *options.Config) (*cobra.Command, error) {
+	cmd := &cobra.Command{
 		Use:   "status NAME",
 		Short: "Show device status",
 		Long: `Display detailed status information for a specific device.
@@ -51,11 +53,13 @@ This command shows comprehensive status information including:
 			return showDeviceStatus(cmd.Context(), cfg, args[0])
 		},
 	}
+
+	return cmd, nil
 }
 
 // newDeviceHealthCmd creates the device health command
-func newDeviceHealthCmd(cfg *options.Config) *cobra.Command {
-	return &cobra.Command{
+func newDeviceHealthCmd(cfg *options.Config) (*cobra.Command, error) {
+	cmd := &cobra.Command{
 		Use:   "health NAME",
 		Short: "Show device health metrics",
 		Long: `Display detailed health metrics for a specific device.
@@ -75,6 +79,8 @@ This command shows comprehensive health information including:
 			return showDeviceHealth(cmd.Context(), cfg, args[0])
 		},
 	}
+
+	return cmd, nil
 }
 
 // listDevices implements the device list command functionality
