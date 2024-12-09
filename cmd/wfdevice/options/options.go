@@ -30,7 +30,9 @@ func New() *Config {
 func NewServer(opts ...server.Option) (*server.Server, error) {
 	// Set logging environment variables before initializing logger
 	if os.Getenv("LOG_LEVEL") == "" {
-		os.Setenv("LOG_LEVEL", "info") // Set default log level
+		if err := os.Setenv("LOG_LEVEL", "info"); err != nil {
+			return nil, fmt.Errorf("setting default log level: %w", err)
+		}
 	}
 
 	// Initialize logger with environment-based configuration
