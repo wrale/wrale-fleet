@@ -34,7 +34,11 @@ func NewServer(opts ...server.Option) (*server.Server, error) {
 	}
 
 	// Initialize logger with environment-based configuration
-	log, err := logger.New()
+	log, err := logger.New(logger.Config{
+		// Empty config will use environment-based defaults
+		// This maintains backward compatibility while satisfying
+		// the new Config parameter requirement
+	})
 	if err != nil {
 		return nil, fmt.Errorf("initializing logger: %w", err)
 	}

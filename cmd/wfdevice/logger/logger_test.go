@@ -59,8 +59,8 @@ func TestLoggerCreation(t *testing.T) {
 				os.Unsetenv("LOG_LEVEL")
 			}
 
-			// Create logger
-			logger, err := New()
+			// Create logger with empty config to test environment-based defaults
+			logger, err := New(Config{})
 			require.NoError(t, err)
 			defer func() {
 				assert.NoError(t, Sync(logger))
