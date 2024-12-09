@@ -46,13 +46,15 @@ func New(cfg Config) (*zap.Logger, error) {
 	// Create the core with appropriate output
 	var output zapcore.WriteSyncer
 	if cfg.FilePath != "" {
-		// Ensure parent directory exists
-		if err := os.MkdirAll(strings.TrimSuffix(cfg.FilePath, "/"), 0755); err != nil {
+		// Ensure parent directory exists with restricted permissions
+		// 0750 allows owner full access and group read/execute only
+		if err := os.MkdirAll(strings.TrimSuffix(cfg.FilePath, "/"), 0750); err != nil {
 			return nil, fmt.Errorf("creating log directory: %w", err)
 		}
 
-		// Open log file with appropriate permissions
-		f, err := os.OpenFile(cfg.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		// Open log file with restricted permissions
+		// 0600 ensures only the owner can read/write the log files
+		f, err := os.OpenFile(cfg.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if err != nil {
 			return nil, fmt.Errorf("opening log file: %w", err)
 		}
