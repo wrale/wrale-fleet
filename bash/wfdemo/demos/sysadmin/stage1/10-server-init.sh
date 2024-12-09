@@ -24,8 +24,8 @@ step "Creating data directory for the control plane"
 mkdir -p "${DEMO_TMP_DIR}/central"
 
 step "Starting the control plane server"
-# The --foreground flag is omitted since we want to run in background for the demo
-wfcentral start \
+# Note: Running in background for demo purposes
+wfcentral \
     --port ${WFCENTRAL_API_PORT} \
     --management-port ${WFCENTRAL_MGMT_PORT} \
     --data-dir "${DEMO_TMP_DIR}/central" \
