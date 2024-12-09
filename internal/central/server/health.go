@@ -13,6 +13,32 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	// Version information should be set at build time
+	buildVersion = "dev"
+	buildCommit  = "unknown"
+	buildTime    = "unknown"
+)
+
+// ServerHealth implements health.HealthChecker for the server itself
+type ServerHealth struct {
+	server    *Server
+	startTime time.Time
+}
+
+func newServerHealth(s *Server) *ServerHealth {
+	return &ServerHealth{
+		server:    s,
+		startTime: time.Now(),
+	}
+}
+
+// CheckHealth implements health.HealthChecker
+func (h *ServerHealth) CheckHealth(ctx context.Context) error {
+	// Add any server-specific health checks here
+	return nil
+}
+
 // initHealthMonitoring sets up the health monitoring service with proper multi-tenant isolation
 // and registers critical system components for monitoring. This provides the foundation for
 // both connected and airgapped operational modes.
@@ -21,6 +47,19 @@ func (s *Server) initHealthMonitoring() error {
 	// In production, this would be replaced with a persistent store implementation
 	healthStore := memory.New()
 	s.health = health.NewService(healthStore, s.logger)
+
+	// Register the server itself for health monitoring
+	serverInfo := health.ComponentInfo{
+		Name:        "server",
+		Description: "Central control plane server",
+		Category:    "core",
+		Critical:    true,
+	}
+
+	serverHealth := newServerHealth(s)
+	if err := s.health.RegisterComponent(s.baseCtx, "server", serverHealth, serverInfo); err != nil {
+		return fmt.Errorf("failed to register server health monitoring: %w", err)
+	}
 
 	// Register core server components that require health monitoring.
 	// Each component is registered with metadata that helps determine
@@ -50,6 +89,17 @@ func (s *Server) handleHealthCheck() http.HandlerFunc {
 		ctx := r.Context()
 		tenantID := getTenantFromContext(ctx)
 
+		// Add version information
+		version := &health.Version{
+			Version:   buildVersion,
+			GitCommit: buildCommit,
+			BuildTime: buildTime,
+			Stage:     uint8(s.stage),
+		}
+
+		// Calculate uptime
+		uptime := time.Since(s.startTime())
+
 		// Perform health check with a reasonable timeout to prevent long-running checks
 		// from impacting system performance. The WithTenant option ensures proper
 		// multi-tenant isolation.
@@ -62,8 +112,16 @@ func (s *Server) handleHealthCheck() http.HandlerFunc {
 			return
 		}
 
-		// Return JSON response with proper content type header
+		// Add version and uptime to response
+		response.Version = version
+		response.Uptime = uptime
+
+		// Return detailed status information
 		w.Header().Set("Content-Type", "application/json")
+		if response.Status != health.StatusHealthy {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+
 		if err := json.NewEncoder(w).Encode(response); err != nil {
 			s.logger.Error("failed to write health check response",
 				zap.Error(err),
@@ -89,11 +147,37 @@ func (s *Server) handleReadyCheck() http.HandlerFunc {
 			return
 		}
 
-		if !ready {
-			http.Error(w, "server is not ready", http.StatusServiceUnavailable)
-			return
+		// Create response with version and uptime information
+		version := &health.Version{
+			Version:   buildVersion,
+			GitCommit: buildCommit,
+			BuildTime: buildTime,
+			Stage:     uint8(s.stage),
 		}
-		w.WriteHeader(http.StatusOK)
+
+		response := struct {
+			Ready    bool            `json:"ready"`
+			Version  *health.Version `json:"version"`
+			Uptime   time.Duration   `json:"uptime"`
+			TenantID string          `json:"tenant_id,omitempty"`
+		}{
+			Ready:    ready,
+			Version:  version,
+			Uptime:   time.Since(s.startTime()),
+			TenantID: tenantID,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if !ready {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			s.logger.Error("failed to write readiness check response",
+				zap.Error(err),
+				zap.String("tenant_id", tenantID),
+			)
+		}
 	}
 }
 
@@ -128,6 +212,18 @@ func getTenantFromContext(ctx context.Context) string {
 	// This should be replaced with proper tenant extraction logic
 	// based on your authentication/authorization system
 	return "system"
+}
+
+// startTime returns the server start time for uptime calculations
+func (s *Server) startTime() time.Time {
+	if s.health != nil {
+		for _, component := range s.health.Store().(*memory.Store).Components() {
+			if component.Name == "server" {
+				return component.(*ServerHealth).startTime
+			}
+		}
+	}
+	return time.Now() // Fallback if health service isn't initialized
 }
 
 // checkDeviceServiceHealth verifies the health of the device management service.

@@ -27,13 +27,34 @@ type HealthChecker interface {
 	CheckHealth(context.Context) error
 }
 
+// Version represents the version information for a component or system
+type Version struct {
+	Version   string `json:"version"`
+	GitCommit string `json:"git_commit,omitempty"`
+	BuildTime string `json:"build_time,omitempty"`
+	Stage     uint8  `json:"stage"`
+}
+
+// ConnectionStats provides information about component connectivity
+type ConnectionStats struct {
+	TotalConnections   int64     `json:"total_connections"`
+	ActiveConnections  int64     `json:"active_connections"`
+	LastConnection     time.Time `json:"last_connection,omitempty"`
+	ConnectionFailures int64     `json:"connection_failures"`
+	LastFailure        time.Time `json:"last_failure,omitempty"`
+	LastFailureMessage string    `json:"last_failure_message,omitempty"`
+}
+
 // HealthStatus represents detailed health information for a component
 type HealthStatus struct {
-	TenantID    string          `json:"tenant_id,omitempty"`
-	Status      ComponentStatus `json:"status"`
-	Message     string          `json:"message,omitempty"`
-	LastChecked time.Time       `json:"last_checked"`
-	LastError   string          `json:"last_error,omitempty"`
+	TenantID    string           `json:"tenant_id,omitempty"`
+	Status      ComponentStatus  `json:"status"`
+	Message     string           `json:"message,omitempty"`
+	LastChecked time.Time        `json:"last_checked"`
+	LastError   string           `json:"last_error,omitempty"`
+	Version     *Version         `json:"version,omitempty"`
+	Stats       *ConnectionStats `json:"stats,omitempty"`
+	Uptime      time.Duration    `json:"uptime,omitempty"`
 }
 
 // HealthResponse represents the complete health check response including
@@ -44,6 +65,8 @@ type HealthResponse struct {
 	Ready       bool                     `json:"ready"`
 	Components  map[string]*HealthStatus `json:"components,omitempty"`
 	LastChecked time.Time                `json:"last_checked"`
+	Version     *Version                 `json:"version,omitempty"`
+	Uptime      time.Duration            `json:"uptime,omitempty"`
 }
 
 // ComponentInfo contains metadata about a monitored component
@@ -59,6 +82,7 @@ type HealthCheckResult struct {
 	Status    ComponentStatus
 	Message   string
 	Error     error
+	Stats     *ConnectionStats
 	Timestamp time.Time
 }
 
