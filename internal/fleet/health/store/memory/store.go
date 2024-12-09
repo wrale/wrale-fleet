@@ -12,11 +12,10 @@ import (
 // Store provides an in-memory implementation of the health.Store interface.
 // This implementation is primarily intended for testing and development.
 type Store struct {
-	mu            sync.RWMutex
-	components    map[string]health.ComponentInfo
-	statuses      map[string]*health.HealthStatus
-	ready         bool
-	retentionDays int
+	mu         sync.RWMutex
+	components map[string]health.ComponentInfo
+	statuses   map[string]*health.HealthStatus
+	ready      bool
 }
 
 // New creates a new in-memory health store.

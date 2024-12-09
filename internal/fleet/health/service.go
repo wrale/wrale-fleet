@@ -191,16 +191,3 @@ func (s *Service) IsReady(ctx context.Context, opts ...Option) (bool, error) {
 func (s *Service) Store() Store {
 	return s.store
 }
-
-// logError logs an error with contextual information
-func (s *Service) logError(op string, err error, fields ...zap.Field) {
-	fields = append(fields, zap.String("operation", op))
-	fields = append(fields, zap.Error(err))
-	s.logger.Error("health operation failed", fields...)
-}
-
-// logInfo logs an informational message with contextual information
-func (s *Service) logInfo(op string, fields ...zap.Field) {
-	fields = append(fields, zap.String("operation", op))
-	s.logger.Info("health operation completed", fields...)
-}
