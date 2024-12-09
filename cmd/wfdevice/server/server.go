@@ -51,7 +51,7 @@ type Server struct {
 type Config struct {
 	Port         string
 	DataDir      string
-	Name         string            // Name is optional at startup, required for registration
+	Name         string // Name is optional at startup, required for registration
 	ControlPlane string
 	Tags         map[string]string
 }

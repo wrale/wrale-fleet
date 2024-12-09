@@ -37,7 +37,9 @@ wfdevice start \
     --port ${WFDEVICE_API_PORT} \
     --management-port ${WFDEVICE_MGMT_PORT} \
     --data-dir "${DEMO_TMP_DIR}/device" \
-    --log-level info &
+    --log-level info \
+    --control-plane "localhost:${WFCENTRAL_API_PORT}" \
+    --name "first-device" &
 
 WFDEVICE_PID=$!
 echo "${WFDEVICE_PID}" > "${DEMO_TMP_DIR}/device.pid"
@@ -56,15 +58,7 @@ for i in {1..30}; do
     sleep 1
 done
 
-step "Registering device with control plane"
-if ! wfdevice register \
-    --name "first-device" \
-    --control-plane "localhost:${WFCENTRAL_API_PORT}"; then
-    error "Failed to register device"
-    exit 1
-fi
-
-step "Verifying registration"
+step "Verifying device status"
 if wfcentral device list --port "${WFCENTRAL_API_PORT}" | grep -q "first-device"; then
     success "Device appears in control plane"
 else
