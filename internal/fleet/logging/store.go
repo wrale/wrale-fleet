@@ -3,8 +3,6 @@ package logging
 import (
 	"context"
 	"time"
-
-	"github.com/wrale/wrale-fleet/internal/fleet/logging/store/memory"
 )
 
 // Store defines the interface for event storage implementations
@@ -32,10 +30,4 @@ type Store interface {
 
 	// Sync ensures all events are persisted
 	Sync(ctx context.Context) error
-}
-
-// NewMemoryStore creates a new in-memory event store.
-// This is primarily used for testing and development purposes.
-func NewMemoryStore() Store {
-	return memory.New()
 }

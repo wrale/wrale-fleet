@@ -9,6 +9,7 @@ import (
 
 	"github.com/wrale/wrale-fleet/internal/central/server"
 	"github.com/wrale/wrale-fleet/internal/fleet/logging"
+	"github.com/wrale/wrale-fleet/internal/fleet/logging/store/factory"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -81,7 +82,7 @@ func NewServer(cfg *Config) (*server.Server, error) {
 	}
 
 	// Initialize the logging service
-	loggingStore := logging.NewMemoryStore() // Using interface method instead of direct implementation
+	loggingStore := factory.NewMemoryStore() // Using factory method instead of direct implementation
 	loggingService, err := logging.NewService(loggingStore, nil,
 		logging.WithRetentionPolicy(logging.EventSystem, 30*24*time.Hour),      // 30 days for system events
 		logging.WithRetentionPolicy(logging.EventSecurity, 90*24*time.Hour),    // 90 days for security events
