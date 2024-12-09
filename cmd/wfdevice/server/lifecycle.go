@@ -91,9 +91,7 @@ func (s *Server) Status(ctx context.Context) (*DeviceStatus, error) {
 	// Include last health check time if available
 	lastCheck := time.Time{}
 	if resp, err := s.health.CheckHealth(ctx); err == nil {
-		if resp.LastCheck != nil {
-			lastCheck = *resp.LastCheck
-		}
+		lastCheck = resp.LastChecked
 	}
 
 	return &DeviceStatus{
@@ -176,7 +174,7 @@ func (s *Server) registerHealthChecks() error {
 func (s *Server) CheckHealth(ctx context.Context) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	// For now, basic check that server is running
 	// Future enhancements will add more sophisticated checks
 	return nil
@@ -218,6 +216,8 @@ func (s *Server) notifyShutdown() {
 
 // startHealthReporting begins periodic health check submissions
 func (s *Server) startHealthReporting() {
+	s.stopHealth = make(chan struct{})
+
 	go func() {
 		ticker := time.NewTicker(healthCheckInterval)
 		defer ticker.Stop()

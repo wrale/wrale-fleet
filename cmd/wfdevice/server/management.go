@@ -152,10 +152,10 @@ func (m *managementServer) handleReadyCheck() http.HandlerFunc {
 
 		// Create response with exposure-level appropriate information
 		response := struct {
-			Ready   bool                    `json:"ready"`
-			Version *health.Version         `json:"version,omitempty"`
+			Ready   bool                   `json:"ready"`
+			Version *health.Version        `json:"version,omitempty"`
 			Uptime  time.Duration          `json:"uptime,omitempty"`
-			Status  health.ComponentStatus  `json:"status,omitempty"`
+			Status  health.ComponentStatus `json:"status,omitempty"`
 		}{
 			Ready: ready,
 		}

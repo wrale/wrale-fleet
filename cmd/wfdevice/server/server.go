@@ -9,6 +9,7 @@ import (
 
 	"github.com/wrale/wrale-fleet/internal/fleet/device"
 	"github.com/wrale/wrale-fleet/internal/fleet/health"
+	"github.com/wrale/wrale-fleet/internal/fleet/health/store/memory"
 	"go.uber.org/zap"
 )
 
@@ -34,7 +35,7 @@ const (
 )
 
 const (
-	readHeaderTimeout = 10 * time.Second
+	readHeaderTimeout   = 10 * time.Second
 	registrationTimeout = 30 * time.Second
 	healthCheckInterval = 1 * time.Minute
 )
@@ -53,9 +54,9 @@ type DeviceStatus struct {
 	Name            string            `json:"name"`
 	Status          device.Status     `json:"status"`
 	Tags            map[string]string `json:"tags,omitempty"`
-	ControlPlane    string           `json:"control_plane"`
-	Registered      bool             `json:"registered"`
-	LastHealthCheck time.Time        `json:"last_health_check,omitempty"`
+	ControlPlane    string            `json:"control_plane"`
+	Registered      bool              `json:"registered"`
+	LastHealthCheck time.Time         `json:"last_health_check,omitempty"`
 }
 
 // Config holds the server configuration
@@ -73,12 +74,12 @@ type Config struct {
 
 // Server represents the wfdevice agent instance
 type Server struct {
-	cfg     *Config
-	logger  *zap.Logger
-	stage   Stage
-	device  *device.Device
-	httpSrv *http.Server
-	health  *health.Service
+	cfg        *Config
+	logger     *zap.Logger
+	stage      Stage
+	device     *device.Device
+	httpSrv    *http.Server
+	health     *health.Service
 	mgmtServer *managementServer
 
 	// State management
@@ -108,14 +109,10 @@ func New(logger *zap.Logger, opts ...Option) (*Server, error) {
 		}
 	}
 
-	// Initialize health service
-	healthSrv, err := health.NewService(health.Config{
-		Logger: logger.Named("health"),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("initializing health service: %w", err)
-	}
-	s.health = healthSrv
+	// Initialize health service with memory store
+	healthStore := memory.New()
+	healthLogger := logger.Named("health")
+	s.health = health.NewService(healthStore, healthLogger)
 
 	// Register base health checks
 	if err := s.registerHealthChecks(); err != nil {

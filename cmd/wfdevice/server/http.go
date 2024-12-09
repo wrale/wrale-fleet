@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -82,7 +83,7 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	// Store new configuration
 	s.device.Config = newConfig
 
-	s.logger.Info("applied new device configuration", 
+	s.logger.Info("applied new device configuration",
 		zap.String("name", s.device.Name),
 		zap.Int("config_size", len(newConfig)))
 
