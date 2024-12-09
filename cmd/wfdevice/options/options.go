@@ -10,7 +10,6 @@ import (
 
 	"github.com/wrale/wrale-fleet/cmd/wfdevice/logger"
 	"github.com/wrale/wrale-fleet/cmd/wfdevice/server"
-	"go.uber.org/zap"
 )
 
 var (
