@@ -38,18 +38,20 @@ const (
 // It manages Stage 1 capabilities including core device management,
 // monitoring, and configuration operations.
 type Server struct {
-	cfg        *Config
-	logger     *zap.Logger
-	stage      Stage
-	device     *device.Service
-	httpSrv    *http.Server
-	health     *health.Service
-	baseCtx    context.Context
-	baseCancel context.CancelFunc
-	stopOnce   sync.Once
-	stopped    chan struct{}
-	readyChan  chan struct{}
-	startTime  time.Time // Track server start time for uptime reporting
+	cfg            *Config
+	logger         *zap.Logger
+	stage          Stage
+	device         *device.Service
+	httpSrv        *http.Server
+	health         *health.Service
+	mgmtServer     *managementServer
+	baseCtx        context.Context
+	baseCancel     context.CancelFunc
+	stopOnce       sync.Once
+	stopped        chan struct{}
+	readyChan      chan struct{}
+	startTime      time.Time // Track server start time for uptime reporting
+	shutdownSignal chan struct{}
 }
 
 // New creates a new central control plane server instance.
@@ -66,14 +68,15 @@ func New(cfg *Config, logger *zap.Logger) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	s := &Server{
-		cfg:        cfg,
-		logger:     logger,
-		stage:      Stage1,
-		baseCtx:    ctx,
-		baseCancel: cancel,
-		stopped:    make(chan struct{}),
-		readyChan:  make(chan struct{}),
-		startTime:  time.Now().UTC(), // Initialize start time in UTC
+		cfg:            cfg,
+		logger:         logger,
+		stage:          Stage1,
+		baseCtx:        ctx,
+		baseCancel:     cancel,
+		stopped:        make(chan struct{}),
+		readyChan:      make(chan struct{}),
+		startTime:      time.Now().UTC(), // Initialize start time in UTC
+		shutdownSignal: make(chan struct{}),
 	}
 
 	// Initialize server components in the correct order
@@ -82,12 +85,20 @@ func New(cfg *Config, logger *zap.Logger) (*Server, error) {
 		return nil, fmt.Errorf("server initialization failed: %w", err)
 	}
 
+	// Create management server
+	s.mgmtServer = newManagementServer(s)
+
 	return s, nil
 }
 
 // Start begins serving requests and blocks until stopped.
 func (s *Server) Start(ctx context.Context) error {
-	// Initialize HTTP server with security timeouts
+	// Start management server first
+	if err := s.mgmtServer.start(); err != nil {
+		return fmt.Errorf("failed to start management server: %w", err)
+	}
+
+	// Initialize main HTTP server with security timeouts
 	s.httpSrv = &http.Server{
 		Addr:              ":" + s.cfg.Port,
 		Handler:           s.routes(),
@@ -154,7 +165,14 @@ func (s *Server) Stop() error {
 			s.logger.Error("failed to update ready status during shutdown", zap.Error(e))
 		}
 
-		// Shutdown HTTP server
+		// Stop management server first
+		if e := s.mgmtServer.stop(ctx); e != nil {
+			s.logger.Error("failed to stop management server", zap.Error(e))
+			err = fmt.Errorf("management server shutdown: %w", e)
+			return
+		}
+
+		// Shutdown main HTTP server
 		if s.httpSrv != nil {
 			if e := s.httpSrv.Shutdown(ctx); e != nil {
 				err = fmt.Errorf("http server shutdown: %w", e)
