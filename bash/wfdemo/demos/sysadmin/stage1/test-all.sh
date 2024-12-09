@@ -24,11 +24,6 @@ WFCENTRAL_MGMT_PORT=${WFCENTRAL_MGMT_PORT:-0}
 WFDEVICE_API_PORT=${WFDEVICE_API_PORT:-0}
 WFDEVICE_MGMT_PORT=${WFDEVICE_MGMT_PORT:-0}
 
-# Logging setup
-mkdir -p "${TEST_OUTPUT_DIR}/logs"
-exec 1> >(tee "${TEST_OUTPUT_DIR}/logs/test.log")
-exec 2> >(tee "${TEST_OUTPUT_DIR}/logs/test.err")
-
 log() { echo "$(date -u '+%Y-%m-%dT%H:%M:%S.%3NZ') $*" >&2; }
 fail() { log "ERROR: $*"; exit 1; }
 
@@ -86,8 +81,25 @@ test_init() {
         WFDEVICE_MGMT_PORT=$(get_free_port)
     fi
     
+    # Create necessary directories with proper permissions
     mkdir -p "${TEST_OUTPUT_DIR}/central"
     mkdir -p "${TEST_OUTPUT_DIR}/device"
+    
+    # Set up logging directory structure
+    # First remove any existing log directories/files to prevent conflicts
+    rm -rf "${TEST_OUTPUT_DIR}/logs"
+    mkdir -p "${TEST_OUTPUT_DIR}/logs"
+    
+    # Create log files with proper permissions
+    touch "${TEST_OUTPUT_DIR}/logs/central.log"
+    touch "${TEST_OUTPUT_DIR}/logs/device.log"
+    touch "${TEST_OUTPUT_DIR}/logs/test.log"
+    touch "${TEST_OUTPUT_DIR}/logs/test.err"
+    chmod 600 "${TEST_OUTPUT_DIR}/logs"/*.log
+    
+    # Set up output redirection after log files are created
+    exec 1> >(tee "${TEST_OUTPUT_DIR}/logs/test.log")
+    exec 2> >(tee "${TEST_OUTPUT_DIR}/logs/test.err")
     
     # Export for subprocesses
     export WFCENTRAL_API_PORT WFCENTRAL_MGMT_PORT 
