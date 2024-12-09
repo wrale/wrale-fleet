@@ -3,198 +3,238 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/internal/fleet/health"
 	"go.uber.org/zap"
 )
 
-// managementServer handles health check and readiness endpoints on a separate port
-type managementServer struct {
-	server     *Server
-	httpServer *http.Server
+// ExposureLevel controls how much information is exposed in management endpoints
+type ExposureLevel string
+
+const (
+	// ExposureMinimal provides only basic health status
+	ExposureMinimal ExposureLevel = "minimal"
+	// ExposureStandard includes version and uptime information
+	ExposureStandard ExposureLevel = "standard"
+	// ExposureFull provides all available health information
+	ExposureFull ExposureLevel = "full"
+)
+
+// ManagementConfig holds configuration for the management server
+type ManagementConfig struct {
+	// Port for the management server (must be different from main API port)
+	Port string
+
+	// ExposureLevel controls information exposure in health endpoints
+	ExposureLevel ExposureLevel
+
+	// Custom health check function
+	HealthCheck func(context.Context) error
+
+	// Additional readiness criteria
+	ReadinessCheck func(context.Context) error
+}
+
+// ManagementServer provides health and readiness endpoints on a separate port.
+// It follows security best practices by isolating management functionality and
+// supporting configurable information exposure levels.
+type ManagementServer struct {
+	config     *ManagementConfig
 	logger     *zap.Logger
+	httpServer *http.Server
+	startTime  time.Time
+
+	mu            sync.RWMutex
+	isReady       bool
+	lastCheck     time.Time
+	lastCheckErr  error
+	shuttingDown  bool
+	healthMetrics map[string]interface{}
 }
 
-// newManagementServer creates a new management server instance
-func newManagementServer(s *Server) *managementServer {
-	return &managementServer{
-		server: s,
-		logger: s.logger.Named("management"),
+// newManagementServer creates a new management server instance with proper
+// security defaults and validation of required components.
+func newManagementServer(cfg *ManagementConfig, logger *zap.Logger) (*ManagementServer, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("management config is required")
 	}
-}
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	if cfg.Port == "" {
+		return nil, fmt.Errorf("management port is required")
+	}
 
-// start begins serving management endpoints
-func (m *managementServer) start() error {
+	s := &ManagementServer{
+		config:        cfg,
+		logger:        logger,
+		startTime:     time.Now().UTC(),
+		healthMetrics: make(map[string]interface{}),
+	}
+
+	// Set up HTTP routes with security timeouts
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", m.handleHealthCheck())
-	mux.HandleFunc("/readyz", m.handleReadyCheck())
+	mux.HandleFunc("/health", s.handleHealth())
+	mux.HandleFunc("/ready", s.handleReadiness())
 
-	addr := ":" + m.server.cfg.ManagementConfig.Port
-
-	m.httpServer = &http.Server{
-		Addr:              addr,
+	// Configure HTTP server with security defaults
+	s.httpServer = &http.Server{
+		Addr:              ":" + cfg.Port,
 		Handler:           mux,
-		ReadHeaderTimeout: readHeaderTimeout,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	return s, nil
+}
+
+// start begins serving management endpoints, launching the HTTP server
+// in a separate goroutine to avoid blocking.
+func (s *ManagementServer) start() error {
+	s.logger.Info("starting management server",
+		zap.String("port", s.config.Port),
+		zap.String("exposure", string(s.config.ExposureLevel)),
+	)
+
+	// Start HTTP server in background
 	go func() {
-		m.logger.Info("starting management server",
-			zap.String("addr", addr),
-			zap.String("port", m.server.cfg.ManagementConfig.Port),
-			zap.String("exposure_level", string(m.server.cfg.ManagementConfig.ExposureLevel)),
-			zap.String("healthz_endpoint", "http://localhost"+addr+"/healthz"),
-			zap.String("readyz_endpoint", "http://localhost"+addr+"/readyz"),
-		)
-		if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			m.logger.Error("management server error", zap.Error(err))
+		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			s.logger.Error("management server error", zap.Error(err))
 		}
 	}()
 
 	return nil
 }
 
-// stop performs a graceful shutdown of the management server
-func (m *managementServer) stop(ctx context.Context) error {
-	if m.httpServer != nil {
-		m.logger.Info("stopping management server",
-			zap.String("port", m.server.cfg.ManagementConfig.Port),
-		)
-		return m.httpServer.Shutdown(ctx)
-	}
-	return nil
+// stop gracefully shuts down the management server, ensuring all requests
+// complete before shutdown.
+func (s *ManagementServer) stop(ctx context.Context) error {
+	s.mu.Lock()
+	s.shuttingDown = true
+	s.mu.Unlock()
+
+	s.logger.Info("stopping management server")
+	return s.httpServer.Shutdown(ctx)
 }
 
-// filterHealthResponse removes sensitive information based on exposure level
-func (m *managementServer) filterHealthResponse(response *health.HealthResponse) {
-	switch m.server.cfg.ManagementConfig.ExposureLevel {
-	case ExposureMinimal:
-		// Provide only basic status
-		filtered := &health.HealthResponse{
-			Status: response.Status,
-			Ready:  response.Ready,
-		}
-		*response = *filtered
-
-	case ExposureStandard:
-		// Include version and uptime, but remove detailed component information
-		response.Components = nil
-		// Keep only basic version info
-		if response.Version != nil {
-			response.Version.GitCommit = ""
-			response.Version.BuildTime = ""
-		}
-
-	case ExposureFull:
-		// No filtering, expose all information
-	}
+// setReady marks the server as ready to serve requests, used during startup
+// and for maintenance mode transitions.
+func (s *ManagementServer) setReady(ready bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.isReady = ready
 }
 
-// handleHealthCheck implements the health check endpoint
-func (m *managementServer) handleHealthCheck() http.HandlerFunc {
+// updateHealthMetric safely updates a named health metric while maintaining
+// proper synchronization.
+func (s *ManagementServer) updateHealthMetric(name string, value interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.healthMetrics[name] = value
+}
+
+// handleHealth returns an http.HandlerFunc that performs health checks and
+// returns status based on the configured exposure level.
+func (s *ManagementServer) handleHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
 		ctx := r.Context()
-		tenantID := getTenantFromContext(ctx)
+		s.mu.RLock()
+		defer s.mu.RUnlock()
 
-		// Perform health check with a reasonable timeout
-		response, err := m.server.health.CheckHealth(ctx,
-			health.WithTimeout(5*time.Second),
-			health.WithTenant(tenantID),
-		)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Check if we're shutting down
+		if s.shuttingDown {
+			http.Error(w, "Service shutting down", http.StatusServiceUnavailable)
 			return
 		}
 
-		// Add version and uptime information
-		response.Version = &health.Version{
-			Version:   buildVersion,
-			GitCommit: buildCommit,
-			BuildTime: buildTime,
-			Stage:     uint8(m.server.stage),
-		}
-		response.Uptime = time.Since(m.server.GetStartTime())
-
-		// Filter response based on exposure level
-		m.filterHealthResponse(response)
-
-		// Return appropriately formatted status information
-		w.Header().Set("Content-Type", "application/json")
-		if response.Status != health.StatusHealthy {
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}
-
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			m.logger.Error("failed to write health check response",
-				zap.Error(err),
-				zap.String("tenant_id", tenantID),
-			)
-		}
-	}
-}
-
-// handleReadyCheck implements the readiness check endpoint
-func (m *managementServer) handleReadyCheck() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		tenantID := getTenantFromContext(ctx)
-
-		// Check if the system is ready to serve requests
-		ready, err := m.server.health.IsReady(ctx, health.WithTenant(tenantID))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Perform a health check to get current status
-		healthResponse, err := m.server.health.CheckHealth(ctx,
-			health.WithTimeout(5*time.Second),
-			health.WithTenant(tenantID),
-		)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Create response with filtered information
-		response := struct {
-			Ready    bool                   `json:"ready"`
-			Version  *health.Version        `json:"version,omitempty"`
-			Uptime   time.Duration          `json:"uptime,omitempty"`
-			TenantID string                 `json:"tenant_id,omitempty"`
-			Status   health.ComponentStatus `json:"status"`
-		}{
-			Ready:  ready,
-			Status: healthResponse.Status, // Use the status from health check response
-		}
-
-		// Add additional information based on exposure level
-		if m.server.cfg.ManagementConfig.ExposureLevel != ExposureMinimal {
-			response.Version = &health.Version{
-				Version: buildVersion,
-			}
-			response.Uptime = time.Since(m.server.GetStartTime())
-
-			// Add detailed version info only for full exposure
-			if m.server.cfg.ManagementConfig.ExposureLevel == ExposureFull {
-				response.Version.GitCommit = buildCommit
-				response.Version.BuildTime = buildTime
-				response.Version.Stage = uint8(m.server.stage)
-				response.TenantID = tenantID
+		// Perform health check if configured
+		if s.config.HealthCheck != nil {
+			if err := s.config.HealthCheck(ctx); err != nil {
+				s.lastCheckErr = err
+				http.Error(w, "Service unhealthy: "+err.Error(), http.StatusServiceUnavailable)
+				return
 			}
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		if !ready {
-			w.WriteHeader(http.StatusServiceUnavailable)
+		// Update last check time
+		s.lastCheck = time.Now().UTC()
+		s.lastCheckErr = nil
+
+		// Prepare response based on exposure level
+		response := make(map[string]interface{})
+		response["status"] = "healthy"
+
+		switch s.config.ExposureLevel {
+		case ExposureFull:
+			response["uptime"] = time.Since(s.startTime).String()
+			response["last_check"] = s.lastCheck
+			response["metrics"] = s.healthMetrics
+			fallthrough
+		case ExposureStandard:
+			response["ready"] = s.isReady
+			fallthrough
+		case ExposureMinimal:
+			// Already includes status
 		}
 
+		// Return health status
+		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(response); err != nil {
-			m.logger.Error("failed to write readiness check response",
-				zap.Error(err),
-				zap.String("tenant_id", tenantID),
-			)
+			s.logger.Error("failed to encode health response", zap.Error(err))
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	}
+}
+
+// handleReadiness returns an http.HandlerFunc that checks readiness state
+// based on configured criteria.
+func (s *ManagementServer) handleReadiness() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		ctx := r.Context()
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+
+		// Check if we're shutting down
+		if s.shuttingDown {
+			http.Error(w, "Service shutting down", http.StatusServiceUnavailable)
+			return
+		}
+
+		// Verify readiness if check is configured
+		if s.config.ReadinessCheck != nil {
+			if err := s.config.ReadinessCheck(ctx); err != nil {
+				http.Error(w, "Service not ready: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
+
+		// Prepare response
+		response := map[string]interface{}{
+			"ready": s.isReady,
+		}
+
+		// Add extra info for higher exposure levels
+		if s.config.ExposureLevel != ExposureMinimal {
+			response["uptime"] = time.Since(s.startTime).String()
+		}
+
+		// Return readiness status
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			s.logger.Error("failed to encode readiness response", zap.Error(err))
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 	}
 }
