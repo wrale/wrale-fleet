@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
+	"github.com/wrale/wrale-fleet/internal/fleet/device"
 	"go.uber.org/zap"
 )
 
@@ -67,26 +69,50 @@ func (s *Server) handleDevices() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
+		// Extract tenant ID from context
+		tenantID, err := device.TenantFromContext(ctx)
+		if err != nil {
+			s.logger.Error("failed to get tenant from context",
+				zap.Error(err),
+				zap.String("remote_addr", r.RemoteAddr))
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		switch r.Method {
 		case http.MethodGet:
 			s.logger.Debug("handling device list request",
+				zap.String("tenant_id", tenantID),
 				zap.String("remote_addr", r.RemoteAddr))
 
-			devices, err := s.device.List(ctx, device.ListOptions{})
+			devices, err := s.device.List(ctx, device.ListOptions{
+				TenantID: tenantID,
+			})
 			if err != nil {
 				s.logger.Error("failed to list devices",
 					zap.Error(err),
+					zap.String("tenant_id", tenantID),
 					zap.String("remote_addr", r.RemoteAddr))
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
 
-			// TODO: Implement proper JSON response with devices
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{"devices":[]}`)
+			// Return devices as JSON response
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]interface{}{
+				"devices": devices,
+			}); err != nil {
+				s.logger.Error("failed to encode device list response",
+					zap.Error(err),
+					zap.String("tenant_id", tenantID),
+					zap.String("remote_addr", r.RemoteAddr))
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
 
 		case http.MethodPost:
 			s.logger.Debug("handling device creation request",
+				zap.String("tenant_id", tenantID),
 				zap.String("remote_addr", r.RemoteAddr))
 
 			// TODO: Parse device creation request
@@ -113,27 +139,49 @@ func (s *Server) handleDeviceByID() http.HandlerFunc {
 		ctx := r.Context()
 		deviceID := r.URL.Path[len("/api/v1/devices/"):]
 
+		// Extract tenant ID from context
+		tenantID, err := device.TenantFromContext(ctx)
+		if err != nil {
+			s.logger.Error("failed to get tenant from context",
+				zap.Error(err),
+				zap.String("device_id", deviceID),
+				zap.String("remote_addr", r.RemoteAddr))
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		s.logger.Debug("handling device-specific request",
 			zap.String("device_id", deviceID),
+			zap.String("tenant_id", tenantID),
 			zap.String("method", r.Method),
 			zap.String("remote_addr", r.RemoteAddr))
 
 		switch r.Method {
 		case http.MethodGet:
-			// TODO: Implement get device by ID
-			dev, err := s.device.Get(ctx, deviceID)
+			dev, err := s.device.Get(ctx, tenantID, deviceID)
 			if err != nil {
 				s.logger.Error("failed to get device",
 					zap.Error(err),
 					zap.String("device_id", deviceID),
+					zap.String("tenant_id", tenantID),
 					zap.String("remote_addr", r.RemoteAddr))
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
 
-			// TODO: Implement proper JSON response with device details
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{"device":{"id":"%s"}}`, dev.ID)
+			// Return device as JSON response
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]interface{}{
+				"device": dev,
+			}); err != nil {
+				s.logger.Error("failed to encode device response",
+					zap.Error(err),
+					zap.String("device_id", deviceID),
+					zap.String("tenant_id", tenantID),
+					zap.String("remote_addr", r.RemoteAddr))
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
 
 		case http.MethodPut:
 			// TODO: Parse device update request
@@ -149,6 +197,7 @@ func (s *Server) handleDeviceByID() http.HandlerFunc {
 			s.logger.Warn("invalid method for device-specific endpoint",
 				zap.String("method", r.Method),
 				zap.String("device_id", deviceID),
+				zap.String("tenant_id", tenantID),
 				zap.String("remote_addr", r.RemoteAddr))
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
