@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-# Enable debug output for troubleshooting
-set -x
-
 # Stage 1 - Server Initialization
 # This script demonstrates starting the central control plane, which is the core
 # server component that manages our entire fleet of devices. The control plane

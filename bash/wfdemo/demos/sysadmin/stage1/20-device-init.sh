@@ -28,17 +28,27 @@ else
     exit 1
 fi
 
+# Validate control plane port is available
+if [[ -z "${WFCENTRAL_API_PORT}" ]]; then
+    error "Control plane API port not set in environment"
+    exit 1
+fi
+
+step "Constructing control plane address"
+CONTROL_PLANE_ADDR="localhost:${WFCENTRAL_API_PORT}"
+explain "Using control plane address: ${CONTROL_PLANE_ADDR}"
+
 step "Creating data directory for device agent"
 mkdir -p "${DEMO_TMP_DIR}/device"
 
 step "Starting device agent"
-# Note: Device name will be set during registration
+explain "Connecting to control plane at ${CONTROL_PLANE_ADDR}"
 wfdevice start \
     --port ${WFDEVICE_API_PORT} \
     --management-port ${WFDEVICE_MGMT_PORT} \
     --data-dir "${DEMO_TMP_DIR}/device" \
     --log-level info \
-    --control-plane "localhost:${WFCENTRAL_API_PORT}" \
+    --control-plane "${CONTROL_PLANE_ADDR}" \
     --name "first-device" &
 
 WFDEVICE_PID=$!

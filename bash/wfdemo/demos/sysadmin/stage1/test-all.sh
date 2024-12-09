@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-set -x 
+set -x
 
 # test-all.sh - CI Integration Test Script
 # This script verifies the complete Stage 1 functionality in a CI environment.
