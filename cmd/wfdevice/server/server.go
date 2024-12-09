@@ -42,10 +42,9 @@ type Server struct {
 	httpSrv *http.Server
 
 	// State management
-	mu          sync.RWMutex
-	registered  bool
-	healthTimer *time.Timer
-	stopHealth  chan struct{}
+	mu         sync.RWMutex
+	registered bool
+	stopHealth chan struct{}
 }
 
 // Config holds the server configuration
