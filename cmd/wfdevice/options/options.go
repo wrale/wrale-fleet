@@ -9,8 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wrale/wrale-fleet/cmd/wfdevice/logger"
 	"github.com/wrale/wrale-fleet/cmd/wfdevice/server"
+	"github.com/wrale/wrale-fleet/internal/fleet/logging"
+	"github.com/wrale/wrale-fleet/internal/fleet/logging/store/memory"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -29,11 +32,11 @@ type Config struct {
 	// DataDir is the path for persistent storage
 	DataDir string
 
-	// LogLevel controls logging verbosity
-	LogLevel string
-
-	// LogFile specifies the path for log output (empty for stdout)
-	LogFile string
+	// Logging configuration
+	LogLevel string // Logging level (debug, info, warn, error)
+	LogFile  string // Log file path (empty for stdout)
+	LogJSON  bool   // Enable JSON log format
+	LogStage int    // Stage-aware logging (1-6)
 
 	// ManagementPort is the port for health and readiness endpoints
 	// This must be explicitly configured for proper security setup
@@ -58,6 +61,7 @@ func New() *Config {
 		Port:           "9090",              // Default main API port
 		DataDir:        "/var/lib/wfdevice", // Default data directory
 		LogLevel:       "info",              // Default log level
+		LogStage:       1,                   // Default to Stage 1 capabilities
 		HealthExposure: "standard",          // Default to standard health information exposure
 		Tags:           make(map[string]string),
 	}
@@ -71,6 +75,18 @@ func (c *Config) Validate() error {
 	}
 	if c.DataDir == "" {
 		return fmt.Errorf("data directory is required")
+	}
+
+	// Validate logging configuration
+	switch c.LogLevel {
+	case "debug", "info", "warn", "error":
+		// Valid values
+	default:
+		return fmt.Errorf("invalid log level: %s (must be debug, info, warn, or error)", c.LogLevel)
+	}
+
+	if c.LogStage < 1 || c.LogStage > 6 {
+		return fmt.Errorf("invalid log stage: %d (must be between 1 and 6)", c.LogStage)
 	}
 
 	// Validate port numbers
@@ -113,25 +129,64 @@ func NewServer(cfg *Config) (*server.Server, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Set logging environment variables before initializing logger
-	if os.Getenv("LOG_LEVEL") == "" {
-		logLevel := cfg.LogLevel
-		if logLevel == "" {
-			logLevel = "info"
-		}
-		if err := os.Setenv("LOG_LEVEL", logLevel); err != nil {
-			return nil, fmt.Errorf("setting default log level: %w", err)
-		}
+	// Initialize the logging service
+	loggingStore := memory.New()
+	loggingService, err := logging.NewService(loggingStore, nil,
+		logging.WithRetentionPolicy(logging.EventSystem, 7*24*time.Hour),    // 7 days for system events
+		logging.WithRetentionPolicy(logging.EventSecurity, 30*24*time.Hour), // 30 days for security events
+	)
+	if err != nil {
+		return nil, fmt.Errorf("initializing logging service: %w", err)
 	}
 
-	// Initialize logger with environment-based configuration
-	log, err := logger.New(logger.Config{
-		LogLevel: cfg.LogLevel,
-		Stage:    1,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("initializing logger: %w", err)
+	// Convert log level
+	var level zapcore.Level
+	switch cfg.LogLevel {
+	case "debug":
+		level = zapcore.DebugLevel
+	case "info":
+		level = zapcore.InfoLevel
+	case "warn":
+		level = zapcore.WarnLevel
+	case "error":
+		level = zapcore.ErrorLevel
+	default:
+		level = zapcore.InfoLevel
 	}
+
+	// Create encoder config
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	// Create encoder based on format preference
+	var encoder zapcore.Encoder
+	if cfg.LogJSON {
+		encoder = zapcore.NewJSONEncoder(encoderConfig)
+	} else {
+		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+	}
+
+	// Configure output
+	var output zapcore.WriteSyncer
+	if cfg.LogFile != "" {
+		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			return nil, fmt.Errorf("opening log file: %w", err)
+		}
+		output = zapcore.AddSync(f)
+	} else {
+		output = zapcore.AddSync(os.Stdout)
+	}
+
+	// Create the logger
+	core := zapcore.NewCore(encoder, output, level)
+	logger := zap.New(core,
+		zap.AddCaller(),
+		zap.Fields(
+			zap.Int("stage", cfg.LogStage),
+			zap.String("component", "wfdevice"),
+		),
+	)
 
 	// Create server options from validated config
 	var opts []server.Option
@@ -140,6 +195,7 @@ func NewServer(cfg *Config) (*server.Server, error) {
 		server.WithDataDir(cfg.DataDir),
 		server.WithManagementPort(cfg.ManagementPort),
 		server.WithHealthExposure(cfg.HealthExposure),
+		server.WithLogging(loggingService),
 	)
 
 	// Add optional device-specific configurations
@@ -154,7 +210,7 @@ func NewServer(cfg *Config) (*server.Server, error) {
 	}
 
 	// Create server instance
-	srv, err := server.New(log, opts...)
+	srv, err := server.New(logger, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("initializing server: %w", err)
 	}

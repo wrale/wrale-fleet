@@ -32,11 +32,22 @@ Device operations include:
 	}
 
 	// Configure global flags
-	cmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "info",
+	flags := cmd.PersistentFlags()
+
+	// Logging flags
+	flags.StringVar(&cfg.LogLevel, "log-level", "info",
 		"logging level (debug, info, warn, error)")
-	cmd.PersistentFlags().StringVar(&cfg.DataDir, "data-dir", "/var/lib/wfdevice",
+	flags.StringVar(&cfg.LogFile, "log-file", "",
+		"log file path (defaults to stdout)")
+	flags.BoolVar(&cfg.LogJSON, "log-json", false,
+		"enable JSON log format")
+	flags.IntVar(&cfg.LogStage, "log-stage", 1,
+		"enable stage-aware logging (1-6)")
+
+	// Server flags
+	flags.StringVar(&cfg.DataDir, "data-dir", "/var/lib/wfdevice",
 		"data directory path")
-	cmd.PersistentFlags().StringVar(&cfg.Port, "port", "9090",
+	flags.StringVar(&cfg.Port, "port", "9090",
 		"agent port")
 
 	// Add staged command groups

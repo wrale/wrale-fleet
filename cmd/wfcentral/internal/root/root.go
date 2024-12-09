@@ -23,10 +23,17 @@ func New() (*cobra.Command, error) {
 	}
 
 	// Configure global flags
-	cmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel,
+	flags := cmd.PersistentFlags()
+
+	// Logging flags
+	flags.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel,
 		"logging level (debug, info, warn, error)")
-	cmd.PersistentFlags().StringVar(&cfg.LogFile, "log-file", "",
+	flags.StringVar(&cfg.LogFile, "log-file", "",
 		"log file path (defaults to stdout)")
+	flags.BoolVar(&cfg.LogJSON, "log-json", false,
+		"enable JSON log format")
+	flags.IntVar(&cfg.LogStage, "log-stage", 1,
+		"enable stage-aware logging (1-6)")
 
 	// Add staged command groups
 	if err := stage1.AddCommands(cmd, cfg); err != nil {

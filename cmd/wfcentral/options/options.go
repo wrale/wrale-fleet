@@ -3,10 +3,15 @@ package options
 
 import (
 	"fmt"
+	"os"
 	"strconv"
+	"time"
 
-	"github.com/wrale/wrale-fleet/cmd/wfcentral/logger"
 	"github.com/wrale/wrale-fleet/internal/central/server"
+	"github.com/wrale/wrale-fleet/internal/fleet/logging"
+	"github.com/wrale/wrale-fleet/internal/fleet/logging/store/memory"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // Config holds the command-line options for wfcentral.
@@ -18,11 +23,11 @@ type Config struct {
 	// DataDir is the path for persistent storage
 	DataDir string
 
-	// LogLevel controls logging verbosity
-	LogLevel string
-
-	// LogFile specifies the path for log output (empty for stdout)
-	LogFile string
+	// Logging configuration
+	LogLevel string // Logging level (debug, info, warn, error)
+	LogFile  string // Log file path (empty for stdout)
+	LogJSON  bool   // Enable JSON log format
+	LogStage int    // Stage-aware logging (1-6)
 
 	// ManagementPort is the port for health and readiness endpoints
 	// This must be explicitly configured for proper security setup
@@ -44,6 +49,7 @@ func New() *Config {
 		Port:           "8600",               // Default main API port
 		DataDir:        "/var/lib/wfcentral", // Default data directory
 		LogLevel:       "info",               // Default log level
+		LogStage:       1,                    // Default to Stage 1 capabilities
 		HealthExposure: "standard",           // Default to standard health information exposure
 	}
 }
@@ -75,16 +81,68 @@ func NewServer(cfg *Config) (*server.Server, error) {
 		return nil, fmt.Errorf("management port must be different from main API port")
 	}
 
-	// Initialize logger first to ensure proper diagnostics during startup
-	log, err := logger.New(logger.Config{
-		Level:    cfg.LogLevel,
-		FilePath: cfg.LogFile,
-	})
+	// Initialize the logging service
+	loggingStore := memory.New()
+	loggingService, err := logging.NewService(loggingStore, nil,
+		logging.WithRetentionPolicy(logging.EventSystem, 30*24*time.Hour),      // 30 days for system events
+		logging.WithRetentionPolicy(logging.EventSecurity, 90*24*time.Hour),    // 90 days for security events
+		logging.WithRetentionPolicy(logging.EventAudit, 365*24*time.Hour),      // 1 year for audit events
+		logging.WithRetentionPolicy(logging.EventCompliance, 730*24*time.Hour), // 2 years for compliance events
+	)
 	if err != nil {
-		return nil, fmt.Errorf("initializing logger: %w", err)
+		return nil, fmt.Errorf("initializing logging service: %w", err)
 	}
 
-	// Create internal server configuration with management options
+	// Convert log level
+	var level zapcore.Level
+	switch cfg.LogLevel {
+	case "debug":
+		level = zapcore.DebugLevel
+	case "info":
+		level = zapcore.InfoLevel
+	case "warn":
+		level = zapcore.WarnLevel
+	case "error":
+		level = zapcore.ErrorLevel
+	default:
+		level = zapcore.InfoLevel
+	}
+
+	// Create encoder config
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	// Create encoder based on format preference
+	var encoder zapcore.Encoder
+	if cfg.LogJSON {
+		encoder = zapcore.NewJSONEncoder(encoderConfig)
+	} else {
+		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+	}
+
+	// Configure output
+	var output zapcore.WriteSyncer
+	if cfg.LogFile != "" {
+		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			return nil, fmt.Errorf("opening log file: %w", err)
+		}
+		output = zapcore.AddSync(f)
+	} else {
+		output = zapcore.AddSync(os.Stdout)
+	}
+
+	// Create the logger
+	core := zapcore.NewCore(encoder, output, level)
+	logger := zap.New(core,
+		zap.AddCaller(),
+		zap.Fields(
+			zap.Int("stage", cfg.LogStage),
+			zap.String("component", "wfcentral"),
+		),
+	)
+
+	// Create internal server configuration
 	serverConfig := &server.Config{
 		Port:     cfg.Port,
 		DataDir:  cfg.DataDir,
@@ -93,10 +151,11 @@ func NewServer(cfg *Config) (*server.Server, error) {
 			Port:          cfg.ManagementPort,
 			ExposureLevel: server.ExposureLevel(cfg.HealthExposure),
 		},
+		LoggingService: loggingService,
 	}
 
 	// Create and validate server instance
-	srv, err := server.New(serverConfig, log)
+	srv, err := server.New(serverConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("initializing server: %w", err)
 	}
