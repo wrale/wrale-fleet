@@ -1,9 +1,10 @@
 package logging
 
 import (
+	"sync/atomic"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 )
 
 const (
@@ -17,6 +18,24 @@ const (
 	stageKey = "stage"
 )
 
+// stageCoreWrapper wraps a zapcore.Core to extract field values
+type stageCoreWrapper struct {
+	zapcore.Core
+	stage *int32
+}
+
+func (w *stageCoreWrapper) With(fields []zapcore.Field) zapcore.Core {
+	// Check fields for stage information
+	for i := range fields {
+		if fields[i].Key == stageKey {
+			if stage, ok := fields[i].Interface.(int); ok {
+				atomic.StoreInt32(w.stage, int32(stage))
+			}
+		}
+	}
+	return &stageCoreWrapper{w.Core.With(fields), w.stage}
+}
+
 // WithStage adds stage information to a logger, enabling stage-aware logging
 // and proper capability gating. The stage value is constrained to be between
 // MinStage and MaxStage inclusive.
@@ -27,7 +46,20 @@ func WithStage(logger *zap.Logger, stage int) *zap.Logger {
 	if stage > MaxStage {
 		stage = MaxStage // Cap at maximum Stage 6
 	}
-	return logger.With(zap.Int(stageKey, stage))
+
+	// Store stage in atomic value for thread-safe access
+	stageVal := new(int32)
+	atomic.StoreInt32(stageVal, int32(stage))
+
+	// Create wrapped core
+	wrappedCore := &stageCoreWrapper{
+		Core:  logger.Core(),
+		stage: stageVal,
+	}
+
+	return logger.WithOptions(zap.WrapCore(func(c zapcore.Core) zapcore.Core {
+		return wrappedCore
+	}))
 }
 
 // StageCheck verifies if a requested operation is supported in the current stage.
@@ -82,21 +114,11 @@ func StageField(stage int) zap.Field {
 // GetStage extracts the current stage from a logger's context.
 // Returns MinStage if no stage information is found.
 func GetStage(logger *zap.Logger) int {
-	core, _ := observer.New(zapcore.DebugLevel)
-	tmp := zap.New(core)
-
-	// Log a message to capture fields
-	tmp.With(logger.Fields()...).Debug("")
-	entries := core.All()
-	if len(entries) > 0 {
-		for _, field := range entries[0].Context {
-			if field.Key == stageKey {
-				if stage, ok := field.Integer; ok {
-					return int(stage)
-				}
-			}
-		}
+	// If the logger has our wrapper, get the stage directly
+	if cw, ok := logger.Core().(*stageCoreWrapper); ok {
+		return int(atomic.LoadInt32(cw.stage))
 	}
 
+	// No stage information found, return minimum stage
 	return MinStage
 }

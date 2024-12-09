@@ -10,20 +10,23 @@ import (
 	"github.com/wrale/wrale-fleet/internal/fleet/logging"
 )
 
-// Store implements the logging.Store interface with in-memory storage
+// Store implements the logging.Store interface with in-memory storage.
+// It uses a two-level map structure to efficiently organize events by tenant
+// and provides thread-safe access through mutex synchronization.
 type Store struct {
 	mu     sync.RWMutex
 	events map[string]map[string]*logging.Event // tenant -> id -> event
 }
 
-// New creates a new in-memory event store
+// New creates a new in-memory event store with initialized internal maps
 func New() *Store {
 	return &Store{
 		events: make(map[string]map[string]*logging.Event),
 	}
 }
 
-// Store stores a new event
+// Store stores a new event after validating its contents. It creates the
+// tenant's event map if it doesn't exist yet.
 func (s *Store) Store(ctx context.Context, event *logging.Event) error {
 	if err := event.Validate(); err != nil {
 		return logging.E("Store.Store", logging.ErrCodeValidation, "invalid event", err)
@@ -40,7 +43,8 @@ func (s *Store) Store(ctx context.Context, event *logging.Event) error {
 	return nil
 }
 
-// Get retrieves an event by ID
+// Get retrieves an event by ID, returning an error if either the tenant
+// or event ID doesn't exist
 func (s *Store) Get(ctx context.Context, tenantID, eventID string) (*logging.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -54,7 +58,8 @@ func (s *Store) Get(ctx context.Context, tenantID, eventID string) (*logging.Eve
 	return nil, logging.E("Store.Get", logging.ErrCodeNotFound, "event not found", logging.ErrEventNotFound)
 }
 
-// List retrieves events matching the given options
+// List retrieves events matching the given options. Results are sorted
+// by timestamp in descending order and paginated according to the options.
 func (s *Store) List(ctx context.Context, opts logging.ListOptions) ([]*logging.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -91,7 +96,8 @@ func (s *Store) List(ctx context.Context, opts logging.ListOptions) ([]*logging.
 	return results[opts.Offset:end], nil
 }
 
-// Delete removes an event
+// Delete removes an event if it exists, returning an error if either
+// the tenant or event ID is not found
 func (s *Store) Delete(ctx context.Context, tenantID, eventID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,7 +112,8 @@ func (s *Store) Delete(ctx context.Context, tenantID, eventID string) error {
 	return logging.E("Store.Delete", logging.ErrCodeNotFound, "event not found", logging.ErrEventNotFound)
 }
 
-// DeleteBefore removes events older than the given time
+// DeleteBefore removes all events for a tenant that are older than the
+// specified time. This is used for implementing retention policies.
 func (s *Store) DeleteBefore(ctx context.Context, tenantID string, before time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -125,7 +132,8 @@ func (s *Store) DeleteBefore(ctx context.Context, tenantID string, before time.T
 	return nil
 }
 
-// Query performs a structured query on events
+// Query performs a structured query on events using the provided query options.
+// It supports filtering by multiple criteria and custom sorting orders.
 func (s *Store) Query(ctx context.Context, query logging.QueryOptions) ([]*logging.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -160,7 +168,8 @@ func (s *Store) Query(ctx context.Context, query logging.QueryOptions) ([]*loggi
 	return results[query.Offset:end], nil
 }
 
-// BatchStore stores multiple events in a single operation
+// BatchStore stores multiple events in a single operation. It validates
+// all events before storing any of them to maintain consistency.
 func (s *Store) BatchStore(ctx context.Context, events []*logging.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -179,13 +188,14 @@ func (s *Store) BatchStore(ctx context.Context, events []*logging.Event) error {
 	return nil
 }
 
-// Sync ensures all events are persisted
+// Sync ensures all events are persisted. This is a no-op for the memory
+// store as all operations are synchronous.
 func (s *Store) Sync(ctx context.Context) error {
-	// No-op for memory store as all operations are synchronous
 	return nil
 }
 
-// matchesListOptions checks if an event matches the list options
+// matchesListOptions checks if an event matches the list options by comparing
+// each filter criteria
 func matchesListOptions(event *logging.Event, opts logging.ListOptions) bool {
 	if opts.Type != "" && event.Type != opts.Type {
 		return false
@@ -218,7 +228,8 @@ func matchesListOptions(event *logging.Event, opts logging.ListOptions) bool {
 	return true
 }
 
-// matchesQueryOptions checks if an event matches the query options
+// matchesQueryOptions checks if an event matches the query options by evaluating
+// all query criteria including type, level, time range, and tag queries
 func matchesQueryOptions(event *logging.Event, query logging.QueryOptions) bool {
 	// Check event type
 	if len(query.Types) > 0 {
@@ -340,7 +351,8 @@ func matchesQueryOptions(event *logging.Event, query logging.QueryOptions) bool 
 	return true
 }
 
-// sortEvents sorts events based on query options
+// sortEvents sorts events based on query options. It supports sorting by
+// timestamp, level, or type in either ascending or descending order.
 func sortEvents(events []*logging.Event, orderBy, direction string) {
 	if orderBy == "" {
 		orderBy = "timestamp"

@@ -1,4 +1,4 @@
-package logging
+package logging_test
 
 import (
 	"context"
@@ -9,40 +9,39 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 
-	"github.com/wrale/wrale-fleet/internal/fleet/logging/store/memory"
+	"github.com/wrale/wrale-fleet/internal/fleet/logging"
+	loggingtest "github.com/wrale/wrale-fleet/internal/fleet/logging/testing"
 )
 
 func TestService_Log(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := memory.NewTestStore()
-	service, err := NewService(store, logger)
-	require.NoError(t, err)
+	service := loggingtest.NewTestService(t)
 
 	tests := []struct {
 		name      string
 		tenantID  string
-		eventType EventType
-		level     Level
+		eventType logging.EventType
+		level     logging.Level
 		message   string
-		opts      []EventOption
+		opts      []logging.EventOption
 		wantErr   bool
 	}{
 		{
 			name:      "basic event",
 			tenantID:  "tenant1",
-			eventType: EventSystem,
-			level:     LevelInfo,
+			eventType: logging.EventSystem,
+			level:     logging.LevelInfo,
 			message:   "test event",
 			wantErr:   false,
 		},
 		{
 			name:      "with context",
 			tenantID:  "tenant1",
-			eventType: EventOperational,
-			level:     LevelInfo,
+			eventType: logging.EventOperational,
+			level:     logging.LevelInfo,
 			message:   "context test",
-			opts: []EventOption{
-				WithEventContext(EventContext{
+			opts: []logging.EventOption{
+				logging.WithEventContext(logging.EventContext{
 					ComponentID: "test-component",
 					DeviceID:    "test-device",
 				}),
@@ -52,11 +51,11 @@ func TestService_Log(t *testing.T) {
 		{
 			name:      "with metadata",
 			tenantID:  "tenant1",
-			eventType: EventAudit,
-			level:     LevelInfo,
+			eventType: logging.EventAudit,
+			level:     logging.LevelInfo,
 			message:   "metadata test",
-			opts: []EventOption{
-				WithEventMetadata(map[string]string{
+			opts: []logging.EventOption{
+				logging.WithEventMetadata(map[string]string{
 					"key": "value",
 				}),
 			},
@@ -65,16 +64,16 @@ func TestService_Log(t *testing.T) {
 		{
 			name:      "missing tenant",
 			tenantID:  "",
-			eventType: EventSystem,
-			level:     LevelInfo,
+			eventType: logging.EventSystem,
+			level:     logging.LevelInfo,
 			message:   "invalid event",
 			wantErr:   true,
 		},
 		{
 			name:      "missing message",
 			tenantID:  "tenant1",
-			eventType: EventSystem,
-			level:     LevelInfo,
+			eventType: logging.EventSystem,
+			level:     logging.LevelInfo,
 			message:   "",
 			wantErr:   true,
 		},
@@ -91,10 +90,10 @@ func TestService_Log(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Query to verify event was stored
-			query := QueryOptions{
+			query := logging.QueryOptions{
 				TenantID: tt.tenantID,
-				Types:    []EventType{tt.eventType},
-				TimeRange: &TimeRange{
+				Types:    []logging.EventType{tt.eventType},
+				TimeRange: &logging.TimeRange{
 					Start: time.Now().Add(-time.Minute),
 					End:   time.Now().Add(time.Minute),
 				},
@@ -113,25 +112,22 @@ func TestService_Log(t *testing.T) {
 }
 
 func TestService_BatchLog(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	store := memory.NewTestStore()
-	service, err := NewService(store, logger)
-	require.NoError(t, err)
+	service := loggingtest.NewTestService(t)
 
 	ctx := context.Background()
-	events := []*Event{
-		New("tenant1", EventSystem, LevelInfo, "event1"),
-		New("tenant1", EventOperational, LevelWarn, "event2"),
-		New("tenant2", EventAudit, LevelError, "event3"),
+	events := []*logging.Event{
+		logging.New("tenant1", logging.EventSystem, logging.LevelInfo, "event1"),
+		logging.New("tenant1", logging.EventOperational, logging.LevelWarn, "event2"),
+		logging.New("tenant2", logging.EventAudit, logging.LevelError, "event3"),
 	}
 
-	err = service.BatchLog(ctx, events)
+	err := service.BatchLog(ctx, events)
 	require.NoError(t, err)
 
 	// Verify events for tenant1
-	query := QueryOptions{
+	query := logging.QueryOptions{
 		TenantID: "tenant1",
-		TimeRange: &TimeRange{
+		TimeRange: &logging.TimeRange{
 			Start: time.Now().Add(-time.Minute),
 			End:   time.Now().Add(time.Minute),
 		},
@@ -149,31 +145,26 @@ func TestService_BatchLog(t *testing.T) {
 
 func TestService_RetentionPolicy(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	store := memory.NewTestStore()
-
-	// Create service with short retention for testing
-	service, err := NewService(store, logger,
-		WithRetentionPolicy(EventOperational, time.Hour))
-	require.NoError(t, err)
+	service := loggingtest.NewTestService(t)
 
 	ctx := context.Background()
 
 	// Create old and new events
-	oldEvent := New("tenant1", EventOperational, LevelInfo, "old event")
+	oldEvent := logging.New("tenant1", logging.EventOperational, logging.LevelInfo, "old event")
 	oldEvent.Timestamp = time.Now().Add(-2 * time.Hour)
-	newEvent := New("tenant1", EventOperational, LevelInfo, "new event")
+	newEvent := logging.New("tenant1", logging.EventOperational, logging.LevelInfo, "new event")
 
-	err = service.BatchLog(ctx, []*Event{oldEvent, newEvent})
+	err := service.BatchLog(ctx, []*logging.Event{oldEvent, newEvent})
 	require.NoError(t, err)
 
-	// Run retention
-	err = service.Retention(ctx, "tenant1")
+	// Run retention with 1-hour policy
+	err = service.ApplyRetentionPolicy(ctx, "tenant1", time.Hour)
 	require.NoError(t, err)
 
 	// Verify only new event remains
-	query := QueryOptions{
+	query := logging.QueryOptions{
 		TenantID: "tenant1",
-		Types:    []EventType{EventOperational},
+		Types:    []logging.EventType{logging.EventOperational},
 	}
 	results, err := service.Query(ctx, query)
 	require.NoError(t, err)
@@ -182,51 +173,48 @@ func TestService_RetentionPolicy(t *testing.T) {
 }
 
 func TestService_QueryFilters(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	store := memory.NewTestStore()
-	service, err := NewService(store, logger)
-	require.NoError(t, err)
+	service := loggingtest.NewTestService(t)
 
 	ctx := context.Background()
 
 	// Create events with different characteristics
-	events := []*Event{
-		New("tenant1", EventSystem, LevelInfo, "event1").
+	events := []*logging.Event{
+		logging.New("tenant1", logging.EventSystem, logging.LevelInfo, "event1").
 			WithTag("env", "prod"),
-		New("tenant1", EventSecurity, LevelError, "event2").
+		logging.New("tenant1", logging.EventSecurity, logging.LevelError, "event2").
 			WithTag("env", "prod").
 			WithSource("server1"),
-		New("tenant1", EventSystem, LevelWarn, "event3").
+		logging.New("tenant1", logging.EventSystem, logging.LevelWarn, "event3").
 			WithTag("env", "dev"),
 	}
 
-	err = service.BatchLog(ctx, events)
+	err := service.BatchLog(ctx, events)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name      string
-		query     QueryOptions
+		query     logging.QueryOptions
 		wantCount int
 	}{
 		{
 			name: "filter by type",
-			query: QueryOptions{
+			query: logging.QueryOptions{
 				TenantID: "tenant1",
-				Types:    []EventType{EventSystem},
+				Types:    []logging.EventType{logging.EventSystem},
 			},
 			wantCount: 2,
 		},
 		{
 			name: "filter by level",
-			query: QueryOptions{
+			query: logging.QueryOptions{
 				TenantID: "tenant1",
-				Levels:   []Level{LevelError},
+				Levels:   []logging.Level{logging.LevelError},
 			},
 			wantCount: 1,
 		},
 		{
 			name: "filter by source",
-			query: QueryOptions{
+			query: logging.QueryOptions{
 				TenantID: "tenant1",
 				Sources:  []string{"server1"},
 			},
@@ -234,9 +222,9 @@ func TestService_QueryFilters(t *testing.T) {
 		},
 		{
 			name: "filter by tag",
-			query: QueryOptions{
+			query: logging.QueryOptions{
 				TenantID: "tenant1",
-				TagQuery: &TagQuery{
+				TagQuery: &logging.TagQuery{
 					Must: map[string]string{"env": "prod"},
 				},
 			},
@@ -286,7 +274,7 @@ func TestStage_WithLogger(t *testing.T) {
 			name:          "invalid stage not allowed",
 			stage:         1,
 			operation:     "invalid_op",
-			requiredStage: MaxStage + 1,
+			requiredStage: logging.MaxStage + 1,
 			wantAllowed:   false,
 		},
 	}
@@ -294,12 +282,12 @@ func TestStage_WithLogger(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := zaptest.NewLogger(t)
-			stagedLogger := WithStage(logger, tt.stage)
+			stagedLogger := logging.WithStage(logger, tt.stage)
 
-			allowed := StageCheck(stagedLogger, tt.requiredStage, tt.operation)
+			allowed := logging.StageCheck(stagedLogger, tt.requiredStage, tt.operation)
 			assert.Equal(t, tt.wantAllowed, allowed)
 
-			stage := GetStage(stagedLogger)
+			stage := logging.GetStage(stagedLogger)
 			assert.Equal(t, tt.stage, stage)
 		})
 	}
