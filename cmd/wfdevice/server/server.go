@@ -68,14 +68,25 @@ func New(logger *zap.Logger, opts ...Option) (*Server, error) {
 		stopHealth: make(chan struct{}),
 	}
 
+	// Apply and validate each option
 	for _, opt := range opts {
 		if err := opt(s); err != nil {
 			return nil, fmt.Errorf("applying server option: %w", err)
 		}
 	}
 
+	// Log configuration for debugging
+	logger.Debug("server configuration after applying options",
+		zap.String("port", s.cfg.Port),
+		zap.String("data_dir", s.cfg.DataDir),
+		zap.String("name", s.cfg.Name),
+		zap.String("control_plane", s.cfg.ControlPlane),
+		zap.Any("tags", s.cfg.Tags),
+	)
+
 	// Validate required configuration
 	if s.cfg.ControlPlane == "" {
+		logger.Error("control plane address not set")
 		return nil, fmt.Errorf("control plane address is required")
 	}
 
@@ -93,6 +104,7 @@ func New(logger *zap.Logger, opts ...Option) (*Server, error) {
 func WithPort(port string) Option {
 	return func(s *Server) error {
 		s.cfg.Port = port
+		s.logger.Debug("setting server port", zap.String("port", port))
 		return nil
 	}
 }
@@ -101,6 +113,7 @@ func WithPort(port string) Option {
 func WithDataDir(dir string) Option {
 	return func(s *Server) error {
 		s.cfg.DataDir = dir
+		s.logger.Debug("setting data directory", zap.String("dir", dir))
 		return nil
 	}
 }
@@ -109,6 +122,7 @@ func WithDataDir(dir string) Option {
 func WithName(name string) Option {
 	return func(s *Server) error {
 		s.cfg.Name = name
+		s.logger.Debug("setting device name", zap.String("name", name))
 		return nil
 	}
 }
@@ -116,6 +130,7 @@ func WithName(name string) Option {
 // WithControlPlane sets the control plane address
 func WithControlPlane(addr string) Option {
 	return func(s *Server) error {
+		s.logger.Debug("setting control plane address", zap.String("addr", addr))
 		s.cfg.ControlPlane = addr
 		return nil
 	}
@@ -125,6 +140,7 @@ func WithControlPlane(addr string) Option {
 func WithTags(tags map[string]string) Option {
 	return func(s *Server) error {
 		s.cfg.Tags = tags
+		s.logger.Debug("setting device tags", zap.Any("tags", tags))
 		return nil
 	}
 }
