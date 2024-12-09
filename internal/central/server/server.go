@@ -29,6 +29,7 @@ type Server struct {
 	stopOnce   sync.Once
 	stopped    chan struct{}
 	readyChan  chan struct{}
+	startTime  time.Time // Track server start time for uptime reporting
 }
 
 // Stage represents the server's operational stage/capability level
@@ -72,6 +73,7 @@ func New(cfg *Config, logger *zap.Logger) (*Server, error) {
 		baseCancel: cancel,
 		stopped:    make(chan struct{}),
 		readyChan:  make(chan struct{}),
+		startTime:  time.Now().UTC(), // Initialize start time in UTC
 	}
 
 	// Initialize server components
@@ -204,6 +206,11 @@ func (s *Server) Ready() <-chan struct{} {
 // Status returns the current health status of the server and its components.
 func (s *Server) Status(ctx context.Context) (*health.HealthResponse, error) {
 	return s.health.CheckHealth(ctx, health.WithTimeout(healthCheckTimeout))
+}
+
+// GetStartTime returns the server's start time.
+func (s *Server) GetStartTime() time.Time {
+	return s.startTime
 }
 
 // routes sets up the HTTP routes based on current stage capabilities.

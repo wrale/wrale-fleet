@@ -22,14 +22,12 @@ var (
 
 // ServerHealth implements health.HealthChecker for the server itself
 type ServerHealth struct {
-	server    *Server
-	startTime time.Time
+	server *Server
 }
 
 func newServerHealth(s *Server) *ServerHealth {
 	return &ServerHealth{
-		server:    s,
-		startTime: time.Now(),
+		server: s,
 	}
 }
 
@@ -97,8 +95,8 @@ func (s *Server) handleHealthCheck() http.HandlerFunc {
 			Stage:     uint8(s.stage),
 		}
 
-		// Calculate uptime
-		uptime := time.Since(s.startTime())
+		// Calculate uptime since server start
+		uptime := time.Since(s.GetStartTime())
 
 		// Perform health check with a reasonable timeout to prevent long-running checks
 		// from impacting system performance. The WithTenant option ensures proper
@@ -163,7 +161,7 @@ func (s *Server) handleReadyCheck() http.HandlerFunc {
 		}{
 			Ready:    ready,
 			Version:  version,
-			Uptime:   time.Since(s.startTime()),
+			Uptime:   time.Since(s.GetStartTime()),
 			TenantID: tenantID,
 		}
 
@@ -212,18 +210,6 @@ func getTenantFromContext(ctx context.Context) string {
 	// This should be replaced with proper tenant extraction logic
 	// based on your authentication/authorization system
 	return "system"
-}
-
-// startTime returns the server start time for uptime calculations
-func (s *Server) startTime() time.Time {
-	if s.health != nil {
-		for _, component := range s.health.Store().(*memory.Store).Components() {
-			if component.Name == "server" {
-				return component.(*ServerHealth).startTime
-			}
-		}
-	}
-	return time.Now() // Fallback if health service isn't initialized
 }
 
 // checkDeviceServiceHealth verifies the health of the device management service.
