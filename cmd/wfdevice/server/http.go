@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
 // routes sets up the HTTP routes
@@ -22,7 +24,7 @@ func (s *Server) handleHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		
+
 		if err := json.NewEncoder(w).Encode(map[string]string{
 			"status": "healthy",
 		}); err != nil {
