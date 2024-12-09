@@ -4,6 +4,7 @@ package logger
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -46,17 +47,21 @@ func New(cfg Config) (*zap.Logger, error) {
 	// Create the core with appropriate output
 	var output zapcore.WriteSyncer
 	if cfg.FilePath != "" {
+		// Clean the file path and get the directory
+		logPath := filepath.Clean(cfg.FilePath)
+		logDir := filepath.Dir(logPath)
+
 		// Ensure parent directory exists with restricted permissions
 		// 0750 allows owner full access and group read/execute only
-		if err := os.MkdirAll(strings.TrimSuffix(cfg.FilePath, "/"), 0750); err != nil {
-			return nil, fmt.Errorf("creating log directory: %w", err)
+		if err := os.MkdirAll(logDir, 0750); err != nil {
+			return nil, fmt.Errorf("creating log directory %q: %w", logDir, err)
 		}
 
 		// Open log file with restricted permissions
 		// 0600 ensures only the owner can read/write the log files
-		f, err := os.OpenFile(cfg.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if err != nil {
-			return nil, fmt.Errorf("opening log file: %w", err)
+			return nil, fmt.Errorf("opening log file %q: %w", logPath, err)
 		}
 		output = zapcore.AddSync(f)
 	} else {
