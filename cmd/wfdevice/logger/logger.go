@@ -10,10 +10,29 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// New creates a new zap.Logger with appropriate configuration for the device agent.
+// New creates a new zap.Logger with the provided configuration.
 // It supports stage-aware logging and proper environment configuration.
-func New() (*zap.Logger, error) {
-	cfg := getConfig()
+func New(cfg Config) (*zap.Logger, error) {
+	// If no config provided, use environment-based defaults
+	if cfg.Environment == "" || cfg.LogLevel == "" {
+		envCfg := getConfig()
+		if cfg.Environment == "" {
+			cfg.Environment = envCfg.Environment
+		}
+		if cfg.LogLevel == "" {
+			cfg.LogLevel = envCfg.LogLevel
+		}
+		if !cfg.JSONOutput {
+			cfg.JSONOutput = envCfg.JSONOutput
+		}
+		if !cfg.StackTrace {
+			cfg.StackTrace = envCfg.StackTrace
+		}
+		if cfg.Stage < MinStage {
+			cfg.Stage = envCfg.Stage
+		}
+	}
+
 	encConfig := getEncoderConfig()
 
 	// Create appropriate encoder based on configuration
