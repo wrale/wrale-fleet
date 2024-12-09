@@ -158,9 +158,139 @@ func (s *Store) Create(ctx context.Context, item *domain.Item) error {
 
 ## Testing Approach
 
+Testing presents a fundamental tension in store implementation: balancing clean architecture with practical testing needs. Over time, we have evaluated three potential approaches to making stores easily testable:
+
+1. Convenience Constructor Approach:
+Adding constructor functions directly to domain packages might seem simple:
+
+```go
+// In domain package, seems convenient but problematic
+package domain
+
+func NewMemoryStore() Store {     // Creates import cycle!
+    return factory.NewMemoryStore()  
+}
+```
+
+However, this approach inevitably creates import cycles because:
+- Domain package would import factory package
+- Factory package already imports domain for interface
+- Testing becomes easy but architecture suffers
+
+2. Separate Types Package Approach:
+Moving interfaces to a shared package can break cycles:
+
+```go
+// Separate from domain, but loses context
+package types
+
+type Store interface {
+    Create(ctx context.Context, item any) error
+    // etc
+}
+```
+
+This avoids cycles but:
+- Separates interfaces from their domain context
+- Makes abstraction boundaries less clear
+- Loses domain-specific type safety
+- Testing becomes complicated
+
+3. Testing Package Approach (Our Choice):
+Providing test helpers in a dedicated subpackage:
+
+```go
+// Clear purpose, maintains boundaries
+package testing
+
+func NewTestStore(t *testing.T) domain.Store {
+    return factory.NewMemoryStore()
+}
+```
+
+This solution:
+- Respects domain boundaries
+- Avoids import cycles
+- Makes testing straightforward
+- Preserves type safety
+- Allows sharing test fixtures
+- Keeps testing utilities together
+
+We have chosen the testing package approach because it provides the best balance of clean architecture and testing practicality. Implementation follows this structure:
+
+```
+internal/fleet/domain/
+    ├── domain.go          # Core domain types
+    ├── service.go         # Domain logic
+    ├── store.go           # Store interface
+    ├── store/
+    │   ├── factory/       # Store creation
+    │   └── memory/        # In-memory implementation
+    ├── domain_test.go     # Tests using testing package
+    └── testing/           # Testing utilities
+        ├── helpers.go     # Test store creation
+        └── fixtures.go    # Common test data
+```
+
+The testing package provides clear, focused utilities:
+
+```go
+package testing
+
+import (
+    "context"
+    "testing"
+    
+    "github.com/wrale/fleet/internal/fleet/domain"
+    "github.com/wrale/fleet/internal/fleet/domain/store/factory"
+)
+
+// NewTestStore creates a configured memory store for testing
+func NewTestStore(t *testing.T) domain.Store {
+    t.Helper()
+    return factory.NewMemoryStore()
+}
+
+// NewTestService creates a service with test dependencies
+func NewTestService(t *testing.T) *domain.Service {
+    t.Helper()
+    store := NewTestStore(t)
+    return domain.NewService(store, testLogger)
+}
+
+// CreateTestData populates the store with standard test fixtures
+func CreateTestData(ctx context.Context, t *testing.T, store domain.Store) error {
+    t.Helper()
+    // Create canonical test data set
+    return nil
+}
+```
+
+This enables straightforward test code:
+
+```go
+func TestService(t *testing.T) {
+    // Clean test setup using helpers
+    store := testing.NewTestStore(t)
+    service := testing.NewTestService(t)
+    
+    // Standard test data population
+    ctx := context.Background()
+    err := testing.CreateTestData(ctx, t, store)
+    require.NoError(t, err)
+    
+    // Clear test logic without setup complexity
+    t.Run("List", func(t *testing.T) {
+        results, err := service.List(ctx, domain.ListOptions{})
+        require.NoError(t, err)
+        assert.NotEmpty(t, results)
+    })
+}
+```
+
 ### Interface Compliance
 
-Use compile-time checks to ensure implementations satisfy interfaces:
+Every store implementation must verify interface compliance through compile-time checks:
 
 ```go
 var (
@@ -171,20 +301,21 @@ var (
 
 ### Common Test Suites
 
-Create test suites that can verify any store implementation:
+Store implementations should verify core functionality through standard test suites:
 
 ```go
 func RunStoreTests(t *testing.T, newStore func() domain.Store) {
     t.Run("Create", testStoreCreate(newStore))
     t.Run("Get", testStoreGet(newStore))
     t.Run("List", testStoreList(newStore))
-    // ...
+    t.Run("Update", testStoreUpdate(newStore))
+    t.Run("Delete", testStoreDelete(newStore))
 }
 ```
 
 ### Isolation Testing
 
-Always verify tenant isolation in store implementations:
+All implementations must verify tenant isolation explicitly:
 
 ```go
 func TestStoreIsolation(t *testing.T) {
