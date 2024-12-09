@@ -26,10 +26,11 @@ func New(opts ...health.StoreOption) *Store {
 		statuses:   make(map[string]*health.HealthStatus),
 	}
 
-	// Apply options
-	options := &health.storeOptions{}
+	// Apply options - since this is a memory implementation,
+	// we ignore errors as options primarily affect persistence
+	options := &health.StoreOptions{}
 	for _, opt := range opts {
-		_ = opt(options) // Ignore errors for memory implementation
+		_ = opt(options)
 	}
 
 	return s
