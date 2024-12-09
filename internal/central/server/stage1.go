@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -21,44 +20,6 @@ func (s *Server) initStage1() error {
 
 	// Stage-specific initialization can be added here
 	return nil
-}
-
-// cleanupDeviceService performs cleanup of device service resources.
-// This is called during server shutdown to ensure proper resource release.
-func (s *Server) cleanupDeviceService(ctx context.Context) error {
-	if s.device == nil {
-		s.logger.Debug("no device service to clean up")
-		return nil
-	}
-
-	s.logger.Info("cleaning up device service resources")
-
-	// Cleanup device store if it implements cleanup
-	if closer, ok := s.device.Store().(interface{ Close() error }); ok {
-		if err := closer.Close(); err != nil {
-			s.logger.Error("failed to close device store", zap.Error(err))
-			return fmt.Errorf("closing device store: %w", err)
-		}
-	}
-
-	s.logger.Info("device service cleanup completed")
-	return nil
-}
-
-// registerStage1Routes registers HTTP routes for Stage 1 capabilities.
-// This sets up the basic REST API endpoints for device management.
-func (s *Server) registerStage1Routes(mux *http.ServeMux) {
-	s.logger.Info("registering Stage 1 API routes")
-
-	// Device management endpoints
-	mux.HandleFunc("/api/v1/devices", s.handleDevices())
-	mux.HandleFunc("/api/v1/devices/", s.handleDeviceByID())
-
-	s.logger.Debug("Stage 1 routes registered",
-		zap.Strings("endpoints", []string{
-			"/api/v1/devices",
-			"/api/v1/devices/",
-		}))
 }
 
 // handleDevices handles device list and creation requests.
