@@ -7,6 +7,7 @@ import (
 
 	"github.com/wrale/wrale-fleet/cmd/wfdevice/logger"
 	"github.com/wrale/wrale-fleet/cmd/wfdevice/server"
+	"go.uber.org/zap"
 )
 
 // Config holds the command-line options for wfdevice.
@@ -71,10 +72,10 @@ func NewServer(cfg *Config) (*server.Server, error) {
 
 	// Now that we have a logger, we can log configuration details
 	log.Info("creating server with configuration",
-		logger.String("port", cfg.Port),
-		logger.String("data_dir", cfg.DataDir),
-		logger.String("name", cfg.Name),
-		logger.String("control_plane", cfg.ControlPlane),
+		zap.String("port", cfg.Port),
+		zap.String("data_dir", cfg.DataDir),
+		zap.String("name", cfg.Name),
+		zap.String("control_plane", cfg.ControlPlane),
 	)
 
 	// Create server options from validated config
