@@ -19,7 +19,7 @@ const (
 )
 
 // newStartCmd creates the start command
-func newStartCmd(cfg *options.Config) *cobra.Command {
+func newStartCmd(cfg *options.Config) (*cobra.Command, error) {
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start the control plane server",
@@ -50,13 +50,15 @@ be explicitly configured for security reasons.`,
 	cmd.Flags().StringVar(&cfg.HealthExposure, "health-exposure", cfg.HealthExposure,
 		"level of information exposed in health endpoints (minimal, standard, full)")
 
-	cmd.MarkFlagRequired("management-port")
+	if err := cmd.MarkFlagRequired("management-port"); err != nil {
+		return nil, fmt.Errorf("marking management-port flag as required: %w", err)
+	}
 
-	return cmd
+	return cmd, nil
 }
 
 // newStopCmd creates the stop command
-func newStopCmd(cfg *options.Config) *cobra.Command {
+func newStopCmd(cfg *options.Config) (*cobra.Command, error) {
 	return &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the control plane server gracefully",
@@ -73,11 +75,11 @@ within the timeout period, it will be forcefully terminated.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return stopServer(cmd.Context(), cfg)
 		},
-	}
+	}, nil
 }
 
 // newStatusCmd creates the status command
-func newStatusCmd(cfg *options.Config) *cobra.Command {
+func newStatusCmd(cfg *options.Config) (*cobra.Command, error) {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show server status and health",
@@ -94,7 +96,7 @@ on the server's configured health exposure level.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return checkServerStatus(cmd.Context(), cfg)
 		},
-	}
+	}, nil
 }
 
 // startServer implements the start command functionality

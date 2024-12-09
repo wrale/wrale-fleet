@@ -2,6 +2,8 @@
 package stage1
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/wrale/wrale-fleet/cmd/wfcentral/options"
 )
@@ -9,11 +11,25 @@ import (
 // AddCommands adds all Stage 1 commands to the root command.
 // This function serves as the main entry point for the stage1 package,
 // organizing commands into logical groups and maintaining a clear hierarchy.
-func AddCommands(root *cobra.Command, cfg *options.Config) {
+func AddCommands(root *cobra.Command, cfg *options.Config) error {
 	// Server lifecycle commands
-	root.AddCommand(newStartCmd(cfg))
-	root.AddCommand(newStopCmd(cfg))
-	root.AddCommand(newStatusCmd(cfg))
+	startCmd, err := newStartCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("creating start command: %w", err)
+	}
+	root.AddCommand(startCmd)
+
+	stopCmd, err := newStopCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("creating stop command: %w", err)
+	}
+	root.AddCommand(stopCmd)
+
+	statusCmd, err := newStatusCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("creating status command: %w", err)
+	}
+	root.AddCommand(statusCmd)
 
 	// Device management commands
 	deviceCmd := &cobra.Command{
@@ -42,9 +58,23 @@ Device commands provide comprehensive management capabilities including:
 	}
 
 	// Add device subcommands
-	deviceCmd.AddCommand(newDeviceListCmd(cfg))
-	deviceCmd.AddCommand(newDeviceStatusCmd(cfg))
-	deviceCmd.AddCommand(newDeviceHealthCmd(cfg))
+	listCmd, err := newDeviceListCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("creating device list command: %w", err)
+	}
+	deviceCmd.AddCommand(listCmd)
+
+	statusDeviceCmd, err := newDeviceStatusCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("creating device status command: %w", err)
+	}
+	deviceCmd.AddCommand(statusDeviceCmd)
+
+	healthCmd, err := newDeviceHealthCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("creating device health command: %w", err)
+	}
+	deviceCmd.AddCommand(healthCmd)
 
 	// Device configuration commands
 	configCmd := &cobra.Command{
@@ -60,13 +90,29 @@ Configuration management includes:
 	}
 
 	// Add configuration subcommands
-	configCmd.AddCommand(newConfigShowCmd(cfg))
-	configCmd.AddCommand(newConfigValidateCmd(cfg))
-	configCmd.AddCommand(newConfigApplyCmd(cfg))
+	showCmd, err := newConfigShowCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("creating config show command: %w", err)
+	}
+	configCmd.AddCommand(showCmd)
+
+	validateCmd, err := newConfigValidateCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("creating config validate command: %w", err)
+	}
+	configCmd.AddCommand(validateCmd)
+
+	applyCmd, err := newConfigApplyCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("creating config apply command: %w", err)
+	}
+	configCmd.AddCommand(applyCmd)
 
 	// Add config commands to device command
 	deviceCmd.AddCommand(configCmd)
 
 	// Add device command to root
 	root.AddCommand(deviceCmd)
+
+	return nil
 }

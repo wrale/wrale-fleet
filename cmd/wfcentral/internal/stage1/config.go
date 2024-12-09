@@ -9,7 +9,7 @@ import (
 )
 
 // newConfigShowCmd creates the config show command
-func newConfigShowCmd(cfg *options.Config) *cobra.Command {
+func newConfigShowCmd(cfg *options.Config) (*cobra.Command, error) {
 	var redactSecrets bool
 
 	cmd := &cobra.Command{
@@ -40,11 +40,11 @@ for troubleshooting or documentation purposes.`,
 	cmd.Flags().BoolVar(&redactSecrets, "redact-secrets", false,
 		"redact sensitive information from the configuration output")
 
-	return cmd
+	return cmd, nil
 }
 
 // newConfigValidateCmd creates the config validate command
-func newConfigValidateCmd(cfg *options.Config) *cobra.Command {
+func newConfigValidateCmd(cfg *options.Config) (*cobra.Command, error) {
 	var configFile string
 
 	cmd := &cobra.Command{
@@ -75,13 +75,16 @@ reported with clear explanations and suggested fixes.`,
 
 	cmd.Flags().StringVar(&configFile, "config", "",
 		"path to configuration file to validate")
-	cmd.MarkFlagRequired("config")
 
-	return cmd
+	if err := cmd.MarkFlagRequired("config"); err != nil {
+		return nil, fmt.Errorf("marking config flag as required: %w", err)
+	}
+
+	return cmd, nil
 }
 
 // newConfigApplyCmd creates the config apply command
-func newConfigApplyCmd(cfg *options.Config) *cobra.Command {
+func newConfigApplyCmd(cfg *options.Config) (*cobra.Command, error) {
 	var (
 		configFile string
 		dryRun     bool
@@ -125,9 +128,11 @@ prompts but still performs validation.`,
 	cmd.Flags().BoolVar(&force, "force", false,
 		"bypass confirmation prompts")
 
-	cmd.MarkFlagRequired("config")
+	if err := cmd.MarkFlagRequired("config"); err != nil {
+		return nil, fmt.Errorf("marking config flag as required: %w", err)
+	}
 
-	return cmd
+	return cmd, nil
 }
 
 // showDeviceConfig implements the config show command functionality
