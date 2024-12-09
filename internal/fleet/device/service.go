@@ -59,11 +59,11 @@ func (s *Service) CheckHealth(ctx context.Context) error {
 
 	// Verify security monitor by recording a health check event
 	s.monitor.RecordEvent(ctx, SecurityEvent{
-		Type:      EventComplianceCheck,
-		DeviceID:  "system",
-		TenantID:  "system",
-		Success:   true,
-		Details:   "health check validation",
+		Type:     EventComplianceCheck,
+		DeviceID: "system",
+		TenantID: "system",
+		Success:  true,
+		Details:  "health check validation",
 	})
 
 	s.logInfo(op, zap.String("status", "healthy"))

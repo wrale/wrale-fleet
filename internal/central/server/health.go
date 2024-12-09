@@ -66,8 +66,8 @@ func (s *Server) handleHealthCheck() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(response); err != nil {
 			s.logger.Error("failed to write health check response",
-				"error", err,
-				"tenant_id", tenantID,
+				zap.Error(err),
+				zap.String("tenant_id", tenantID),
 			)
 		}
 	}
@@ -115,7 +115,7 @@ func (s *Server) runHealthChecks(ctx context.Context) {
 			)
 			if err != nil {
 				s.logger.Error("periodic health check failed",
-					"error", err,
+					zap.Error(err),
 				)
 			}
 		}
