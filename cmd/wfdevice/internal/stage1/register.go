@@ -48,8 +48,13 @@ Tags can be specified as key=value pairs and are used for:
 	cmd.Flags().StringVar(&controlPlane, "control-plane", "", "Control plane address")
 	cmd.Flags().StringSliceVar(&tags, "tags", []string{}, "Device tags (key=value)")
 
-	cmd.MarkFlagRequired("name")
-	cmd.MarkFlagRequired("control-plane")
+	// Mark required flags and handle potential errors
+	if err := cmd.MarkFlagRequired("name"); err != nil {
+		return nil, fmt.Errorf("marking name flag as required: %w", err)
+	}
+	if err := cmd.MarkFlagRequired("control-plane"); err != nil {
+		return nil, fmt.Errorf("marking control-plane flag as required: %w", err)
+	}
 
 	return cmd, nil
 }
